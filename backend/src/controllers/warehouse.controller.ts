@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import { createDatabaseProduct, databaseEnabled, deleteDatabaseProduct, listDatabaseProducts } from '../db.js';
 import { store } from '../store.js';
 
 const receiveSchema = z.object({
@@ -17,7 +18,7 @@ const receiveSchema = z.object({
 const createProductSchema = z.object({
   sku: z.string().min(2),
   name: z.string().min(2),
-  categoryId: z.coerce.number().int().positive(),
+  categoryId: z.coerce.number().int().positive().nullable().default(null),
   brand: z.string().min(1),
   laboratory: z.string().min(1),
   presentation: z.string().min(1),
@@ -78,8 +79,9 @@ export function receive(req: Request, res: Response) {
   return res.status(201).json({ success: true, data: lot });
 }
 
-export function listProducts(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getProducts() });
+export async function listProducts(_req: Request, res: Response) {
+  const data = databaseEnabled ? await listDatabaseProducts() : store.getProducts();
+  return res.json({ success: true, data: data ?? [] });
 }
 
 export function categories(_req: Request, res: Response) {
@@ -90,10 +92,15 @@ export function suppliers(_req: Request, res: Response) {
   return res.json({ success: true, data: store.getSuppliers() });
 }
 
-export function createProduct(req: Request, res: Response) {
-  const payload = createProductSchema.parse(req.body);
-  const result = store.addProduct(payload);
-  return res.status(201).json({ success: true, data: result });
+export async function createProduct(req: Request, res: Response) {
+  try {
+    const payload = createProductSchema.parse(req.body);
+    const result = databaseEnabled ? await createDatabaseProduct(payload) : store.addProduct(payload);
+    return res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo crear el producto';
+    return res.status(400).json({ success: false, message });
+  }
 }
 
 export function updateProduct(req: Request, res: Response) {
@@ -103,8 +110,15 @@ export function updateProduct(req: Request, res: Response) {
   return res.json({ success: true, data: updated });
 }
 
-export function deleteProduct(req: Request, res: Response) {
-  return res.json({ success: true, data: store.deleteProduct(Number(req.params.id)) });
+export async function deleteProduct(req: Request, res: Response) {
+  try {
+    const id = Number(req.params.id);
+    const result = databaseEnabled ? await deleteDatabaseProduct(id) : store.deleteProduct(id);
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo eliminar el producto';
+    return res.status(400).json({ success: false, message });
+  }
 }
 
 export function uploadProductImage(req: Request, res: Response) {

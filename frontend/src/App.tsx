@@ -1486,7 +1486,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
   const [newProd, setNewProd] = useState({
     sku: 'SKU-AMOX-875',
     name: 'Amoxicilina + Ácido Clavulánico 875mg',
-    categoryId: 3,
+    categoryId: null as number | null,
     brand: 'Genfar',
     laboratory: 'Laboratorios Genfar S.A.',
     presentation: 'Caja x 14 tabletas recubiertas',
@@ -1497,7 +1497,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
     cost: 110,
     description: 'Antibiótico bactericida de amplio espectro para infecciones respiratorias.',
     imageUrl: '',
-    includeInitialStock: true,
+    includeInitialStock: false,
     initialBranchId: 1,
     initialSupplierId: 1,
     initialBatchCode: 'LOT-2026-AMX8',
@@ -1599,7 +1599,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
       const payload = {
         sku: newProd.sku,
         name: newProd.name,
-        categoryId: Number(newProd.categoryId),
+        categoryId: newProd.categoryId,
         brand: newProd.brand,
         laboratory: newProd.laboratory,
         presentation: newProd.presentation,
@@ -1738,9 +1738,10 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
               <div className="form-field">
                 <label>Categoría</label>
                 <select
-                  value={newProd.categoryId}
-                  onChange={(e) => setNewProd({ ...newProd, categoryId: Number(e.target.value) })}
+                  value={newProd.categoryId ?? ''}
+                  onChange={(e) => setNewProd({ ...newProd, categoryId: e.target.value ? Number(e.target.value) : null })}
                 >
+                  <option value="">Sin categoría</option>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.name}

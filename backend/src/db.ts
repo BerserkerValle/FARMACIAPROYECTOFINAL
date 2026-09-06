@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
-import type { DataSnapshot } from './domain.js';
+import type { CreateProductInput, DataSnapshot } from './domain.js';
 
 dotenv.config();
 
@@ -30,6 +30,11 @@ const pool = url
       max: Number(process.env.PGPOOL_MAX ?? 5)
     })
   : null;
+
+function requirePool() {
+  if (!pool) throw new Error('PostgreSQL no está configurado');
+  return pool;
+}
 
 export interface DatabaseEmployee {
   employeeId: number;
@@ -166,6 +171,100 @@ export async function searchDatabaseCatalog(query: string, branchId?: number) {
     [query.trim(), branchId ?? null]
   );
   return result.rows;
+}
+
+export async function listDatabaseProducts() {
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT p.id_producto AS id,
+            p.sku_codigo AS sku,
+            p.nombre_producto AS name,
+            p.id_categoria AS "categoryId",
+            COALESCE(p.marca, '') AS brand,
+            COALESCE(p.laboratorio, '') AS laboratory,
+            COALESCE(p.presentacion, '') AS presentation,
+            COALESCE(p.unidad_medida, '') AS "unitMeasure",
+            COALESCE(p.registro_sanitario, '') AS "sanitaryRegistry",
+            COALESCE(p.requiere_receta, false) AS "requiresPrescription",
+            true AS active,
+            ''::text AS description,
+            COALESCE(MIN(l.precio_venta), 0) AS price,
+            COALESCE(MIN(l.precio_costo), 0) AS cost
+       FROM Productos p
+       LEFT JOIN Lotes l ON l.id_producto = p.id_producto
+      GROUP BY p.id_producto
+      ORDER BY p.id_producto DESC`
+  );
+  return result.rows;
+}
+
+export async function createDatabaseProduct(input: CreateProductInput) {
+  const database = requirePool();
+  const client = await database.connect();
+  try {
+    await client.query('BEGIN');
+    const productResult = await client.query(
+      `INSERT INTO Productos
+        (sku_codigo, nombre_producto, id_categoria, requiere_receta, marca,
+         laboratorio, presentacion, unidad_medida, registro_sanitario)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id_producto`,
+      [
+        input.sku.trim().toUpperCase(),
+        input.name.trim(),
+        input.categoryId == null ? null : Number(input.categoryId),
+        Boolean(input.requiresPrescription),
+        input.brand.trim(),
+        input.laboratory.trim(),
+        input.presentation.trim(),
+        input.unitMeasure.trim(),
+        input.sanitaryRegistry.trim()
+      ]
+    );
+    const productId = Number(productResult.rows[0].id_producto);
+    let initialLot = null;
+    if (input.initialStock && input.initialStock.quantity > 0) {
+      const lotResult = await client.query(
+        `INSERT INTO Lotes
+          (codigo_lote_fabricante, id_producto, fecha_vencimiento,
+           precio_costo, precio_venta, id_proveedor)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id_lote`,
+        [
+          input.initialStock.batchCode.trim(),
+          productId,
+          input.initialStock.expirationDate,
+          Number(input.cost),
+          Number(input.price),
+          Number(input.initialStock.supplierId)
+        ]
+      );
+      const lotId = Number(lotResult.rows[0].id_lote);
+      await client.query(
+        `INSERT INTO Stock_Sucursal (id_sucursal, id_lote, cantidad_disponible)
+         VALUES ($1, $2, $3)`,
+        [Number(input.initialStock.branchId), lotId, Number(input.initialStock.quantity)]
+      );
+      initialLot = { id: lotId, productId, branchId: Number(input.initialStock.branchId), supplierId: Number(input.initialStock.supplierId), batchCode: input.initialStock.batchCode, expirationDate: input.initialStock.expirationDate, productionDate: input.initialStock.productionDate, costPrice: Number(input.cost), salePrice: Number(input.price), quantityAvailable: Number(input.initialStock.quantity) };
+    }
+    await client.query('COMMIT');
+    return { product: { id: productId, sku: input.sku.trim().toUpperCase(), name: input.name.trim(), categoryId: input.categoryId == null ? 0 : Number(input.categoryId), brand: input.brand.trim(), laboratory: input.laboratory.trim(), presentation: input.presentation.trim(), unitMeasure: input.unitMeasure.trim(), sanitaryRegistry: input.sanitaryRegistry.trim(), requiresPrescription: Boolean(input.requiresPrescription), active: true, description: input.description.trim(), price: Number(input.price), cost: Number(input.cost), imageUrl: input.imageUrl?.trim() || null }, initialLot };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteDatabaseProduct(id: number) {
+  const database = requirePool();
+  const result = await database.query(
+    'DELETE FROM Productos WHERE id_producto = $1 RETURNING id_producto AS id',
+    [id]
+  );
+  if (!result.rows[0]) throw new Error(`Producto #${id} no encontrado`);
+  return { id: Number(result.rows[0].id), deleted: true };
 }
 
 export async function initializeDatabase() {

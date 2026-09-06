@@ -21,7 +21,7 @@ export interface Product {
   id: number;
   sku: string;
   name: string;
-  categoryId: number;
+  categoryId: number | null;
   brand: string;
   laboratory: string;
   presentation: string;
@@ -38,7 +38,7 @@ export interface Product {
 export interface CreateProductInput {
   sku: string;
   name: string;
-  categoryId: number;
+  categoryId: number | null;
   brand: string;
   laboratory: string;
   presentation: string;
@@ -110,7 +110,7 @@ export interface OrderItem {
   productId: number;
   quantity: number;
   unitPrice: number;
-  subtotal: number;
+    subtotal: number;
   assignedLotIds: number[];
 }
 
