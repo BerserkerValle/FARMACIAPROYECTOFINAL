@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { createDatabaseProduct, databaseEnabled, deleteDatabaseProduct, listDatabaseProducts } from '../db.js';
+import { createDatabaseProduct, databaseEnabled, deleteDatabaseProduct, getDatabaseCategories, getDatabaseSuppliers, listDatabaseLots, listDatabaseProducts, receiveDatabaseLot, updateDatabaseProduct } from '../db.js';
 import { store } from '../store.js';
 
 const receiveSchema = z.object({
@@ -41,6 +41,7 @@ const createProductSchema = z.object({
     })
     .optional()
     .nullable()
+    .default(null)
 });
 
 const updateProductSchema = z.object({
@@ -64,19 +65,27 @@ function apiBaseUrl(req: Request) {
   return process.env.API_BASE_URL?.trim() || `${req.protocol}://${req.get('host')}`;
 }
 
-export function lots(req: Request, res: Response) {
+export async function lots(req: Request, res: Response) {
   const branchId = req.user?.branchId ?? (req.query.branchId ? Number(req.query.branchId) : undefined);
   const productId = req.query.productId ? Number(req.query.productId) : undefined;
-  return res.json({ success: true, data: store.getLots(productId, branchId) });
+  const data = databaseEnabled ? await listDatabaseLots(branchId, productId) : store.getLots(productId, branchId);
+  return res.json({ success: true, data: data ?? [] });
 }
 
-export function receive(req: Request, res: Response) {
+export async function receive(req: Request, res: Response) {
   if (!req.user) {
     return res.status(401).json({ success: false, message: 'No autenticado' });
   }
   const payload = receiveSchema.parse(req.body);
-  const lot = store.receiveGoods({ ...payload, employeeId: req.user.employeeId });
-  return res.status(201).json({ success: true, data: lot });
+  try {
+    const lot = databaseEnabled
+      ? await receiveDatabaseLot({ ...payload, employeeId: req.user.employeeId })
+      : store.receiveGoods({ ...payload, employeeId: req.user.employeeId });
+    return res.status(201).json({ success: true, data: lot });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo recibir el lote';
+    return res.status(400).json({ success: false, message });
+  }
 }
 
 export async function listProducts(_req: Request, res: Response) {
@@ -84,12 +93,14 @@ export async function listProducts(_req: Request, res: Response) {
   return res.json({ success: true, data: data ?? [] });
 }
 
-export function categories(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getCategories() });
+export async function categories(_req: Request, res: Response) {
+  const data = databaseEnabled ? await getDatabaseCategories() : store.getCategories();
+  return res.json({ success: true, data: data ?? [] });
 }
 
-export function suppliers(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getSuppliers() });
+export async function suppliers(_req: Request, res: Response) {
+  const data = databaseEnabled ? await getDatabaseSuppliers() : store.getSuppliers();
+  return res.json({ success: true, data: data ?? [] });
 }
 
 export async function createProduct(req: Request, res: Response) {
@@ -103,11 +114,16 @@ export async function createProduct(req: Request, res: Response) {
   }
 }
 
-export function updateProduct(req: Request, res: Response) {
-  const productId = Number(req.params.id);
-  const payload = updateProductSchema.parse(req.body);
-  const updated = store.updateProduct(productId, payload);
-  return res.json({ success: true, data: updated });
+export async function updateProduct(req: Request, res: Response) {
+  try {
+    const productId = Number(req.params.id);
+    const payload = updateProductSchema.parse(req.body);
+    const updated = databaseEnabled ? await updateDatabaseProduct(productId, payload) : store.updateProduct(productId, payload);
+    return res.json({ success: true, data: updated });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo actualizar el producto';
+    return res.status(400).json({ success: false, message });
+  }
 }
 
 export async function deleteProduct(req: Request, res: Response) {

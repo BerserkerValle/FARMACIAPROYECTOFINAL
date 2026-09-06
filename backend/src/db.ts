@@ -198,6 +198,73 @@ export async function listDatabaseProducts() {
   return result.rows;
 }
 
+export async function listDatabaseLots(branchId?: number, productId?: number) {
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT l.id_lote AS id,
+            l.id_producto AS "productId",
+            ss.id_sucursal AS "branchId",
+            l.id_proveedor AS "supplierId",
+            l.codigo_lote_fabricante AS "batchCode",
+            l.fecha_vencimiento AS "expirationDate",
+            l.precio_costo AS "costPrice",
+            l.precio_venta AS "salePrice",
+            ss.cantidad_disponible AS "quantityAvailable"
+       FROM Lotes l
+       LEFT JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+      WHERE ($1::integer IS NULL OR ss.id_sucursal = $1)
+        AND ($2::integer IS NULL OR l.id_producto = $2)
+      ORDER BY l.fecha_vencimiento`
+    , [branchId ?? null, productId ?? null]
+  );
+  return result.rows;
+}
+
+export async function receiveDatabaseLot(input: {
+  branchId: number;
+  supplierId: number;
+  employeeId: number;
+  productId: number;
+  batchCode: string;
+  expirationDate: string;
+  productionDate: string;
+  quantity: number;
+  costPrice: number;
+  salePrice: number;
+}) {
+  const database = requirePool();
+  const client = await database.connect();
+  try {
+    await client.query('BEGIN');
+    const lotResult = await client.query(
+      `INSERT INTO Lotes
+        (codigo_lote_fabricante, id_producto, fecha_vencimiento,
+         precio_costo, precio_venta, id_proveedor)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id_lote`,
+      [input.batchCode.trim(), input.productId, input.expirationDate, input.costPrice, input.salePrice, input.supplierId]
+    );
+    const lotId = Number(lotResult.rows[0].id_lote);
+    await client.query(
+      `INSERT INTO Stock_Sucursal (id_sucursal, id_lote, cantidad_disponible, usuario_modifico)
+       VALUES ($1, $2, $3, $4)`,
+      [input.branchId, lotId, input.quantity, String(input.employeeId)]
+    );
+    await client.query(
+      `INSERT INTO MovimientoInventario (id_lote, tipo_movimiento, cantidad, id_usuario, motivo)
+       VALUES ($1, 'ENTRADA', $2, $3, 'Recepción de lote')`,
+      [lotId, input.quantity, input.employeeId]
+    );
+    await client.query('COMMIT');
+    return { id: lotId, productId: input.productId, branchId: input.branchId, supplierId: input.supplierId, batchCode: input.batchCode, expirationDate: input.expirationDate, quantityAvailable: input.quantity, costPrice: input.costPrice, salePrice: input.salePrice };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function createDatabaseProduct(input: CreateProductInput) {
   const database = requirePool();
   const client = await database.connect();
@@ -265,6 +332,39 @@ export async function deleteDatabaseProduct(id: number) {
   );
   if (!result.rows[0]) throw new Error(`Producto #${id} no encontrado`);
   return { id: Number(result.rows[0].id), deleted: true };
+}
+
+export async function updateDatabaseProduct(id: number, input: Record<string, unknown>) {
+  const database = requirePool();
+  const fields: Array<[string, unknown]> = [];
+  const mappings: Array<[string, string]> = [
+    ['sku', 'sku_codigo'],
+    ['name', 'nombre_producto'],
+    ['categoryId', 'id_categoria'],
+    ['requiresPrescription', 'requiere_receta'],
+    ['brand', 'marca'],
+    ['laboratory', 'laboratorio'],
+    ['presentation', 'presentacion'],
+    ['unitMeasure', 'unidad_medida'],
+    ['sanitaryRegistry', 'registro_sanitario']
+  ];
+  for (const [inputKey, column] of mappings) {
+    if (inputKey in input) fields.push([column, input[inputKey]]);
+  }
+  if (fields.length === 0) throw new Error('No hay campos para actualizar');
+  const assignments = fields.map(([column], index) => `${column} = $${index + 2}`).join(', ');
+  const result = await database.query(
+    `UPDATE Productos
+        SET ${assignments}, ultima_modificacion = CURRENT_TIMESTAMP
+      WHERE id_producto = $1
+      RETURNING id_producto AS id, sku_codigo AS sku, nombre_producto AS name,
+                id_categoria AS "categoryId", requiere_receta AS "requiresPrescription",
+                marca AS brand, laboratorio AS laboratory, presentacion AS presentation,
+                unidad_medida AS "unitMeasure", registro_sanitario AS "sanitaryRegistry"`,
+    [id, ...fields.map(([, value]) => value)]
+  );
+  if (!result.rows[0]) throw new Error(`Producto #${id} no encontrado`);
+  return result.rows[0];
 }
 
 export async function initializeDatabase() {

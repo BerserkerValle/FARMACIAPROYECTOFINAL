@@ -46,7 +46,7 @@ export async function uploadPrescription(file: File, orderId: number, kind: 'web
 
   const response = await fetch(`${API_URL}/api/public/orders/prescription`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    headers: token ? { 'X-Employee-Id': token } : undefined,
     body: formData
   });
   const payload = await response.json();
@@ -62,7 +62,7 @@ export async function uploadTemporaryPrescription(file: File, token?: string | n
 
   const response = await fetch(`${API_URL}/api/public/prescriptions/temp`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    headers: token ? { 'X-Employee-Id': token } : undefined,
     body: formData
   });
   const payload = await response.json();
@@ -78,10 +78,10 @@ export async function uploadProductImage(file: File, token?: string | null) {
 
   const response = await fetch(`${API_URL}/api/warehouse/products/upload-image`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    headers: token ? { 'X-Employee-Id': token } : undefined,
     body: formData
   });
-  const payload = await response.json();
+  const payload = await response.json().catch(() => ({ success: false, message: 'Respuesta inválida del servidor' }));
   if (!response.ok || payload.success === false) {
     throw new Error(payload.message || 'No se pudo subir la imagen del medicamento');
   }
