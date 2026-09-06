@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
+import bcrypt from 'bcryptjs';
 import type { CreateProductInput, DataSnapshot } from './domain.js';
 
 dotenv.config();
@@ -84,6 +85,100 @@ export async function findDatabaseEmployeeById(id: number) {
     [id]
   );
   return result.rows[0] ? mapEmployee(result.rows[0]) : null;
+}
+
+function mapEmployeeForAdmin(row: Record<string, unknown>) {
+  return {
+    id: Number(row.id_empleado),
+    fullName: String(row.nombre_completo),
+    email: String(row.correo_corporativo),
+    role: String(row.rol_usuario),
+    branchId: row.id_sucursal == null ? null : Number(row.id_sucursal),
+    supervisorId: row.id_supervisor == null ? null : Number(row.id_supervisor),
+    active: row.contrasena != null
+  };
+}
+
+export async function listDatabaseEmployees() {
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT id_empleado, nombre_completo, correo_corporativo, rol_usuario,
+            id_sucursal, id_supervisor, contrasena
+       FROM Empleados
+      ORDER BY id_empleado`
+  );
+  return result.rows.map(mapEmployeeForAdmin);
+}
+
+export async function createDatabaseEmployee(input: {
+  fullName: string;
+  email: string;
+  password: string;
+  role: string;
+  branchId: number | null;
+  supervisorId: number | null;
+}) {
+  const database = requirePool();
+  const result = await database.query(
+    `INSERT INTO Empleados
+      (nombre_completo, correo_corporativo, contrasena, rol_usuario,
+       id_sucursal, id_supervisor, usuario_modifico)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    RETURNING id_empleado, nombre_completo, correo_corporativo, rol_usuario,
+        id_sucursal, id_supervisor, contrasena`,
+    [
+      input.fullName.trim(),
+      input.email.trim().toLowerCase(),
+      bcrypt.hashSync(input.password, 12),
+      input.role,
+      input.branchId,
+      input.supervisorId,
+      input.email.trim()
+    ]
+  );
+  return mapEmployeeForAdmin(result.rows[0]);
+}
+
+export async function updateDatabaseEmployee(id: number, input: Record<string, unknown>) {
+  const database = requirePool();
+  const fields: Array<[string, unknown]> = [];
+  const mappings: Array<[string, string]> = [
+    ['fullName', 'nombre_completo'],
+    ['email', 'correo_corporativo'],
+    ['role', 'rol_usuario'],
+    ['branchId', 'id_sucursal'],
+    ['supervisorId', 'id_supervisor']
+  ];
+  for (const [key, column] of mappings) {
+    if (key in input) fields.push([column, input[key]]);
+  }
+  if (input.password) fields.push(['contrasena', bcrypt.hashSync(String(input.password), 12)]);
+  if (fields.length === 0) throw new Error('No hay campos para actualizar');
+  const assignments = fields.map(([column], index) => `${column} = $${index + 2}`).join(', ');
+  const result = await database.query(
+    `UPDATE Empleados
+        SET ${assignments}, ultima_modificacion = CURRENT_TIMESTAMP
+      WHERE id_empleado = $1
+      RETURNING id_empleado, nombre_completo, correo_corporativo, rol_usuario,
+                id_sucursal, id_supervisor, contrasena`,
+    [id, ...fields.map(([, value]) => value)]
+  );
+  if (!result.rows[0]) throw new Error(`Empleado #${id} no encontrado`);
+  return mapEmployeeForAdmin(result.rows[0]);
+}
+
+export async function deactivateDatabaseEmployee(id: number) {
+  const database = requirePool();
+  const result = await database.query(
+    `UPDATE Empleados
+        SET contrasena = NULL, ultima_modificacion = CURRENT_TIMESTAMP
+      WHERE id_empleado = $1
+      RETURNING id_empleado, nombre_completo, correo_corporativo, rol_usuario,
+                id_sucursal, id_supervisor, contrasena`,
+    [id]
+  );
+  if (!result.rows[0]) throw new Error(`Empleado #${id} no encontrado`);
+  return mapEmployeeForAdmin(result.rows[0]);
 }
 
 export async function getDatabaseBranches() {

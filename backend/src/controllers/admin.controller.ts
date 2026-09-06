@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import { createDatabaseEmployee, databaseEnabled, deactivateDatabaseEmployee, listDatabaseEmployees, updateDatabaseEmployee } from '../db.js';
 import { store } from '../store.js';
 
 const employeeSchema = z.object({
@@ -42,8 +43,9 @@ export function reports(_req: Request, res: Response) {
   return res.json({ success: true, data: store.getReports() });
 }
 
-export function employees(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getEmployees() });
+export async function employees(_req: Request, res: Response) {
+  const data = databaseEnabled ? await listDatabaseEmployees() : store.getEmployees();
+  return res.json({ success: true, data: data ?? [] });
 }
 
 export function branches(_req: Request, res: Response) {
@@ -94,21 +96,42 @@ export function deleteSupplier(req: Request, res: Response) {
   return res.json({ success: true, data: store.deleteSupplier(Number(req.params.id)) });
 }
 
-export function createEmployee(req: Request, res: Response) {
-  const payload = employeeSchema.parse(req.body);
-  const employee = store.addEmployee(payload);
-  const { password: _password, ...safeEmployee } = employee;
-  return res.status(201).json({ success: true, data: safeEmployee });
+export async function createEmployee(req: Request, res: Response) {
+  try {
+    const payload = employeeSchema.parse(req.body);
+    const employee = databaseEnabled ? await createDatabaseEmployee(payload) : store.addEmployee(payload);
+    const { password: _password, ...safeEmployee } = employee as typeof employee & { password?: string };
+    return res.status(201).json({ success: true, data: safeEmployee });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo crear el empleado';
+    return res.status(400).json({ success: false, message });
+  }
 }
 
-export function updateEmployee(req: Request, res: Response) {
-  const employee = store.updateEmployee(Number(req.params.id), employeeSchema.partial().parse(req.body));
-  const { password: _password, ...safeEmployee } = employee;
-  return res.json({ success: true, data: safeEmployee });
+export async function updateEmployee(req: Request, res: Response) {
+  try {
+    const payload = employeeSchema.partial().parse(req.body);
+    const employee = databaseEnabled
+      ? await updateDatabaseEmployee(Number(req.params.id), payload)
+      : store.updateEmployee(Number(req.params.id), payload);
+    const { password: _password, ...safeEmployee } = employee as typeof employee & { password?: string };
+    return res.json({ success: true, data: safeEmployee });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo actualizar el empleado';
+    return res.status(400).json({ success: false, message });
+  }
 }
 
-export function deleteEmployee(req: Request, res: Response) {
-  return res.json({ success: true, data: store.deleteEmployee(Number(req.params.id)) });
+export async function deleteEmployee(req: Request, res: Response) {
+  try {
+    const data = databaseEnabled
+      ? await deactivateDatabaseEmployee(Number(req.params.id))
+      : store.deleteEmployee(Number(req.params.id));
+    return res.json({ success: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo desactivar el empleado';
+    return res.status(400).json({ success: false, message });
+  }
 }
 
 export function crosscheck(req: Request, res: Response) {

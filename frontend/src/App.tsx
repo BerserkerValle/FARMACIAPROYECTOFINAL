@@ -2416,7 +2416,7 @@ function AdminPage({ token }: { token: string | null }) {
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [reports, setReports] = useState<any>(null);
   const [status, setStatus] = useState('');
-  const [employee, setEmployee] = useState({ fullName: 'Nuevo Usuario', email: 'nuevo@derkas.com', password: 'Clave123*', role: 'Cajero', branchId: 1, supervisorId: 2 });
+  const [employee, setEmployee] = useState({ fullName: 'Nuevo Usuario', email: 'nuevo@derkas.com', password: 'Clave123*', role: 'Cajero', branchId: 1, supervisorId: null as number | null });
   const [crosscheckOrderId, setCrosscheckOrderId] = useState('1');
 
   async function loadAll() {
