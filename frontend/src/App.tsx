@@ -623,6 +623,7 @@ function ProductDetailModal({
 
   const category = categories.find((c) => c.id === product.categoryId);
   const categoryName = category?.name ?? 'Farmacia / Medicamentos';
+  const remainingStock = Math.max(0, product.stock - inCartQuantity);
 
   const handleAdd = () => {
     onAddToCart(product.id, qty);
@@ -754,9 +755,9 @@ function ProductDetailModal({
                 <div className="modal-price-val">{money(product.price)}</div>
               </div>
               <div className="modal-stock-status">
-                <span className={`stock-indicator-dot ${product.stock > 10 ? 'stock-in' : product.stock > 0 ? 'stock-low' : 'stock-out'}`} />
+                <span className={`stock-indicator-dot ${product.stock > 0 ? 'stock-in' : 'stock-out'}`} />
                 <span style={{ color: product.stock > 0 ? '#10b981' : '#ef4444', fontWeight: 700 }}>
-                  {product.stock > 0 ? `${product.stock} unidades en existencia` : 'Agotado en esta sucursal'}
+                  {product.stock > 0 ? 'Disponible' : 'Sin stock'}
                 </span>
               </div>
             </div>
@@ -882,7 +883,6 @@ function ProductDetailModal({
                           <tr>
                             <th>Código de Lote</th>
                             <th>Fecha de Vencimiento</th>
-                            <th>Unidades</th>
                             <th>Estado</th>
                           </tr>
                         </thead>
@@ -891,9 +891,10 @@ function ProductDetailModal({
                             <tr key={lot.id}>
                               <td><strong>{lot.batchCode}</strong></td>
                               <td>{lot.expirationDate}</td>
-                              <td>{lot.quantityAvailable} uds</td>
                               <td>
-                                <span className="lot-status-badge vigente">Vigente</span>
+                                <span className={`lot-status-badge ${lot.quantityAvailable > 0 ? 'vigente' : 'agotado'}`}>
+                                  {lot.quantityAvailable > 0 ? 'Disponible' : 'Sin stock'}
+                                </span>
                               </td>
                             </tr>
                           ))}
@@ -957,11 +958,11 @@ function ProductDetailModal({
                     type="number"
                     className="modal-qty-input"
                     min="1"
-                    max={product.stock || 1}
+                    max={remainingStock || 1}
                     value={qty}
                     onChange={(e) => {
                       const val = Number(e.target.value);
-                      if (val >= 1 && val <= Math.max(1, product.stock)) {
+                      if (val >= 1 && val <= Math.max(1, remainingStock)) {
                         setQty(val);
                       }
                     }}
@@ -969,8 +970,8 @@ function ProductDetailModal({
                   <button
                     type="button"
                     className="modal-qty-btn"
-                    onClick={() => setQty((prev) => (product.stock > prev ? prev + 1 : prev))}
-                    disabled={qty >= product.stock}
+                    onClick={() => setQty((prev) => (remainingStock > prev ? prev + 1 : prev))}
+                    disabled={qty >= remainingStock}
                     title="Aumentar cantidad"
                   >
                     +
@@ -1202,8 +1203,8 @@ function PublicCatalogView({
                   <div className="product-price-row">
                     <span className="product-price">{money(product.price)}</span>
                     <span className="product-stock-badge">
-                      <span className={`stock-indicator-dot ${product.stock > 10 ? 'stock-in' : product.stock > 0 ? 'stock-low' : 'stock-out'}`} />
-                      {product.stock > 0 ? `${product.stock} en stock` : 'Agotado'}
+                      <span className={`stock-indicator-dot ${product.stock > 0 ? 'stock-in' : 'stock-out'}`} />
+                      {product.stock > 0 ? 'Disponible' : 'Sin stock'}
                     </span>
                   </div>
 
@@ -2616,19 +2617,29 @@ export default function App() {
   }, [query, branchId]);
 
   function handleAddToCart(productId: number, quantity: number = 1) {
+    const product = products.find((p) => p.id === productId);
+    if (!product || product.stock <= 0) {
+      setToastMessage('Sin stock disponible para este medicamento');
+      return;
+    }
+
     setCart((current) => {
       const existing = current.find((item) => item.productId === productId);
+      const currentQuantity = existing?.quantity ?? 0;
+      const allowedQuantity = Math.min(quantity, product.stock - currentQuantity);
+      if (allowedQuantity <= 0) {
+        setToastMessage('Stock insuficiente para este medicamento');
+        return current;
+      }
       if (existing) {
         return current.map((item) =>
-          item.productId === productId ? { ...item, quantity: item.quantity + quantity } : item
+          item.productId === productId ? { ...item, quantity: item.quantity + allowedQuantity } : item
         );
       }
-      return [...current, { productId, quantity }];
+      return [...current, { productId, quantity: allowedQuantity }];
     });
 
-    const product = products.find((p) => p.id === productId);
-    const name = product ? product.name : 'Producto';
-    setToastMessage(`Añadido arriba para pagar: ${name}`);
+    setToastMessage(`Añadido arriba para pagar: ${product.name}`);
     setTimeout(() => {
       setToastMessage(null);
     }, 2500);
@@ -2643,6 +2654,11 @@ export default function App() {
         .map((item) => {
           if (item.productId === productId) {
             const nextQty = item.quantity + delta;
+            const product = products.find((candidate) => candidate.id === productId);
+            if (product && nextQty > product.stock) {
+              setToastMessage('Stock insuficiente para este medicamento');
+              return item;
+            }
             return nextQty > 0 ? { ...item, quantity: nextQty } : null;
           }
           return item;

@@ -235,6 +235,7 @@ export async function searchDatabaseCatalog(query: string, branchId?: number) {
             COALESCE(p.unidad_medida, '') AS "unitMeasure",
             COALESCE(p.registro_sanitario, '') AS "sanitaryRegistry",
             COALESCE(p.requiere_receta, false) AS "requiresPrescription",
+            p.imagen_url AS "imageUrl",
             true AS active,
             ''::text AS description,
             COALESCE(MIN(l.precio_venta), 0) AS price,
@@ -281,6 +282,7 @@ export async function listDatabaseProducts() {
             COALESCE(p.unidad_medida, '') AS "unitMeasure",
             COALESCE(p.registro_sanitario, '') AS "sanitaryRegistry",
             COALESCE(p.requiere_receta, false) AS "requiresPrescription",
+            p.imagen_url AS "imageUrl",
             true AS active,
             ''::text AS description,
             COALESCE(MIN(l.precio_venta), 0) AS price,
@@ -368,8 +370,8 @@ export async function createDatabaseProduct(input: CreateProductInput) {
     const productResult = await client.query(
       `INSERT INTO Productos
         (sku_codigo, nombre_producto, id_categoria, requiere_receta, marca,
-         laboratorio, presentacion, unidad_medida, registro_sanitario)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         laboratorio, presentacion, unidad_medida, registro_sanitario, imagen_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id_producto`,
       [
         input.sku.trim().toUpperCase(),
@@ -380,7 +382,8 @@ export async function createDatabaseProduct(input: CreateProductInput) {
         input.laboratory.trim(),
         input.presentation.trim(),
         input.unitMeasure.trim(),
-        input.sanitaryRegistry.trim()
+        input.sanitaryRegistry.trim(),
+        input.imageUrl?.trim() || null
       ]
     );
     const productId = Number(productResult.rows[0].id_producto);
@@ -443,6 +446,7 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
     ['unitMeasure', 'unidad_medida'],
     ['sanitaryRegistry', 'registro_sanitario']
   ];
+  if ('imageUrl' in input) fields.push(['imagen_url', input.imageUrl]);
   for (const [inputKey, column] of mappings) {
     if (inputKey in input) fields.push([column, input[inputKey]]);
   }
@@ -455,7 +459,8 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
       RETURNING id_producto AS id, sku_codigo AS sku, nombre_producto AS name,
                 id_categoria AS "categoryId", requiere_receta AS "requiresPrescription",
                 marca AS brand, laboratorio AS laboratory, presentacion AS presentation,
-                unidad_medida AS "unitMeasure", registro_sanitario AS "sanitaryRegistry"`,
+                unidad_medida AS "unitMeasure", registro_sanitario AS "sanitaryRegistry",
+                imagen_url AS "imageUrl"`,
     [id, ...fields.map(([, value]) => value)]
   );
   if (!result.rows[0]) throw new Error(`Producto #${id} no encontrado`);
@@ -547,6 +552,7 @@ export async function initializeDatabase() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS imagen_url TEXT');
 }
 
 export async function loadDatabaseSnapshot() {

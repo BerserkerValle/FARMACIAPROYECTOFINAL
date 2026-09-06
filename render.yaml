@@ -29,6 +29,12 @@ services:
         sync: false
       - key: API_BASE_URL
         sync: false
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+    disk:
+      name: derkas-farmacia-uploads
+      mountPath: /var/data
+      sizeGB: 1
 
   - type: web
     name: derkas-farmacia-frontend

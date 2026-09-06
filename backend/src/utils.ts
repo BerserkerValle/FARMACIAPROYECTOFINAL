@@ -2,6 +2,14 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export function getUploadsDir() {
+  const configuredUploadsDir = process.env.UPLOADS_DIR?.trim();
+  if (configuredUploadsDir) {
+    if (!existsSync(configuredUploadsDir)) {
+      mkdirSync(configuredUploadsDir, { recursive: true });
+    }
+    return configuredUploadsDir;
+  }
+
   const cwd = process.cwd();
   // If running from backend folder or root folder, ensure consistent uploads dir
   const uploadsDir = cwd.endsWith('backend') ? resolve(cwd, 'uploads') : resolve(cwd, 'backend', 'uploads');
