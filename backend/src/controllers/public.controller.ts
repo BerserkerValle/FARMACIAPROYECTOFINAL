@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { z } from 'zod';
-import { databaseEnabled, getDatabaseBranches, getDatabaseCategories, getDatabaseSuppliers, searchDatabaseCatalog } from '../db.js';
+import { createDatabaseCheckout, databaseEnabled, getDatabaseBranches, getDatabaseCategories, getDatabaseSuppliers, registerDatabasePayment, searchDatabaseCatalog } from '../db.js';
 import { store } from '../store.js';
 
 const checkoutSchema = z.object({
@@ -67,11 +67,13 @@ export async function catalog(req: Request, res: Response) {
 export async function checkout(req: Request, res: Response) {
   try {
     const payload = checkoutSchema.parse(req.body);
-    const created = store.createWebCheckout(payload);
+    const created = databaseEnabled ? await createDatabaseCheckout(payload) : store.createWebCheckout(payload);
     const stripe = stripeClient();
 
     if (!stripe) {
-      const paidOrder = store.registerPayment(created.order.id, 'demo', `demo-${created.order.id}`);
+      const paidOrder = databaseEnabled
+        ? created.order
+        : store.registerPayment(created.order.id, 'demo', `demo-${created.order.id}`);
       return res.json({
         success: true,
         data: {
@@ -137,7 +139,11 @@ export async function stripeWebhook(req: Request, res: Response) {
       const session = event.data.object as Stripe.Checkout.Session;
       const orderId = Number(session.metadata?.orderId);
       if (Number.isInteger(orderId) && orderId > 0) {
-        store.registerPayment(orderId, 'stripe', session.payment_intent ? String(session.payment_intent) : session.id);
+        if (databaseEnabled) {
+          await registerDatabasePayment(orderId, session.payment_intent ? String(session.payment_intent) : session.id, Number(session.amount_total ?? 0) / 100);
+        } else {
+          store.registerPayment(orderId, 'stripe', session.payment_intent ? String(session.payment_intent) : session.id);
+        }
       }
     }
     return res.json({ received: true });

@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
-import type { CreateProductInput, DataSnapshot } from './domain.js';
+import type { CreateProductInput, DataSnapshot, PublicCheckoutInput } from './domain.js';
 
 dotenv.config();
 
@@ -460,6 +460,82 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
   );
   if (!result.rows[0]) throw new Error(`Producto #${id} no encontrado`);
   return result.rows[0];
+}
+
+export async function createDatabaseCheckout(input: PublicCheckoutInput) {
+  const database = requirePool();
+  const client = await database.connect();
+  try {
+    await client.query('BEGIN');
+    const customerResult = await client.query(
+      `INSERT INTO Clientes (nombre, correo, nit, telefono)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (nit) DO UPDATE SET nombre = EXCLUDED.nombre, correo = EXCLUDED.correo, telefono = EXCLUDED.telefono,
+                                       ultima_modificacion = CURRENT_TIMESTAMP
+       RETURNING id_cliente, nombre, correo, nit, telefono`,
+      [input.customer.name, input.customer.email, input.customer.nit, input.customer.phone]
+    );
+    const customer = customerResult.rows[0];
+    const items: Array<{ product: Record<string, unknown>; quantity: number; subtotal: number; lots: Array<{ id: number; quantity: number; price: number }> }> = [];
+    for (const item of input.items) {
+      const productResult = await client.query(
+        `SELECT id_producto, sku_codigo, nombre_producto, requiere_receta, COALESCE(marca, '') AS marca,
+                COALESCE(laboratorio, '') AS laboratorio, COALESCE(presentacion, '') AS presentacion
+           FROM Productos WHERE id_producto = $1`,
+        [item.productId]
+      );
+      const product = productResult.rows[0];
+      if (!product) throw new Error(`Producto no encontrado: ${item.productId}`);
+      const stockResult = await client.query(
+        `SELECT l.id_lote, l.precio_venta, ss.cantidad_disponible
+           FROM Lotes l JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+          WHERE l.id_producto = $1 AND ss.id_sucursal = $2 AND ss.cantidad_disponible > 0
+          ORDER BY l.fecha_vencimiento ASC, l.id_lote ASC`,
+        [item.productId, input.branchId]
+      );
+      const available = stockResult.rows.reduce((sum: number, row: { cantidad_disponible: number }) => sum + Number(row.cantidad_disponible), 0);
+      if (available < item.quantity) throw new Error(`Stock insuficiente para ${product.nombre_producto}`);
+      let remaining = item.quantity;
+      const lots: Array<{ id: number; quantity: number; price: number }> = [];
+      for (const row of stockResult.rows) {
+        if (remaining <= 0) break;
+        const take = Math.min(remaining, Number(row.cantidad_disponible));
+        await client.query('UPDATE Stock_Sucursal SET cantidad_disponible = cantidad_disponible - $1, ultima_modificacion = CURRENT_TIMESTAMP WHERE id_lote = $2 AND id_sucursal = $3', [take, row.id_lote, input.branchId]);
+        await client.query(`INSERT INTO MovimientoInventario (id_lote, tipo_movimiento, cantidad, motivo) VALUES ($1, 'VENTA', $2, 'Reserva de venta web')`, [row.id_lote, take]);
+        lots.push({ id: Number(row.id_lote), quantity: take, price: Number(row.precio_venta) });
+        remaining -= take;
+      }
+      const price = Number(stockResult.rows[0].precio_venta);
+      items.push({ product, quantity: item.quantity, subtotal: price * item.quantity, lots });
+    }
+    const total = items.reduce((sum, item) => sum + item.subtotal, 0);
+    const invoiceResult = await client.query(
+      `INSERT INTO Facturas (id_cliente, id_sucursal, fecha_emision, correlativo_sat, total_neto)
+       VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4) RETURNING id_factura`,
+      [customer.id_cliente, input.branchId, `WEB-${Date.now()}`, total]
+    );
+    const invoiceId = Number(invoiceResult.rows[0].id_factura);
+    for (const item of items) {
+      for (const lot of item.lots) {
+        await client.query(`INSERT INTO Detalle_Facturas (id_factura, id_lote, cantidad_vendida, precio_venta_aplicado, subtotal) VALUES ($1, $2, $3, $4, $5)`, [invoiceId, lot.id, lot.quantity, lot.price, lot.quantity * lot.price]);
+      }
+    }
+    await client.query('COMMIT');
+    return { order: { id: invoiceId, code: `WEB-${String(invoiceId).padStart(6, '0')}`, total, deliveryMode: input.deliveryMode, status: 'AWAITING_PAYMENT', paymentStatus: 'PENDING' }, customer, items: items.map((item) => ({ product: { id: Number(item.product.id_producto), name: String(item.product.nombre_producto), description: `${String(item.product.marca)} ${String(item.product.presentacion)}`, price: item.subtotal / item.quantity }, quantity: item.quantity, subtotal: item.subtotal })) };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function registerDatabasePayment(invoiceId: number, transactionId: string, amount: number) {
+  const database = requirePool();
+  const method = await database.query(`INSERT INTO MetodosPago (nombre_metodo) VALUES ('Stripe') ON CONFLICT DO NOTHING RETURNING id_metodo_pago`);
+  let methodId = method.rows[0]?.id_metodo_pago;
+  if (!methodId) methodId = (await database.query(`SELECT id_metodo_pago FROM MetodosPago WHERE LOWER(nombre_metodo) = 'stripe' LIMIT 1`)).rows[0]?.id_metodo_pago;
+  await database.query(`INSERT INTO Pagos (id_factura, id_metodo_pago, transaccion_pasarela_id, monto_pagado) VALUES ($1, $2, $3, $4)`, [invoiceId, methodId, transactionId, amount]);
 }
 
 export async function initializeDatabase() {
