@@ -1,0 +1,9 @@
+node_modules
+/dist
+/backend/dist
+/frontend/dist
+/backend/data/dev-store.json
+.env
+.env.*
+.DS_Store
+coverage

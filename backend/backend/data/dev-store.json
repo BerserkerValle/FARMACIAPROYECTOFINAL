@@ -1,0 +1,609 @@
+{
+  "branches": [
+    {
+      "id": 1,
+      "name": "Antigua Central",
+      "city": "Antigua Guatemala",
+      "address": "7a Avenida Norte 12"
+    },
+    {
+      "id": 2,
+      "name": "Ciudad Vieja",
+      "city": "Ciudad Vieja",
+      "address": "5a Calle Oriente 8"
+    },
+    {
+      "id": 3,
+      "name": "Jocotenango",
+      "city": "Jocotenango",
+      "address": "Avenida Central 14"
+    },
+    {
+      "id": 4,
+      "name": "Pastores",
+      "city": "Pastores",
+      "address": "Calzada Principal 22"
+    },
+    {
+      "id": 5,
+      "name": "San Lucas",
+      "city": "San Lucas Sacatepéquez",
+      "address": "Ruta Interamericana Km 28"
+    },
+    {
+      "id": 6,
+      "name": "Santa María",
+      "city": "Santa María de Jesús",
+      "address": "Zona 1, Calle Real"
+    },
+    {
+      "id": 7,
+      "name": "Dueñas",
+      "city": "Dueñas",
+      "address": "Entrada principal lote 3"
+    }
+  ],
+  "categories": [
+    {
+      "id": 1,
+      "name": "Medicamentos",
+      "parentId": null
+    },
+    {
+      "id": 2,
+      "name": "Analgésicos",
+      "parentId": 1
+    },
+    {
+      "id": 3,
+      "name": "Antibióticos",
+      "parentId": 1
+    },
+    {
+      "id": 4,
+      "name": "Línea Pediátrica",
+      "parentId": 1
+    },
+    {
+      "id": 5,
+      "name": "Controlados",
+      "parentId": 1
+    }
+  ],
+  "products": [
+    {
+      "id": 1,
+      "sku": "SKU-AMOX-500",
+      "name": "Amoxicilina Clavulanato 500mg",
+      "categoryId": 3,
+      "brand": "Genfar",
+      "laboratory": "Laboratorios Genfar",
+      "presentation": "Caja x 14 tabletas",
+      "unitMeasure": "tableta",
+      "sanitaryRegistry": "MSPAS-2026-8841",
+      "requiresPrescription": true,
+      "active": true,
+      "description": "Antibiótico de amplio espectro con control sanitario.",
+      "price": 145,
+      "cost": 97,
+      "imageUrl": "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": 2,
+      "sku": "SKU-ACETA-500",
+      "name": "Acetaminofén Genfar 500mg",
+      "categoryId": 2,
+      "brand": "Genfar",
+      "laboratory": "Laboratorios Genfar",
+      "presentation": "Caja x 10 tabletas",
+      "unitMeasure": "tableta",
+      "sanitaryRegistry": "MSPAS-2026-4410",
+      "requiresPrescription": false,
+      "active": true,
+      "description": "Analgésico y antipirético de alta rotación.",
+      "price": 30,
+      "cost": 18,
+      "imageUrl": "https://images.unsplash.com/photo-1584017911766-d451b3d0e843?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": 3,
+      "sku": "SKU-IBUP-400",
+      "name": "Ibuprofeno 400mg",
+      "categoryId": 2,
+      "brand": "MK",
+      "laboratory": "Laboratorios MK",
+      "presentation": "Caja x 20 tabletas",
+      "unitMeasure": "tableta",
+      "sanitaryRegistry": "MSPAS-2025-3320",
+      "requiresPrescription": false,
+      "active": true,
+      "description": "Anti-inflamatorio para venta libre.",
+      "price": 28,
+      "cost": 12,
+      "imageUrl": "https://images.unsplash.com/photo-1471864190281-a93a3070b6de?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": 4,
+      "sku": "SKU-JARABE-120",
+      "name": "Jarabe Pediátrico Multivitamínico",
+      "categoryId": 4,
+      "brand": "PediaLife",
+      "laboratory": "PediaLife S.A.",
+      "presentation": "Frasco x 120 ml",
+      "unitMeasure": "frasco",
+      "sanitaryRegistry": "MSPAS-2026-9912",
+      "requiresPrescription": false,
+      "active": true,
+      "description": "Suplemento infantil de rotación media.",
+      "price": 48,
+      "cost": 26,
+      "imageUrl": "https://images.unsplash.com/photo-1577401239170-897942555fb3?auto=format&fit=crop&w=600&q=80"
+    }
+  ],
+  "suppliers": [
+    {
+      "id": 1,
+      "name": "Laboratorios Genfar",
+      "nit": "5489321-4",
+      "email": "compras@genfar.com",
+      "phone": "2299-0011",
+      "address": "Zona 10, Ciudad de Guatemala",
+      "active": true
+    },
+    {
+      "id": 2,
+      "name": "Laboratorios MK",
+      "nit": "1458992-7",
+      "email": "ventas@mk.com",
+      "phone": "2233-7788",
+      "address": "Zona 4, Ciudad de Guatemala",
+      "active": true
+    },
+    {
+      "id": 3,
+      "name": "PediaLife S.A.",
+      "nit": "7744211-3",
+      "email": "pedidos@pedialife.com",
+      "phone": "2255-8811",
+      "address": "Mixco, Guatemala",
+      "active": true
+    }
+  ],
+  "lots": [
+    {
+      "id": 1,
+      "productId": 1,
+      "branchId": 1,
+      "supplierId": 1,
+      "batchCode": "LOT-2026-A4",
+      "expirationDate": "2027-01-15",
+      "productionDate": "2025-12-10",
+      "costPrice": 97,
+      "salePrice": 145,
+      "quantityAvailable": 7
+    },
+    {
+      "id": 2,
+      "productId": 2,
+      "branchId": 1,
+      "supplierId": 2,
+      "batchCode": "LOT-2026-B1",
+      "expirationDate": "2026-11-10",
+      "productionDate": "2026-02-01",
+      "costPrice": 18,
+      "salePrice": 30,
+      "quantityAvailable": 59
+    },
+    {
+      "id": 3,
+      "productId": 3,
+      "branchId": 1,
+      "supplierId": 2,
+      "batchCode": "LOT-2026-B7",
+      "expirationDate": "2027-03-20",
+      "productionDate": "2026-01-12",
+      "costPrice": 12,
+      "salePrice": 28,
+      "quantityAvailable": 25
+    },
+    {
+      "id": 4,
+      "productId": 4,
+      "branchId": 1,
+      "supplierId": 3,
+      "batchCode": "LOT-2026-C3",
+      "expirationDate": "2026-12-15",
+      "productionDate": "2026-03-05",
+      "costPrice": 26,
+      "salePrice": 48,
+      "quantityAvailable": 18
+    },
+    {
+      "id": 5,
+      "productId": 2,
+      "branchId": 2,
+      "supplierId": 2,
+      "batchCode": "LOT-2026-B2",
+      "expirationDate": "2026-10-10",
+      "productionDate": "2026-02-18",
+      "costPrice": 18,
+      "salePrice": 30,
+      "quantityAvailable": 28
+    },
+    {
+      "id": 6,
+      "productId": 1,
+      "branchId": 2,
+      "supplierId": 1,
+      "batchCode": "LOT-2026-A5",
+      "expirationDate": "2026-12-20",
+      "productionDate": "2025-11-15",
+      "costPrice": 97,
+      "salePrice": 145,
+      "quantityAvailable": 5
+    },
+    {
+      "id": 7,
+      "productId": 3,
+      "branchId": 3,
+      "supplierId": 2,
+      "batchCode": "LOT-2026-B8",
+      "expirationDate": "2027-02-11",
+      "productionDate": "2026-01-21",
+      "costPrice": 12,
+      "salePrice": 28,
+      "quantityAvailable": 14
+    },
+    {
+      "id": 8,
+      "productId": 4,
+      "branchId": 4,
+      "supplierId": 3,
+      "batchCode": "LOT-2026-C4",
+      "expirationDate": "2026-09-30",
+      "productionDate": "2026-02-22",
+      "costPrice": 26,
+      "salePrice": 48,
+      "quantityAvailable": 6
+    }
+  ],
+  "customers": [
+    {
+      "id": 1,
+      "name": "Kevin Leonardo Cay Cay",
+      "nit": "4893877-1",
+      "email": "kevincay590@gmail.com",
+      "phone": "48938771",
+      "createdAt": "2026-08-18T17:07:17.450Z",
+      "updatedAt": "2026-09-02T04:39:42.103Z"
+    }
+  ],
+  "employees": [
+    {
+      "id": 1,
+      "fullName": "Admin Central",
+      "email": "admin@derkas.com",
+      "password": "Admin123*",
+      "role": "Administrador",
+      "branchId": null,
+      "supervisorId": null,
+      "active": true
+    },
+    {
+      "id": 2,
+      "fullName": "Gerente General",
+      "email": "gerente@derkas.com",
+      "password": "Gerente123*",
+      "role": "Gerente",
+      "branchId": null,
+      "supervisorId": 1,
+      "active": true
+    },
+    {
+      "id": 3,
+      "fullName": "Cajero Vendedor 01",
+      "email": "cajero1@derkas.com",
+      "password": "Caja123*",
+      "role": "Cajero",
+      "branchId": 1,
+      "supervisorId": 2,
+      "active": true
+    },
+    {
+      "id": 4,
+      "fullName": "Bodeguero Antigua",
+      "email": "bodega1@derkas.com",
+      "password": "Bodega123*",
+      "role": "Bodeguero",
+      "branchId": 1,
+      "supervisorId": 2,
+      "active": true
+    },
+    {
+      "id": 5,
+      "fullName": "Repartidor Antigua 01",
+      "email": "rider1@derkas.com",
+      "password": "Ruta123*",
+      "role": "Repartidor",
+      "branchId": 1,
+      "supervisorId": 2,
+      "active": true
+    },
+    {
+      "id": 6,
+      "fullName": "Proveedor Genfar",
+      "email": "proveedor@genfar.com",
+      "password": "Proveedor123*",
+      "role": "Proveedor",
+      "branchId": null,
+      "supervisorId": null,
+      "active": true
+    }
+  ],
+  "orders": [
+    {
+      "id": 1,
+      "code": "DK-00001",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": 1,
+      "deliveryMode": "DELIVERY",
+      "address": "3a Calle Oriente No. 15, Antigua Guatemala",
+      "status": "DELIVERED",
+      "paymentStatus": "PAID",
+      "requiresPrescription": true,
+      "prescriptionWebUrl": "http://localhost:4000/uploads/6384246a7fd013810200c881c2962cb7",
+      "prescriptionDeliveryUrl": null,
+      "total": 290,
+      "createdAt": "2026-08-18T17:54:19.248Z",
+      "paidAt": "2026-08-18T17:54:19.248Z",
+      "releasedAt": "2026-08-18T17:55:57.791Z"
+    },
+    {
+      "id": 2,
+      "code": "DK-00002",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": 1,
+      "deliveryMode": "DELIVERY",
+      "address": "3a Calle Oriente No. 15, Antigua Guatemala",
+      "status": "DELIVERED",
+      "paymentStatus": "PAID",
+      "requiresPrescription": true,
+      "prescriptionWebUrl": "http://localhost:4000/uploads/9e2f5c01e74044a8eefbfd13a9f43c40",
+      "prescriptionDeliveryUrl": null,
+      "total": 145,
+      "createdAt": "2026-08-19T02:15:53.691Z",
+      "paidAt": "2026-08-19T02:15:53.692Z",
+      "releasedAt": "2026-08-23T19:29:25.975Z"
+    },
+    {
+      "id": 3,
+      "code": "DK-00003",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": 1,
+      "deliveryMode": "DELIVERY",
+      "address": "3a Calle Oriente No. 15, Antigua Guatemala",
+      "status": "DELIVERED",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 30,
+      "createdAt": "2026-08-23T20:01:13.277Z",
+      "paidAt": "2026-08-23T20:01:13.277Z",
+      "releasedAt": "2026-09-02T04:40:04.911Z"
+    },
+    {
+      "id": 4,
+      "code": "DK-00004",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": 1,
+      "deliveryMode": "DELIVERY",
+      "address": "3a Calle Oriente No. 15, Antigua Guatemala",
+      "status": "DELIVERED",
+      "paymentStatus": "PAID",
+      "requiresPrescription": true,
+      "prescriptionWebUrl": "http://localhost:4000/uploads/rx-1788323919227-866880974.jpg",
+      "prescriptionDeliveryUrl": null,
+      "total": 290,
+      "createdAt": "2026-09-02T04:38:39.258Z",
+      "paidAt": "2026-09-02T04:38:39.259Z",
+      "releasedAt": "2026-09-02T04:40:05.663Z"
+    },
+    {
+      "id": 5,
+      "code": "DK-00005",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": 1,
+      "deliveryMode": "DELIVERY",
+      "address": "3a Calle Oriente No. 15, Antigua Guatemala",
+      "status": "DELIVERED",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 140,
+      "createdAt": "2026-09-02T04:39:42.103Z",
+      "paidAt": "2026-09-02T04:39:42.103Z",
+      "releasedAt": "2026-09-02T04:40:06.309Z"
+    }
+  ],
+  "orderItems": [
+    {
+      "id": 1,
+      "orderId": 1,
+      "productId": 1,
+      "quantity": 2,
+      "unitPrice": 145,
+      "subtotal": 290,
+      "assignedLotIds": [
+        1
+      ]
+    },
+    {
+      "id": 2,
+      "orderId": 2,
+      "productId": 1,
+      "quantity": 1,
+      "unitPrice": 145,
+      "subtotal": 145,
+      "assignedLotIds": [
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "orderId": 3,
+      "productId": 2,
+      "quantity": 1,
+      "unitPrice": 30,
+      "subtotal": 30,
+      "assignedLotIds": [
+        2
+      ]
+    },
+    {
+      "id": 4,
+      "orderId": 4,
+      "productId": 1,
+      "quantity": 2,
+      "unitPrice": 145,
+      "subtotal": 290,
+      "assignedLotIds": [
+        1
+      ]
+    },
+    {
+      "id": 5,
+      "orderId": 5,
+      "productId": 3,
+      "quantity": 5,
+      "unitPrice": 28,
+      "subtotal": 140,
+      "assignedLotIds": [
+        3
+      ]
+    }
+  ],
+  "payments": [
+    {
+      "id": 1,
+      "orderId": 1,
+      "provider": "demo",
+      "transactionId": "demo-1",
+      "amount": 290,
+      "status": "PAID",
+      "createdAt": "2026-08-18T17:54:19.248Z"
+    },
+    {
+      "id": 2,
+      "orderId": 2,
+      "provider": "demo",
+      "transactionId": "demo-2",
+      "amount": 145,
+      "status": "PAID",
+      "createdAt": "2026-08-19T02:15:53.692Z"
+    },
+    {
+      "id": 3,
+      "orderId": 3,
+      "provider": "demo",
+      "transactionId": "demo-3",
+      "amount": 30,
+      "status": "PAID",
+      "createdAt": "2026-08-23T20:01:13.277Z"
+    },
+    {
+      "id": 4,
+      "orderId": 4,
+      "provider": "demo",
+      "transactionId": "demo-4",
+      "amount": 290,
+      "status": "PAID",
+      "createdAt": "2026-09-02T04:38:39.259Z"
+    },
+    {
+      "id": 5,
+      "orderId": 5,
+      "provider": "demo",
+      "transactionId": "demo-5",
+      "amount": 140,
+      "status": "PAID",
+      "createdAt": "2026-09-02T04:39:42.103Z"
+    }
+  ],
+  "invoices": [
+    {
+      "id": 1,
+      "orderId": 1,
+      "invoiceNumber": "FAC-000001",
+      "satCorrelative": "SAT-00000001",
+      "issuedAt": "2026-08-18T17:54:19.248Z",
+      "total": 290
+    },
+    {
+      "id": 2,
+      "orderId": 2,
+      "invoiceNumber": "FAC-000002",
+      "satCorrelative": "SAT-00000002",
+      "issuedAt": "2026-08-19T02:15:53.692Z",
+      "total": 145
+    },
+    {
+      "id": 3,
+      "orderId": 3,
+      "invoiceNumber": "FAC-000003",
+      "satCorrelative": "SAT-00000003",
+      "issuedAt": "2026-08-23T20:01:13.277Z",
+      "total": 30
+    },
+    {
+      "id": 4,
+      "orderId": 4,
+      "invoiceNumber": "FAC-000004",
+      "satCorrelative": "SAT-00000004",
+      "issuedAt": "2026-09-02T04:38:39.259Z",
+      "total": 290
+    },
+    {
+      "id": 5,
+      "orderId": 5,
+      "invoiceNumber": "FAC-000005",
+      "satCorrelative": "SAT-00000005",
+      "issuedAt": "2026-09-02T04:39:42.103Z",
+      "total": 140
+    }
+  ],
+  "returns": [],
+  "crosschecks": [
+    {
+      "id": 1,
+      "orderId": 1,
+      "reviewerEmployeeId": 2,
+      "approved": true,
+      "notes": "Receta validada y archivada",
+      "createdAt": "2026-08-18T17:56:33.954Z"
+    }
+  ],
+  "counters": {
+    "customer": 1,
+    "employee": 6,
+    "order": 5,
+    "orderItem": 5,
+    "payment": 5,
+    "invoice": 5,
+    "return": 0,
+    "crosscheck": 1,
+    "lot": 8,
+    "product": 4
+  }
+}
