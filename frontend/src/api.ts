@@ -6,7 +6,7 @@ function normalizeApiUrl(value: string | undefined) {
 }
 
 export const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL) ||
-  (import.meta.env.DEV ? 'http://localhost:4000' : '');
+  (import.meta.env.DEV ? 'http://localhost:4000' : 'https://farmaciaproyectofinalweb.onrender.com');
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
   const headers = new Headers(options.headers ?? {});
