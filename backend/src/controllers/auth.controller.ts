@@ -1,12 +1,8 @@
 import type { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { signEmployeeToken } from '../middleware/auth.js';
+import { databaseEnabled, findDatabaseEmployeeByEmail } from '../db.js';
 import { store } from '../store.js';
-
-function secret() {
-  return process.env.JWT_SECRET?.trim() || 'derkas-dev-secret';
-}
 
 const loginSchema = z.object({
   email: z.string().email().optional(),
@@ -18,21 +14,28 @@ const loginSchema = z.object({
   { message: 'Correo y contraseña son obligatorios' }
 );
 
-export function login(req: Request, res: Response) {
+export async function login(req: Request, res: Response) {
   const payload = loginSchema.parse(req.body);
   const email = payload.email ?? payload.correo_corporativo!;
   const password = payload.password ?? payload.contrasena!;
-  const employee = store.findEmployeeByCredentials(email, password);
+  const databaseEmployee = databaseEnabled ? await findDatabaseEmployeeByEmail(email) : null;
+  const employee = databaseEmployee ?? store.findEmployeeByCredentials(email, password);
   if (!employee) {
     return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
   }
-  const token = signEmployeeToken(employee.id);
+  if (databaseEmployee) {
+    const validPassword = databaseEmployee.password.startsWith('$2')
+      ? await bcrypt.compare(password, databaseEmployee.password)
+      : password === databaseEmployee.password;
+    if (!validPassword) {
+      return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
+    }
+  }
   return res.json({
     success: true,
     data: {
-      token,
       employee: {
-        id: employee.id,
+        employeeId: 'employeeId' in employee ? employee.employeeId : employee.id,
         fullName: employee.fullName,
         email: employee.email,
         role: employee.role,

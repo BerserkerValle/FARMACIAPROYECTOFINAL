@@ -8,7 +8,7 @@ Proyecto fullstack para farmacia con backend en Express/TypeScript y frontend en
 - Panel de bodega
 - Panel de repartidor
 - Consola gerencial y administrativa
-- JWT para accesos internos
+- Acceso interno por correo y contraseña contra `Empleados`
 - Persistencia PostgreSQL para Render cuando existe `DATABASE_URL` o `PGHOST`/`PGUSER`/`PGPASSWORD`/`PGDATABASE`
 
 ## Ejecutar
@@ -18,7 +18,6 @@ Proyecto fullstack para farmacia con backend en Express/TypeScript y frontend en
 
 ## Variables de entorno backend
 - `PORT=4000`
-- `JWT_SECRET=...`
 - `DATABASE_URL=postgresql://...` (preferida en Render; no la subas al repositorio)
 - Alternativa: `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSL=require`
 - `STRIPE_SECRET_KEY=...`
@@ -35,7 +34,7 @@ Proyecto fullstack para farmacia con backend en Express/TypeScript y frontend en
 2. Configura `PORT` con el puerto asignado por Render, `JWT_SECRET` con un secreto nuevo y las variables PostgreSQL del panel de Render.
 3. Crea un Static Site para `frontend` usando `npm install && npm run build --workspace frontend`, publicando `frontend/dist`.
 4. Define `VITE_API_URL` con la URL pública del Web Service del backend y `APP_BASE_URL` con la URL pública del frontend.
-5. La primera ejecución crea automáticamente la tabla `pharmacy_state` y carga los datos iniciales si la base está vacía.
+5. La primera ejecución crea automáticamente la tabla `pharmacy_state` como respaldo de desarrollo. Para el acceso interno se consulta directamente la tabla `Empleados` del esquema PostgreSQL.
 
 No incluyas credenciales de PostgreSQL en archivos `.env` versionados, capturas, frontend ni código fuente. Como las credenciales fueron compartidas en este chat, conviene regenerar la contraseña desde Render antes de producción.
 
@@ -51,4 +50,4 @@ Todas las respuestas usan `{ success, data }`. Las rutas internas requieren `Aut
 | Bodega | `/api/warehouse/lots`, `/products`, `/categories`, `/suppliers` | `/receive`, `/products`, `/products/upload-image` | `/products/:id` | `/products/:id` |
 | Administración | `/api/admin/dashboard`, `/reports`, `/employees`, `/branches`, `/categories`, `/suppliers`, `/products` | CRUD de empleados, sucursales, categorías, proveedores y productos; `/orders/:id/crosscheck`, `/orders/:id/returns` | CRUD de empleados, sucursales, categorías, proveedores y productos | CRUD de empleados, sucursales, categorías, proveedores y productos |
 
-La persistencia de Render se inicializa automáticamente en PostgreSQL mediante la tabla `pharmacy_state`, que conserva los modelos de dominio en JSONB. Es una estrategia de despliegue funcional para esta versión; si se requiere reporting SQL avanzado, el siguiente paso es migrar cada entidad a tablas relacionales separadas.
+El acceso interno no usa JWT: el backend valida `correo_corporativo` y `contrasena` en `Empleados`, y las rutas internas reciben `X-Employee-Id` después del login. La persistencia de Render usa las tablas reales del esquema para autenticación.

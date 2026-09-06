@@ -11,7 +11,7 @@ export const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL) ||
 export async function apiRequest<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
   const headers = new Headers(options.headers ?? {});
   if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
+    headers.set('X-Employee-Id', token);
   }
   if (!(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');

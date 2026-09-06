@@ -69,7 +69,8 @@ function money(value: number) {
 }
 
 function readToken() {
-  return localStorage.getItem('derkas.token');
+  const sessionId = localStorage.getItem('derkas.token');
+  return sessionId && /^\d+$/.test(sessionId) ? sessionId : null;
 }
 
 function readProfile() {
@@ -1267,11 +1268,11 @@ function LoginPage({ onLogin, onSuccess }: { onLogin: (token: string, profile: E
 
   async function submit() {
     try {
-      const result = await apiRequest<{ token: string; employee: EmployeeProfile }>('/api/auth/login', {
+      const result = await apiRequest<{ employee: EmployeeProfile }>('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ correo_corporativo: email, contrasena: password })
       });
-      onLogin(result.token, result.employee);
+      onLogin(String(result.employee.employeeId), result.employee);
       onSuccess();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'No se pudo iniciar sesión');

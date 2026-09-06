@@ -1,38 +1,25 @@
 import type { NextFunction, Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
+import { databaseEnabled, findDatabaseEmployeeById } from '../db.js';
 import { store } from '../store.js';
 
-interface JwtPayload {
-  employeeId: number;
-  role: string;
-  branchId: number | null;
-  fullName: string;
-  email: string;
-}
-
-function secret() {
-  return process.env.JWT_SECRET?.trim() || 'derkas-dev-secret';
-}
-
-export function authenticate(req: Request, res: Response, next: NextFunction) {
-  const token = req.header('authorization')?.replace('Bearer ', '').trim();
-  if (!token) {
-    return res.status(401).json({ success: false, message: 'Falta token JWT' });
+export async function authenticate(req: Request, res: Response, next: NextFunction) {
+  const employeeId = Number(req.header('x-employee-id'));
+  if (!Number.isInteger(employeeId) || employeeId <= 0) {
+    return res.status(401).json({ success: false, message: 'Falta la sesión del empleado' });
   }
 
-  try {
-    const payload = jwt.verify(token, secret()) as JwtPayload;
-    req.user = {
-      employeeId: payload.employeeId,
-      role: payload.role as never,
-      branchId: payload.branchId,
-      fullName: payload.fullName,
-      email: payload.email
-    };
-    return next();
-  } catch {
-    return res.status(401).json({ success: false, message: 'Token inválido o expirado' });
+  const employee = databaseEnabled ? await findDatabaseEmployeeById(employeeId) : store.getEmployeeById(employeeId);
+  if (!employee) {
+    return res.status(401).json({ success: false, message: 'Empleado no encontrado o inactivo' });
   }
+  req.user = {
+    employeeId: 'employeeId' in employee ? employee.employeeId : employee.id,
+    role: employee.role,
+    branchId: employee.branchId,
+    fullName: employee.fullName,
+    email: employee.email
+  };
+  return next();
 }
 
 export function authorize(...roles: string[]) {
@@ -45,22 +32,4 @@ export function authorize(...roles: string[]) {
     }
     return next();
   };
-}
-
-export function signEmployeeToken(employeeId: number) {
-  const employee = store.getEmployeeById(employeeId);
-  if (!employee) {
-    throw new Error('Empleado no encontrado');
-  }
-  return jwt.sign(
-    {
-      employeeId: employee.id,
-      role: employee.role,
-      branchId: employee.branchId,
-      fullName: employee.fullName,
-      email: employee.email
-    },
-    secret(),
-    { expiresIn: '8h' }
-  );
 }
