@@ -65,53 +65,86 @@ export async function catalog(req: Request, res: Response) {
 }
 
 export async function checkout(req: Request, res: Response) {
-  const payload = checkoutSchema.parse(req.body);
-  const created = store.createWebCheckout(payload);
-  const stripe = stripeClient();
+  try {
+    const payload = checkoutSchema.parse(req.body);
+    const created = store.createWebCheckout(payload);
+    const stripe = stripeClient();
 
-  if (!stripe) {
-    const paidOrder = store.registerPayment(created.order.id, 'demo', `demo-${created.order.id}`);
+    if (!stripe) {
+      const paidOrder = store.registerPayment(created.order.id, 'demo', `demo-${created.order.id}`);
+      return res.json({
+        success: true,
+        data: {
+          order: paidOrder,
+          paymentUrl: `${process.env.APP_BASE_URL?.trim() || 'http://localhost:5173'}/?payment=success&order=${created.order.code}`,
+          mode: 'demo'
+        }
+      });
+    }
+
+    const appUrl = process.env.APP_BASE_URL?.trim() || 'http://localhost:5173';
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer_email: created.customer.email,
+      metadata: {
+        orderId: String(created.order.id),
+        orderCode: created.order.code
+      },
+      line_items: created.items.map((item) => ({
+        quantity: item.quantity,
+        price_data: {
+          currency: process.env.STRIPE_CURRENCY?.trim().toLowerCase() || 'gtq',
+          unit_amount: Math.round(item.product.price * 100),
+          product_data: {
+            name: item.product.name,
+            description: item.product.description
+          }
+        }
+      })),
+      success_url: `${appUrl}/?payment=success&order=${created.order.code}`,
+      cancel_url: `${appUrl}/?payment=cancelled&order=${created.order.code}`
+    });
+
     return res.json({
       success: true,
       data: {
-        order: paidOrder,
-        paymentUrl: `${process.env.APP_BASE_URL?.trim() || 'http://localhost:5173'}/checkout/success/${created.order.code}`,
-        mode: 'demo'
+        order: created.order,
+        customer: created.customer,
+        paymentUrl: session.url,
+        mode: 'stripe'
       }
     });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo iniciar el pago con Stripe';
+    return res.status(400).json({ success: false, message });
+  }
+}
+
+export async function stripeWebhook(req: Request, res: Response) {
+  const stripe = stripeClient();
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+  if (!stripe || !webhookSecret) {
+    return res.status(503).json({ success: false, message: 'Stripe Webhook no está configurado' });
   }
 
-  const session = await stripe.checkout.sessions.create({
-    mode: 'payment',
-    customer_email: created.customer.email,
-    metadata: {
-      orderId: String(created.order.id),
-      orderCode: created.order.code
-    },
-    line_items: created.items.map((item) => ({
-      quantity: item.quantity,
-      price_data: {
-        currency: 'gtq',
-        unit_amount: Math.round(item.product.price * 100),
-        product_data: {
-          name: item.product.name,
-          description: item.product.description
-        }
-      }
-    })),
-    success_url: `${apiBaseUrl(req)}/api/public/orders/${created.order.id}`,
-    cancel_url: `${process.env.APP_BASE_URL?.trim() || 'http://localhost:5173'}/checkout/cancelada`
-  });
-
-  return res.json({
-    success: true,
-    data: {
-      order: created.order,
-      customer: created.customer,
-      paymentUrl: session.url,
-      mode: 'stripe'
+  try {
+    const signature = req.header('stripe-signature');
+    if (!signature || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ success: false, message: 'Firma de Stripe ausente' });
     }
-  });
+    const event = stripe.webhooks.constructEvent(req.body, signature, webhookSecret);
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const orderId = Number(session.metadata?.orderId);
+      if (Number.isInteger(orderId) && orderId > 0) {
+        store.registerPayment(orderId, 'stripe', session.payment_intent ? String(session.payment_intent) : session.id);
+      }
+    }
+    return res.json({ received: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Webhook inválido';
+    return res.status(400).json({ success: false, message });
+  }
 }
 
 export function getOrder(req: Request, res: Response) {

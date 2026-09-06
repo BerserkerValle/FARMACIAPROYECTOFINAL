@@ -14,6 +14,7 @@ import { errorHandler, notFound } from './middleware/error.js';
 import { getUploadsDir } from './utils.js';
 import { databaseHealth } from './db.js';
 import { store } from './store.js';
+import { stripeWebhook } from './controllers/public.controller.js';
 
 dotenv.config();
 
@@ -26,7 +27,7 @@ app.use(helmet({
 app.use(cors({ origin: true, credentials: true }));
 app.use(morgan('dev'));
 app.use('/uploads', express.static(uploadsDir));
-app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), stripeWebhook);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 

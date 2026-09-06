@@ -29,6 +29,27 @@ Proyecto fullstack para farmacia con backend en Express/TypeScript y frontend en
 ## Variables de entorno frontend
 - `VITE_API_URL=http://localhost:4000`
 
+## Stripe Checkout
+
+El checkout crea una orden pendiente y, cuando existe `STRIPE_SECRET_KEY`, crea una sesión real de Stripe Checkout. El navegador se redirige automáticamente a `paymentUrl`.
+
+Configura en Render:
+
+```env
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+APP_BASE_URL=https://farmaciaproyectofinalf.onrender.com
+API_BASE_URL=https://farmaciaproyectofinalweb.onrender.com
+```
+
+En Stripe crea un webhook con esta URL:
+
+```text
+https://farmaciaproyectofinalweb.onrender.com/api/webhooks/stripe
+```
+
+Selecciona el evento `checkout.session.completed`. El webhook valida la firma y marca el pedido como pagado. No pongas claves `sk_` ni `whsec_` en el frontend ni en el repositorio.
+
 ## Despliegue en Render
 
 1. Crea un Web Service para `backend` usando `npm install && npm run build --workspace backend` y `npm run start --workspace backend`.

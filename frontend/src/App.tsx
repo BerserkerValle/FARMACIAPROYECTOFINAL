@@ -2692,6 +2692,10 @@ export default function App() {
       );
 
       setPaymentUrl(result.paymentUrl);
+      if (result.mode === 'stripe' && result.paymentUrl) {
+        window.location.assign(result.paymentUrl);
+        return;
+      }
       setStatus(`¡Orden ${result.order.code} generada exitosamente!`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'No se pudo procesar el pago');
