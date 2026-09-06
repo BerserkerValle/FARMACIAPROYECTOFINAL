@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { z } from 'zod';
+import { databaseEnabled, getDatabaseBranches, getDatabaseCategories, getDatabaseSuppliers, searchDatabaseCatalog } from '../db.js';
 import { store } from '../store.js';
 
 const checkoutSchema = z.object({
@@ -41,22 +42,26 @@ function stripeClient() {
   });
 }
 
-export function branches(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getBranches() });
+export async function branches(_req: Request, res: Response) {
+  const data = databaseEnabled ? await getDatabaseBranches() : store.getBranches();
+  return res.json({ success: true, data: data ?? [] });
 }
 
-export function categories(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getCategories() });
+export async function categories(_req: Request, res: Response) {
+  const data = databaseEnabled ? await getDatabaseCategories() : store.getCategories();
+  return res.json({ success: true, data: data ?? [] });
 }
 
-export function suppliers(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getSuppliers() });
+export async function suppliers(_req: Request, res: Response) {
+  const data = databaseEnabled ? await getDatabaseSuppliers() : store.getSuppliers();
+  return res.json({ success: true, data: data ?? [] });
 }
 
-export function catalog(req: Request, res: Response) {
+export async function catalog(req: Request, res: Response) {
   const query = String(req.query.q ?? '').trim();
   const branchId = req.query.branchId ? Number(req.query.branchId) : undefined;
-  return res.json({ success: true, data: store.searchCatalog(query, branchId) });
+  const data = databaseEnabled ? await searchDatabaseCatalog(query, branchId) : store.searchCatalog(query, branchId);
+  return res.json({ success: true, data: data ?? [] });
 }
 
 export async function checkout(req: Request, res: Response) {

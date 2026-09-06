@@ -81,6 +81,93 @@ export async function findDatabaseEmployeeById(id: number) {
   return result.rows[0] ? mapEmployee(result.rows[0]) : null;
 }
 
+export async function getDatabaseBranches() {
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT id_sucursal AS id,
+            nombre_sucursal AS name,
+            ''::text AS city,
+            ''::text AS address
+       FROM Sucursales
+      ORDER BY id_sucursal`
+  );
+  return result.rows;
+}
+
+export async function getDatabaseCategories() {
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT id_categoria AS id,
+            nombre_categoria AS name,
+            id_categoria_padre AS "parentId"
+       FROM Categorias
+      ORDER BY id_categoria`
+  );
+  return result.rows;
+}
+
+export async function getDatabaseSuppliers() {
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT id_proveedor AS id,
+            nombre_proveedor AS name,
+            nit,
+            correo AS email,
+            telefono AS phone,
+            direccion AS address,
+            LOWER(COALESCE(estado, 'Activo')) = 'activo' AS active
+       FROM Proveedores
+      ORDER BY id_proveedor`
+  );
+  return result.rows;
+}
+
+export async function searchDatabaseCatalog(query: string, branchId?: number) {
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT p.id_producto AS id,
+            p.sku_codigo AS sku,
+            p.nombre_producto AS name,
+            p.id_categoria AS "categoryId",
+            COALESCE(p.marca, '') AS brand,
+            COALESCE(p.laboratorio, '') AS laboratory,
+            COALESCE(p.presentacion, '') AS presentation,
+            COALESCE(p.unidad_medida, '') AS "unitMeasure",
+            COALESCE(p.registro_sanitario, '') AS "sanitaryRegistry",
+            COALESCE(p.requiere_receta, false) AS "requiresPrescription",
+            true AS active,
+            ''::text AS description,
+            COALESCE(MIN(l.precio_venta), 0) AS price,
+            COALESCE(SUM(ss.cantidad_disponible), 0) AS stock,
+            COALESCE(
+              jsonb_agg(
+                DISTINCT jsonb_build_object(
+                  'id', l.id_lote,
+                  'batchCode', l.codigo_lote_fabricante,
+                  'expirationDate', l.fecha_vencimiento,
+                  'quantityAvailable', ss.cantidad_disponible,
+                  'branchId', ss.id_sucursal,
+                  'salePrice', l.precio_venta
+                )
+              ) FILTER (WHERE l.id_lote IS NOT NULL AND ss.id_sucursal IS NOT NULL),
+              '[]'::jsonb
+            ) AS lots
+       FROM Productos p
+       LEFT JOIN Lotes l ON l.id_producto = p.id_producto
+       LEFT JOIN Stock_Sucursal ss
+         ON ss.id_lote = l.id_lote
+        AND ($2::integer IS NULL OR ss.id_sucursal = $2)
+      WHERE ($1 = '' OR p.nombre_producto ILIKE '%' || $1 || '%'
+                    OR p.sku_codigo ILIKE '%' || $1 || '%'
+                    OR COALESCE(p.marca, '') ILIKE '%' || $1 || '%'
+                    OR COALESCE(p.laboratorio, '') ILIKE '%' || $1 || '%')
+      GROUP BY p.id_producto
+      ORDER BY p.nombre_producto`,
+    [query.trim(), branchId ?? null]
+  );
+  return result.rows;
+}
+
 export async function initializeDatabase() {
   if (!pool) return;
   await pool.query(`
