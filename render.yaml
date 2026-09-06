@@ -30,4 +30,7 @@ services:
     staticPublishPath: frontend/dist
     envVars:
       - key: VITE_API_URL
-        sync: false
+        fromService:
+          type: web
+          name: derkas-farmacia-api
+          property: host

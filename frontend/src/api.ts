@@ -1,4 +1,12 @@
-export const API_URL = import.meta.env.VITE_API_URL?.trim() || 'http://localhost:4000';
+function normalizeApiUrl(value: string | undefined) {
+  const url = value?.trim();
+  if (!url) return '';
+  const withProtocol = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+  return withProtocol.endsWith('/') ? withProtocol.slice(0, -1) : withProtocol;
+}
+
+export const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL) ||
+  (import.meta.env.DEV ? 'http://localhost:4000' : '');
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
   const headers = new Headers(options.headers ?? {});
@@ -9,10 +17,19 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}, tok
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers
+    });
+  } catch {
+    throw new Error(
+      API_URL
+        ? `No se pudo conectar con la API en ${API_URL}. Revisa que el backend esté activo y que VITE_API_URL sea correcto.`
+        : 'La API no está configurada. Define VITE_API_URL en las variables del frontend y vuelve a desplegar.'
+    );
+  }
 
   const payload = await response.json().catch(() => ({ success: false, message: 'Respuesta inválida' }));
   if (!response.ok || payload.success === false) {
