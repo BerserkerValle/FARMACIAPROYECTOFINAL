@@ -47,6 +47,124 @@ export interface DatabaseEmployee {
   supervisorId: number | null;
 }
 
+export interface DatabaseCustomerAccount {
+  customerId: number;
+  fullName: string;
+  email: string;
+  phone: string;
+  nit: string;
+  address: string;
+}
+
+function mapCustomerAccount(row: Record<string, unknown>): DatabaseCustomerAccount {
+  return {
+    customerId: Number(row.id),
+    fullName: String(row.full_name),
+    email: String(row.email),
+    phone: String(row.phone ?? ''),
+    nit: String(row.nit ?? '')
+    ,address: String(row.address ?? '')
+  };
+}
+
+export async function createDatabaseCustomerAccount(input: { fullName: string; email: string; password: string; phone: string; nit: string }) {
+  const database = requirePool();
+  const result = await database.query(
+    `INSERT INTO pharmacy_customer_accounts (full_name, email, password_hash, phone, nit, address)
+     VALUES ($1, LOWER($2), $3, $4, $5, $6)
+     RETURNING id, full_name, email, phone, nit, address`,
+    [input.fullName.trim(), input.email.trim(), bcrypt.hashSync(input.password, 12), input.phone.trim(), input.nit.trim(), '']
+  );
+  return mapCustomerAccount(result.rows[0]);
+}
+
+export async function findDatabaseCustomerAccount(email: string, password?: string) {
+  const database = requirePool();
+  const result = await database.query(
+    'SELECT id, full_name, email, password_hash, phone, nit, address FROM pharmacy_customer_accounts WHERE LOWER(email) = LOWER($1) LIMIT 1',
+    [email.trim()]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  if (password !== undefined && !(await bcrypt.compare(password, String(row.password_hash)))) return null;
+  return mapCustomerAccount(row);
+}
+
+export async function findDatabaseCustomerAccountById(id: number) {
+  const database = requirePool();
+  const result = await database.query('SELECT id, full_name, email, phone, nit, address FROM pharmacy_customer_accounts WHERE id = $1', [id]);
+  return result.rows[0] ? mapCustomerAccount(result.rows[0]) : null;
+}
+
+export async function updateDatabaseCustomerAccount(id: number, input: { fullName: string; phone: string; nit: string; address: string }) {
+  const database = requirePool();
+  const result = await database.query(
+    `UPDATE pharmacy_customer_accounts
+        SET full_name = $2, phone = $3, nit = $4, address = $5
+      WHERE id = $1
+      RETURNING id, full_name, email, phone, nit, address`,
+    [id, input.fullName.trim(), input.phone.trim(), input.nit.trim(), input.address.trim()]
+  );
+  if (!result.rows[0]) throw new Error('Cuenta de cliente no encontrada');
+  return mapCustomerAccount(result.rows[0]);
+}
+
+export async function createDatabaseDeliveryTracking(input: { orderCode: string; customerId: number | null; branchId: number; address: string; latitude: number | null; longitude: number | null; deliveryMode: string }) {
+  if (input.deliveryMode !== 'DELIVERY') return;
+  const database = requirePool();
+  await database.query(
+    `INSERT INTO pharmacy_delivery_tracking (order_code, customer_account_id, branch_id, address, latitude, longitude, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'CREATED')
+     ON CONFLICT (order_code) DO UPDATE SET customer_account_id = EXCLUDED.customer_account_id, address = EXCLUDED.address, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude`,
+    [input.orderCode, input.customerId, input.branchId, input.address, input.latitude, input.longitude]
+  );
+}
+
+export async function listDatabaseCustomerOrders(customerId: number) {
+  const database = requirePool();
+  const result = await database.query(
+    `SELECT order_code AS code, branch_id AS "branchId", address, status,
+            latitude, longitude, updated_at AS "updatedAt"
+       FROM pharmacy_delivery_tracking
+      WHERE customer_account_id = $1
+      ORDER BY created_at DESC`,
+    [customerId]
+  );
+  return result.rows;
+}
+
+export async function listDatabaseDeliveries(branchId: number) {
+  const database = requirePool();
+  const result = await database.query(
+    `SELECT id, order_code AS code, branch_id AS "branchId", address, status,
+            latitude, longitude, customer_account_id AS "customerId",
+            updated_at AS "updatedAt"
+       FROM pharmacy_delivery_tracking
+      WHERE branch_id = $1 AND status <> 'DELIVERED'
+      ORDER BY created_at`,
+    [branchId]
+  );
+  return result.rows;
+}
+
+export async function updateDatabaseDeliveryTracking(id: number, input: { status?: string; latitude?: number; longitude?: number }) {
+  const database = requirePool();
+  const fields: Array<[string, unknown]> = [];
+  if (input.status !== undefined) fields.push(['status', input.status]);
+  if (input.latitude !== undefined) fields.push(['latitude', input.latitude]);
+  if (input.longitude !== undefined) fields.push(['longitude', input.longitude]);
+  if (fields.length === 0) throw new Error('No hay datos de seguimiento para actualizar');
+  const assignments = fields.map(([column], index) => `${column} = $${index + 2}`).join(', ');
+  const result = await database.query(
+    `UPDATE pharmacy_delivery_tracking SET ${assignments}, updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, order_code AS code, branch_id AS "branchId", address, status, latitude, longitude, updated_at AS "updatedAt"`,
+    [id, ...fields.map(([, value]) => value)]
+  );
+  if (!result.rows[0]) throw new Error('Seguimiento no encontrado');
+  return result.rows[0];
+}
+
 function mapEmployee(row: Record<string, unknown>): DatabaseEmployee {
   return {
     employeeId: Number(row.id_empleado),
@@ -204,6 +322,53 @@ export async function getDatabaseCategories() {
       ORDER BY id_categoria`
   );
   return result.rows;
+}
+
+export async function createDatabaseCategory(input: { name: string; parentId: number | null }) {
+  const database = requirePool();
+  const result = await database.query(
+    `INSERT INTO Categorias (nombre_categoria, id_categoria_padre)
+     VALUES ($1, $2)
+     RETURNING id_categoria AS id, nombre_categoria AS name, id_categoria_padre AS "parentId"`,
+    [input.name.trim(), input.parentId]
+  );
+  return result.rows[0];
+}
+
+export async function updateDatabaseCategory(id: number, input: { name?: string; parentId?: number | null }) {
+  const database = requirePool();
+  const fields: Array<[string, unknown]> = [];
+  if (input.name !== undefined) fields.push(['nombre_categoria', input.name.trim()]);
+  if (input.parentId !== undefined) fields.push(['id_categoria_padre', input.parentId]);
+  if (fields.length === 0) throw new Error('No hay campos para actualizar');
+  const assignments = fields.map(([column], index) => `${column} = $${index + 2}`).join(', ');
+  const result = await database.query(
+    `UPDATE Categorias
+        SET ${assignments}
+      WHERE id_categoria = $1
+      RETURNING id_categoria AS id, nombre_categoria AS name, id_categoria_padre AS "parentId"`,
+    [id, ...fields.map(([, value]) => value)]
+  );
+  if (!result.rows[0]) throw new Error(`Categoría #${id} no encontrada`);
+  return result.rows[0];
+}
+
+export async function deleteDatabaseCategory(id: number) {
+  const database = requirePool();
+  const used = await database.query(
+    `SELECT EXISTS (SELECT 1 FROM Productos WHERE id_categoria = $1) AS product_used,
+            EXISTS (SELECT 1 FROM Categorias WHERE id_categoria_padre = $1) AS child_used`,
+    [id]
+  );
+  if (used.rows[0]?.product_used || used.rows[0]?.child_used) {
+    throw new Error('No se puede eliminar una categoría que tiene productos o subcategorías');
+  }
+  const result = await database.query(
+    'DELETE FROM Categorias WHERE id_categoria = $1 RETURNING id_categoria AS id, nombre_categoria AS name, id_categoria_padre AS "parentId"',
+    [id]
+  );
+  if (!result.rows[0]) throw new Error(`Categoría #${id} no encontrada`);
+  return result.rows[0];
 }
 
 export async function getDatabaseSuppliers() {
@@ -553,6 +718,32 @@ export async function initializeDatabase() {
     )
   `);
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS imagen_url TEXT');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pharmacy_customer_accounts (
+      id BIGSERIAL PRIMARY KEY,
+      full_name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      nit TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS pharmacy_delivery_tracking (
+      id BIGSERIAL PRIMARY KEY,
+      order_code TEXT NOT NULL UNIQUE,
+      customer_account_id BIGINT REFERENCES pharmacy_customer_accounts(id),
+      branch_id INTEGER NOT NULL,
+      address TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'CREATED',
+      latitude NUMERIC,
+      longitude NUMERIC,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query('ALTER TABLE pharmacy_customer_accounts ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT \'\'');
+  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS latitude NUMERIC');
+  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS longitude NUMERIC');
 }
 
 export async function loadDatabaseSnapshot() {

@@ -30,6 +30,12 @@ app.use('/uploads', express.static(uploadsDir));
 app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), stripeWebhook);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 app.get('/health', async (_req, res, next) => {
   try {

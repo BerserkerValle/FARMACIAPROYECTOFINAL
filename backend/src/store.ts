@@ -485,13 +485,86 @@ export class PharmacyStore {
     return this.snapshot.customers.find((customer) => customer.nit === nit || customer.email === email) ?? null;
   }
 
+  registerCustomerAccount(input: { fullName: string; email: string; password: string; phone: string; nit: string }) {
+    this.assertReady();
+    const existing = this.snapshot.customers.find((customer) => customer.email.toLowerCase() === input.email.toLowerCase());
+    if (existing) {
+      if (existing.passwordHash) throw new Error('El correo ya está registrado');
+      existing.name = input.fullName.trim();
+      existing.phone = input.phone.trim();
+      existing.nit = input.nit.trim();
+      existing.passwordHash = bcrypt.hashSync(input.password, 12);
+      existing.updatedAt = now();
+      this.touch();
+      return clone(existing);
+    }
+    const customer: Customer = {
+      id: ++this.snapshot.counters.customer,
+      name: input.fullName.trim(),
+      nit: input.nit.trim(),
+      email: input.email.trim().toLowerCase(),
+      phone: input.phone.trim(),
+      passwordHash: bcrypt.hashSync(input.password, 12),
+      createdAt: now(),
+      updatedAt: now()
+    };
+    this.snapshot.customers.push(customer);
+    this.touch();
+    return clone(customer);
+  }
+
+  findCustomerAccount(email: string, password?: string) {
+    this.assertReady();
+    const customer = this.snapshot.customers.find((candidate) => candidate.email.toLowerCase() === email.toLowerCase() && candidate.passwordHash);
+    if (!customer) return null;
+    if (password !== undefined && !bcrypt.compareSync(password, customer.passwordHash!)) return null;
+    return clone(customer);
+  }
+
+  listCustomerOrders(customerId: number) {
+    this.assertReady();
+    const account = this.snapshot.customers.find((customer) => customer.id === customerId && customer.passwordHash);
+    const customerIds = account
+      ? this.snapshot.customers.filter((customer) => customer.email.toLowerCase() === account.email.toLowerCase()).map((customer) => customer.id)
+      : [customerId];
+    return this.snapshot.orders
+      .filter((order) => {
+        if (!customerIds.includes(order.customerId) || order.deliveryMode !== 'DELIVERY') return false;
+        if (order.customerEmail) return order.customerEmail.toLowerCase() === account?.email.toLowerCase();
+        return Boolean(account?.address && order.address?.trim().toLowerCase() === account.address.trim().toLowerCase());
+      })
+      .map((order) => {
+        const orderCustomer = this.snapshot.customers.find((candidate) => candidate.id === order.customerId);
+        return { code: order.code, branchId: order.branchId, address: order.address, status: order.status, latitude: orderCustomer?.deliveryLatitude ?? null, longitude: orderCustomer?.deliveryLongitude ?? null, updatedAt: order.releasedAt ?? order.createdAt };
+      });
+  }
+
+  updateDelivery(orderId: number, input: { status?: string; latitude?: number; longitude?: number }) {
+    this.assertReady();
+    const order = this.snapshot.orders.find((candidate) => candidate.id === orderId);
+    if (!order) throw new Error('Entrega no encontrada');
+    if (input.status) order.status = input.status as Order['status'];
+    const orderCustomer = this.snapshot.customers.find((candidate) => candidate.id === order.customerId);
+    const matchingCustomers = orderCustomer
+      ? this.snapshot.customers.filter((candidate) => candidate.email.toLowerCase() === orderCustomer.email.toLowerCase())
+      : [];
+    for (const customer of matchingCustomers) {
+      if (input.latitude !== undefined) customer.deliveryLatitude = input.latitude;
+      if (input.longitude !== undefined) customer.deliveryLongitude = input.longitude;
+      customer.updatedAt = now();
+    }
+    this.touch();
+    return clone({ id: order.id, code: order.code, status: order.status, latitude: orderCustomer?.deliveryLatitude ?? null, longitude: orderCustomer?.deliveryLongitude ?? null });
+  }
+
   upsertCustomer(input: PublicCheckoutInput['customer']) {
     this.assertReady();
-    const existing = this.snapshot.customers.find((customer) => customer.nit === input.nit || customer.email === input.email);
+    const normalizedEmail = input.email.trim().toLowerCase();
+    const existing = this.snapshot.customers.find((customer) => customer.email.trim().toLowerCase() === normalizedEmail);
     if (existing) {
       existing.name = input.name;
       existing.phone = input.phone;
-      existing.email = input.email;
+      existing.email = normalizedEmail;
       existing.updatedAt = now();
       this.touch();
       return clone(existing);
@@ -577,9 +650,12 @@ export class PharmacyStore {
       source: 'WEB',
       branchId: input.branchId,
       customerId: customer.id,
+      customerEmail: input.customer.email.trim().toLowerCase(),
       employeeId: null,
       deliveryMode: input.deliveryMode,
       address: input.address ?? null,
+      deliveryLatitude: input.deliveryLatitude ?? null,
+      deliveryLongitude: input.deliveryLongitude ?? null,
       status: 'AWAITING_PAYMENT',
       paymentStatus: 'PENDING',
       requiresPrescription,
@@ -679,7 +755,7 @@ export class PharmacyStore {
     return clone({ order, customer, items });
   }
 
-  registerPayment(orderId: number, provider: 'stripe' | 'paypal' | 'demo', transactionId: string) {
+  registerPayment(orderId: number, provider: 'stripe' | 'paypal' | 'demo' | 'cash', transactionId: string) {
     this.assertReady();
     const order = this.snapshot.orders.find((candidate) => candidate.id === orderId);
     if (!order) {

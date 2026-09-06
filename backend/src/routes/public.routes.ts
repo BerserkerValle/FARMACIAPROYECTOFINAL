@@ -6,6 +6,7 @@ import {
   catalog,
   categories,
   checkout,
+  customerOrders,
   getOrder,
   suppliers,
   trackOrder,
@@ -33,6 +34,7 @@ publicRouter.get('/categories', categories);
 publicRouter.get('/suppliers', suppliers);
 publicRouter.get('/catalog', catalog);
 publicRouter.post('/checkout', checkout);
+publicRouter.get('/customer/orders', customerOrders);
 publicRouter.get('/orders/:id', getOrder);
 publicRouter.get('/orders/code/:code', trackOrder);
 publicRouter.post('/prescriptions/temp', upload.single('recipe'), uploadTemporaryPrescription);

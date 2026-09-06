@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { createDatabaseEmployee, databaseEnabled, deactivateDatabaseEmployee, listDatabaseEmployees, updateDatabaseEmployee } from '../db.js';
+import { createDatabaseCategory, createDatabaseEmployee, databaseEnabled, deleteDatabaseCategory, deactivateDatabaseEmployee, listDatabaseEmployees, updateDatabaseCategory, updateDatabaseEmployee } from '../db.js';
 import { store } from '../store.js';
 
 const employeeSchema = z.object({
@@ -68,16 +68,36 @@ export function categories(_req: Request, res: Response) {
   return res.json({ success: true, data: store.getCategories() });
 }
 
-export function createCategory(req: Request, res: Response) {
-  return res.status(201).json({ success: true, data: store.addCategory(categorySchema.parse(req.body)) });
+export async function createCategory(req: Request, res: Response) {
+  try {
+    const payload = categorySchema.parse(req.body);
+    const data = databaseEnabled ? await createDatabaseCategory(payload) : store.addCategory(payload);
+    return res.status(201).json({ success: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo crear la categoría';
+    return res.status(400).json({ success: false, message });
+  }
 }
 
-export function updateCategory(req: Request, res: Response) {
-  return res.json({ success: true, data: store.updateCategory(Number(req.params.id), categorySchema.partial().parse(req.body)) });
+export async function updateCategory(req: Request, res: Response) {
+  try {
+    const payload = categorySchema.partial().parse(req.body);
+    const data = databaseEnabled ? await updateDatabaseCategory(Number(req.params.id), payload) : store.updateCategory(Number(req.params.id), payload);
+    return res.json({ success: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo actualizar la categoría';
+    return res.status(400).json({ success: false, message });
+  }
 }
 
-export function deleteCategory(req: Request, res: Response) {
-  return res.json({ success: true, data: store.deleteCategory(Number(req.params.id)) });
+export async function deleteCategory(req: Request, res: Response) {
+  try {
+    const data = databaseEnabled ? await deleteDatabaseCategory(Number(req.params.id)) : store.deleteCategory(Number(req.params.id));
+    return res.json({ success: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo eliminar la categoría';
+    return res.status(400).json({ success: false, message });
+  }
 }
 
 export function suppliers(_req: Request, res: Response) {

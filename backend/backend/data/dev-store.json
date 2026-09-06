@@ -138,6 +138,23 @@
       "price": 48,
       "cost": 26,
       "imageUrl": "https://images.unsplash.com/photo-1577401239170-897942555fb3?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": 5,
+      "sku": "SKU-AM-ENS220",
+      "name": "Ensure Vainilla 220ml Líquido",
+      "categoryId": 0,
+      "brand": "Ensure",
+      "laboratory": "Abbott Nutrition",
+      "presentation": "Botella x 220 ml",
+      "unitMeasure": "ml",
+      "sanitaryRegistry": "MSPAS-2026-134",
+      "requiresPrescription": false,
+      "active": true,
+      "description": "Suplemento multivitamínico y multimineral para adultos. Ayuda a complementar la ingesta diaria de vitaminas y minerales y contribuye al mantenimiento de las funciones normales del organismo.",
+      "price": 34.97,
+      "cost": 24.48,
+      "imageUrl": "http://localhost:4000/uploads/med-1788668731569-522802968.png"
     }
   ],
   "suppliers": [
@@ -192,7 +209,7 @@
       "productionDate": "2026-02-01",
       "costPrice": 18,
       "salePrice": 30,
-      "quantityAvailable": 59
+      "quantityAvailable": 57
     },
     {
       "id": 3,
@@ -204,7 +221,7 @@
       "productionDate": "2026-01-12",
       "costPrice": 12,
       "salePrice": 28,
-      "quantityAvailable": 25
+      "quantityAvailable": 23
     },
     {
       "id": 4,
@@ -216,7 +233,7 @@
       "productionDate": "2026-03-05",
       "costPrice": 26,
       "salePrice": 48,
-      "quantityAvailable": 18
+      "quantityAvailable": 9
     },
     {
       "id": 5,
@@ -265,6 +282,30 @@
       "costPrice": 26,
       "salePrice": 48,
       "quantityAvailable": 6
+    },
+    {
+      "id": 9,
+      "productId": 5,
+      "branchId": 2,
+      "supplierId": 2,
+      "batchCode": "LOT-2026-ENS220",
+      "expirationDate": "2027-10-31",
+      "productionDate": "2026-08-01",
+      "costPrice": 24.48,
+      "salePrice": 34.97,
+      "quantityAvailable": 25
+    },
+    {
+      "id": 10,
+      "productId": 5,
+      "branchId": 1,
+      "supplierId": 1,
+      "batchCode": "LOT-2026-N1",
+      "expirationDate": "2027-06-30",
+      "productionDate": "2026-08-01",
+      "costPrice": 24.48,
+      "salePrice": 34.97,
+      "quantityAvailable": 21
     }
   ],
   "customers": [
@@ -275,7 +316,43 @@
       "email": "kevincay590@gmail.com",
       "phone": "48938771",
       "createdAt": "2026-08-18T17:07:17.450Z",
-      "updatedAt": "2026-09-02T04:39:42.103Z"
+      "updatedAt": "2026-09-06T06:39:57.837Z",
+      "deliveryLatitude": 14.580457036051394,
+      "deliveryLongitude": -90.7281535581773
+    },
+    {
+      "id": 2,
+      "name": "prueba3",
+      "nit": "C/F",
+      "email": "prueba3@gmail.com",
+      "phone": "03124578",
+      "passwordHash": "$2b$12$CqSwtWmzUzJLB5lMQ5E8a.w.37cbULHE4Q2BjbpRQUw9m8jp58cj.",
+      "createdAt": "2026-09-06T05:54:41.507Z",
+      "updatedAt": "2026-09-06T06:51:37.107Z",
+      "deliveryLatitude": 14.579869572301874,
+      "deliveryLongitude": -90.72809817578504
+    },
+    {
+      "id": 3,
+      "name": "hola",
+      "nit": "C/F",
+      "email": "hola@gmail.com",
+      "phone": "12345678",
+      "passwordHash": "$2b$12$BEFKxvXsTPRYT6MCoJk2/eYU2hv6eHBFj1mhhPfKK5ji5VdBl5Tzi",
+      "createdAt": "2026-09-06T05:59:27.721Z",
+      "updatedAt": "2026-09-06T06:42:50.424Z",
+      "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez"
+    },
+    {
+      "id": 4,
+      "name": "prueba3",
+      "nit": "C/F",
+      "email": "prueba3@gmail.com",
+      "phone": "03124578",
+      "passwordHash": "$2b$12$g6.zSi80iMZY0xbf1qeSoOa2k2/J5qizPXohci.cuiWFieYa/yrz.",
+      "createdAt": "2026-09-06T06:50:08.834Z",
+      "updatedAt": "2026-09-06T06:51:25.498Z",
+      "address": "3a Calle 2-45, Zona 1, Ciudad Vieja, Sacatepéquez."
     }
   ],
   "employees": [
@@ -435,6 +512,253 @@
       "createdAt": "2026-09-02T04:39:42.103Z",
       "paidAt": "2026-09-02T04:39:42.103Z",
       "releasedAt": "2026-09-02T04:40:06.309Z"
+    },
+    {
+      "id": 6,
+      "code": "DK-00006",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "3a Calle Oriente No. 15, Antigua Guatemala",
+      "status": "PACKING",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 104.91,
+      "createdAt": "2026-09-06T04:26:59.790Z",
+      "paidAt": "2026-09-06T04:26:59.790Z",
+      "releasedAt": null
+    },
+    {
+      "id": 7,
+      "code": "DK-00007",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "Calle Real de Jocotenango Sacatepequez, Casa #1-C",
+      "status": "PACKING",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 30,
+      "createdAt": "2026-09-06T05:21:13.774Z",
+      "paidAt": "2026-09-06T05:21:13.774Z",
+      "releasedAt": null
+    },
+    {
+      "id": 8,
+      "code": "DK-00008",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "Jardines de Parramos, San Luis Pueblo Nuevo",
+      "status": "PACKING",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 144,
+      "createdAt": "2026-09-06T05:26:19.958Z",
+      "paidAt": "2026-09-06T05:26:19.958Z",
+      "releasedAt": null
+    },
+    {
+      "id": 9,
+      "code": "DK-00009",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "Jardines de Parramos",
+      "status": "PACKING",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 144,
+      "createdAt": "2026-09-06T05:26:45.883Z",
+      "paidAt": "2026-09-06T05:26:45.883Z",
+      "releasedAt": null
+    },
+    {
+      "id": 10,
+      "code": "DK-00010",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "Parque Ecoturístico Cerro Niño, Aldea, Pastores",
+      "status": "PACKING",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 144,
+      "createdAt": "2026-09-06T05:27:47.873Z",
+      "paidAt": "2026-09-06T05:27:47.873Z",
+      "releasedAt": null
+    },
+    {
+      "id": 11,
+      "code": "DK-00011",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 2,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
+      "status": "IN_ROUTE",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 56,
+      "createdAt": "2026-09-06T05:56:07.267Z",
+      "paidAt": "2026-09-06T05:56:07.268Z",
+      "releasedAt": null
+    },
+    {
+      "id": 12,
+      "code": "DK-00012",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
+      "status": "IN_ROUTE",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 30,
+      "createdAt": "2026-09-06T06:00:20.917Z",
+      "paidAt": "2026-09-06T06:00:20.917Z",
+      "releasedAt": null
+    },
+    {
+      "id": 13,
+      "code": "DK-00013",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
+      "status": "IN_ROUTE",
+      "paymentStatus": "PENDING",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 60,
+      "createdAt": "2026-09-06T06:06:47.052Z",
+      "paidAt": null,
+      "releasedAt": null
+    },
+    {
+      "id": 14,
+      "code": "DK-00014",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
+      "status": "IN_ROUTE",
+      "paymentStatus": "PENDING",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 28,
+      "createdAt": "2026-09-06T06:09:46.813Z",
+      "paidAt": null,
+      "releasedAt": null
+    },
+    {
+      "id": 15,
+      "code": "DK-00015",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
+      "status": "IN_ROUTE",
+      "paymentStatus": "PENDING",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 48,
+      "createdAt": "2026-09-06T06:23:44.822Z",
+      "paidAt": null,
+      "releasedAt": null
+    },
+    {
+      "id": 16,
+      "code": "DK-00016",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 1,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
+      "status": "IN_ROUTE",
+      "paymentStatus": "PENDING",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 30,
+      "createdAt": "2026-09-06T06:39:21.904Z",
+      "paidAt": null,
+      "releasedAt": null
+    },
+    {
+      "id": 17,
+      "code": "DK-00017",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 2,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
+      "status": "AWAITING_PAYMENT",
+      "paymentStatus": "PENDING",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 58,
+      "createdAt": "2026-09-06T06:43:05.941Z",
+      "paidAt": null,
+      "releasedAt": null
+    },
+    {
+      "id": 18,
+      "code": "DK-00018",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 2,
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "3a Calle 2-45, Zona 1, Ciudad Vieja, Sacatepéquez.",
+      "status": "AWAITING_PAYMENT",
+      "paymentStatus": "PENDING",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 48,
+      "createdAt": "2026-09-06T06:51:37.107Z",
+      "paidAt": null,
+      "releasedAt": null
     }
   ],
   "orderItems": [
@@ -492,6 +816,146 @@
       "assignedLotIds": [
         3
       ]
+    },
+    {
+      "id": 6,
+      "orderId": 6,
+      "productId": 5,
+      "quantity": 3,
+      "unitPrice": 34.97,
+      "subtotal": 104.91,
+      "assignedLotIds": [
+        10
+      ]
+    },
+    {
+      "id": 7,
+      "orderId": 7,
+      "productId": 2,
+      "quantity": 1,
+      "unitPrice": 30,
+      "subtotal": 30,
+      "assignedLotIds": [
+        2
+      ]
+    },
+    {
+      "id": 8,
+      "orderId": 8,
+      "productId": 4,
+      "quantity": 3,
+      "unitPrice": 48,
+      "subtotal": 144,
+      "assignedLotIds": [
+        4
+      ]
+    },
+    {
+      "id": 9,
+      "orderId": 9,
+      "productId": 4,
+      "quantity": 3,
+      "unitPrice": 48,
+      "subtotal": 144,
+      "assignedLotIds": [
+        4
+      ]
+    },
+    {
+      "id": 10,
+      "orderId": 10,
+      "productId": 4,
+      "quantity": 3,
+      "unitPrice": 48,
+      "subtotal": 144,
+      "assignedLotIds": [
+        4
+      ]
+    },
+    {
+      "id": 11,
+      "orderId": 11,
+      "productId": 3,
+      "quantity": 2,
+      "unitPrice": 28,
+      "subtotal": 56,
+      "assignedLotIds": [
+        3
+      ]
+    },
+    {
+      "id": 12,
+      "orderId": 12,
+      "productId": 2,
+      "quantity": 1,
+      "unitPrice": 30,
+      "subtotal": 30,
+      "assignedLotIds": [
+        2
+      ]
+    },
+    {
+      "id": 13,
+      "orderId": 13,
+      "productId": 2,
+      "quantity": 2,
+      "unitPrice": 30,
+      "subtotal": 60,
+      "assignedLotIds": []
+    },
+    {
+      "id": 14,
+      "orderId": 14,
+      "productId": 3,
+      "quantity": 1,
+      "unitPrice": 28,
+      "subtotal": 28,
+      "assignedLotIds": []
+    },
+    {
+      "id": 15,
+      "orderId": 15,
+      "productId": 4,
+      "quantity": 1,
+      "unitPrice": 48,
+      "subtotal": 48,
+      "assignedLotIds": []
+    },
+    {
+      "id": 16,
+      "orderId": 16,
+      "productId": 2,
+      "quantity": 1,
+      "unitPrice": 30,
+      "subtotal": 30,
+      "assignedLotIds": []
+    },
+    {
+      "id": 17,
+      "orderId": 17,
+      "productId": 2,
+      "quantity": 1,
+      "unitPrice": 30,
+      "subtotal": 30,
+      "assignedLotIds": []
+    },
+    {
+      "id": 18,
+      "orderId": 17,
+      "productId": 3,
+      "quantity": 1,
+      "unitPrice": 28,
+      "subtotal": 28,
+      "assignedLotIds": []
+    },
+    {
+      "id": 19,
+      "orderId": 18,
+      "productId": 4,
+      "quantity": 1,
+      "unitPrice": 48,
+      "subtotal": 48,
+      "assignedLotIds": []
     }
   ],
   "payments": [
@@ -539,6 +1003,69 @@
       "amount": 140,
       "status": "PAID",
       "createdAt": "2026-09-02T04:39:42.103Z"
+    },
+    {
+      "id": 6,
+      "orderId": 6,
+      "provider": "demo",
+      "transactionId": "demo-6",
+      "amount": 104.91,
+      "status": "PAID",
+      "createdAt": "2026-09-06T04:26:59.790Z"
+    },
+    {
+      "id": 7,
+      "orderId": 7,
+      "provider": "demo",
+      "transactionId": "demo-7",
+      "amount": 30,
+      "status": "PAID",
+      "createdAt": "2026-09-06T05:21:13.774Z"
+    },
+    {
+      "id": 8,
+      "orderId": 8,
+      "provider": "demo",
+      "transactionId": "demo-8",
+      "amount": 144,
+      "status": "PAID",
+      "createdAt": "2026-09-06T05:26:19.958Z"
+    },
+    {
+      "id": 9,
+      "orderId": 9,
+      "provider": "demo",
+      "transactionId": "demo-9",
+      "amount": 144,
+      "status": "PAID",
+      "createdAt": "2026-09-06T05:26:45.883Z"
+    },
+    {
+      "id": 10,
+      "orderId": 10,
+      "provider": "demo",
+      "transactionId": "demo-10",
+      "amount": 144,
+      "status": "PAID",
+      "createdAt": "2026-09-06T05:27:47.873Z"
+    },
+    {
+      "id": 11,
+      "orderId": 11,
+      "provider": "demo",
+      "transactionId": "demo-11",
+      "amount": 56,
+      "status": "PAID",
+      "createdAt": "2026-09-06T05:56:07.268Z"
+    },
+    {
+      "id": 12,
+      "orderId": 12,
+      "provider": "demo",
+      "transactionId": "demo-12",
+      "amount": 30,
+      "status": "PAID",
+      "createdAt": "2026-09-06T06:00:20.917Z"
     }
   ],
   "invoices": [
@@ -581,6 +1108,62 @@
       "satCorrelative": "SAT-00000005",
       "issuedAt": "2026-09-02T04:39:42.103Z",
       "total": 140
+    },
+    {
+      "id": 6,
+      "orderId": 6,
+      "invoiceNumber": "FAC-000006",
+      "satCorrelative": "SAT-00000006",
+      "issuedAt": "2026-09-06T04:26:59.790Z",
+      "total": 104.91
+    },
+    {
+      "id": 7,
+      "orderId": 7,
+      "invoiceNumber": "FAC-000007",
+      "satCorrelative": "SAT-00000007",
+      "issuedAt": "2026-09-06T05:21:13.774Z",
+      "total": 30
+    },
+    {
+      "id": 8,
+      "orderId": 8,
+      "invoiceNumber": "FAC-000008",
+      "satCorrelative": "SAT-00000008",
+      "issuedAt": "2026-09-06T05:26:19.958Z",
+      "total": 144
+    },
+    {
+      "id": 9,
+      "orderId": 9,
+      "invoiceNumber": "FAC-000009",
+      "satCorrelative": "SAT-00000009",
+      "issuedAt": "2026-09-06T05:26:45.883Z",
+      "total": 144
+    },
+    {
+      "id": 10,
+      "orderId": 10,
+      "invoiceNumber": "FAC-000010",
+      "satCorrelative": "SAT-00000010",
+      "issuedAt": "2026-09-06T05:27:47.873Z",
+      "total": 144
+    },
+    {
+      "id": 11,
+      "orderId": 11,
+      "invoiceNumber": "FAC-000011",
+      "satCorrelative": "SAT-00000011",
+      "issuedAt": "2026-09-06T05:56:07.268Z",
+      "total": 56
+    },
+    {
+      "id": 12,
+      "orderId": 12,
+      "invoiceNumber": "FAC-000012",
+      "satCorrelative": "SAT-00000012",
+      "issuedAt": "2026-09-06T06:00:20.917Z",
+      "total": 30
     }
   ],
   "returns": [],
@@ -595,15 +1178,15 @@
     }
   ],
   "counters": {
-    "customer": 1,
+    "customer": 4,
     "employee": 6,
-    "order": 5,
-    "orderItem": 5,
-    "payment": 5,
-    "invoice": 5,
+    "order": 18,
+    "orderItem": 19,
+    "payment": 12,
+    "invoice": 12,
     "return": 0,
     "crosscheck": 1,
-    "lot": 8,
-    "product": 4
+    "lot": 10,
+    "product": 5
   }
 }

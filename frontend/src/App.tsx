@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
+import { useRef } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { apiRequest, uploadTemporaryPrescription, uploadPrescription, uploadProductImage } from './api';
 
-type Portal = 'public' | 'login' | 'pos' | 'warehouse' | 'delivery' | 'admin';
+type Portal = 'public' | 'login' | 'customer' | 'pos' | 'warehouse' | 'delivery' | 'admin';
 
 interface Branch {
   id: number;
@@ -53,6 +56,15 @@ interface EmployeeProfile {
   email: string;
 }
 
+interface CustomerAccount {
+  customerId: number;
+  fullName: string;
+  email: string;
+  phone: string;
+  nit: string;
+  address: string;
+}
+
 interface DashboardMetrics {
   salesToday: number;
   salesMonth: number;
@@ -102,7 +114,9 @@ function TopHeader({
   onNavigatePortal,
   token,
   profile,
-  onLogout
+  onLogout,
+  customer,
+  onCustomerLogout
 }: {
   branches: Branch[];
   branchId: number;
@@ -114,15 +128,26 @@ function TopHeader({
   token: string | null;
   profile: EmployeeProfile | null;
   onLogout: () => void;
+  customer: CustomerAccount | null;
+  onCustomerLogout: () => void;
 }) {
   return (
     <header className="top-header">
       <div className="header-inner">
         {/* Brand */}
         <div className="brand-link" onClick={() => onNavigatePortal('public')}>
-          <div className="brand-icon">
-            <span>+</span>
-          </div>
+          {token && profile ? (
+            <div className="brand-icon"><span>+</span></div>
+          ) : (
+            <button
+              type="button"
+              className="brand-icon brand-access-trigger"
+              onClick={(event) => { event.stopPropagation(); onNavigatePortal(activePortal === 'login' ? 'public' : 'login'); }}
+              title="Acceso Personal"
+            >
+              <span>+</span>
+            </button>
+          )}
           <div className="brand-info">
             <h1>DERKAS</h1>
             <p>Farmacia Digital</p>
@@ -205,19 +230,17 @@ function TopHeader({
                 <line x1="21" y1="12" x2="9" y2="12" />
               </svg>
             </button>
-          ) : (
-            <button
-              type="button"
-              className="portal-switch-btn"
-              onClick={() => onNavigatePortal(activePortal === 'login' ? 'public' : 'login')}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              <span>{activePortal === 'login' ? 'Volver a la Tienda' : 'Acceso Personal'}</span>
+          ) : null}
+          {!token || !profile ? (customer ? (
+            <button type="button" className="portal-switch-btn" onClick={() => onNavigatePortal('customer')} title="Ver mis pedidos y entregas">
+              <span>{customer.fullName.split(' ')[0]}</span>
+              <small>(Mis pedidos)</small>
             </button>
-          )}
+          ) : (
+            <button type="button" className="portal-switch-btn" onClick={() => onNavigatePortal('customer')}>
+              <span>Mi cuenta</span>
+            </button>
+          )) : null}
         </div>
       </div>
     </header>
@@ -260,7 +283,10 @@ function TopPaymentBar({
     email: string;
     phone: string;
     deliveryMode: 'DELIVERY' | 'PICKUP';
+    paymentMethod: 'STRIPE' | 'CASH';
     address: string;
+    deliveryLatitude: number | null;
+    deliveryLongitude: number | null;
   };
   onUpdateCheckout: (fields: Partial<typeof checkout>) => void;
   onSubmitPayment: () => void;
@@ -513,8 +539,43 @@ function TopPaymentBar({
                       onChange={(e) => onUpdateCheckout({ address: e.target.value })}
                       placeholder="Dirección exacta, zona, número de casa..."
                     />
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ marginTop: '0.5rem' }}
+                      onClick={() => {
+                        if (!navigator.geolocation) return;
+                        navigator.geolocation.getCurrentPosition(
+                          (position) => onUpdateCheckout({ deliveryLatitude: position.coords.latitude, deliveryLongitude: position.coords.longitude }),
+                          () => onUpdateCheckout({ deliveryLatitude: null, deliveryLongitude: null })
+                        );
+                      }}
+                    >
+                      {checkout.deliveryLatitude !== null ? 'Ubicación real guardada' : 'Usar mi ubicación actual'}
+                    </button>
+                    {checkout.deliveryLatitude !== null && <small style={{ display: 'block', marginTop: '0.35rem', color: 'var(--text-muted)' }}>Se enviará tu ubicación GPS para mayor precisión.</small>}
                   </div>
                 )}
+
+                <div className="form-field">
+                  <label>Método de pago</label>
+                  <div className="delivery-toggle-group">
+                    <button
+                      type="button"
+                      className={`delivery-toggle-btn ${checkout.paymentMethod === 'STRIPE' ? 'active' : ''}`}
+                      onClick={() => onUpdateCheckout({ paymentMethod: 'STRIPE' })}
+                    >
+                      💳 Pagar con Stripe
+                    </button>
+                    <button
+                      type="button"
+                      className={`delivery-toggle-btn ${checkout.paymentMethod === 'CASH' ? 'active' : ''}`}
+                      onClick={() => onUpdateCheckout({ paymentMethod: 'CASH' })}
+                    >
+                      💵 {checkout.deliveryMode === 'DELIVERY' ? 'Efectivo contra entrega' : 'Efectivo en sucursal'}
+                    </button>
+                  </div>
+                </div>
 
                 {/* Prescription Upload if needed */}
                 {hasPrescriptionItems && (
@@ -549,7 +610,7 @@ function TopPaymentBar({
                         <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
                         <line x1="1" y1="10" x2="23" y2="10" />
                       </svg>
-                      <span>PAGAR ORDEN {total > 0 ? `(${money(total)})` : ''}</span>
+                      <span>{checkout.paymentMethod === 'CASH' ? 'CONFIRMAR PEDIDO' : 'PAGAR ORDEN'} {total > 0 ? `(${money(total)})` : ''}</span>
                     </>
                   )}
                 </button>
@@ -1262,6 +1323,134 @@ function PublicCatalogView({
    INTERNAL PORTALS: LOGIN, POS, WAREHOUSE, DELIVERY, ADMIN
    ========================================================================= */
 
+function CustomerAuthPage({ onLogin }: { onLogin: (customer: CustomerAccount) => void }) {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [form, setForm] = useState({ fullName: '', email: '', password: '', phone: '', nit: '' });
+  const [status, setStatus] = useState('');
+
+  async function submit() {
+    try {
+      const path = mode === 'login' ? '/api/auth/customers/login' : '/api/auth/customers/register';
+      const result = await apiRequest<{ customer: CustomerAccount }>(path, {
+        method: 'POST',
+        body: JSON.stringify(mode === 'login'
+          ? { email: form.email, password: form.password }
+          : form)
+      });
+      onLogin(result.customer);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo completar la operación');
+    }
+  }
+
+  return (
+    <div className="auth-container">
+      <div className="auth-card-box">
+        <h2>{mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta de cliente'}</h2>
+        <p>Consulta tus pedidos y el avance de tus entregas.</p>
+        {mode === 'register' && <div className="form-field"><label>Nombre completo</label><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></div>}
+        <div className="form-field"><label>Correo electrónico</label><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+        <div className="form-field"><label>Contraseña</label><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
+        {mode === 'register' && <>
+          <div className="form-grid-2">
+            <div className="form-field"><label>Teléfono</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
+            <div className="form-field"><label>NIT o C/F</label><input value={form.nit} onChange={(e) => setForm({ ...form, nit: e.target.value })} /></div>
+          </div>
+        </>}
+        <button type="button" className="btn-primary" onClick={submit}>{mode === 'login' ? 'Entrar' : 'Crear cuenta'}</button>
+        <button type="button" className="btn-secondary" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setStatus(''); }}>
+          {mode === 'login' ? 'Crear una cuenta nueva' : 'Ya tengo una cuenta'}
+        </button>
+        {status && <div className="checkout-status-msg">{status}</div>}
+      </div>
+    </div>
+  );
+}
+
+function CustomerLiveMap({ latitude, longitude }: { latitude: number; longitude: number }) {
+  const mapElement = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!mapElement.current) return;
+    const map = L.map(mapElement.current).setView([latitude, longitude], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+    L.circleMarker([latitude, longitude], { radius: 9, color: '#1d4ed8', fillColor: '#3b82f6', fillOpacity: 1 }).addTo(map).bindPopup('Ubicación actual del repartidor').openPopup();
+    return () => map.remove();
+  }, [latitude, longitude]);
+
+  return <div ref={mapElement} style={{ width: '100%', height: '260px', borderRadius: '8px', overflow: 'hidden', marginTop: '0.75rem' }} />;
+}
+
+function CustomerOrdersPage({ customer, onUpdate, onLogout }: { customer: CustomerAccount; onUpdate: (customer: CustomerAccount) => void; onLogout: () => void }) {
+  const [orders, setOrders] = useState<any[]>([]);
+  const [status, setStatus] = useState('Cargando pedidos...');
+  const [form, setForm] = useState(customer);
+  const [editing, setEditing] = useState(false);
+
+  async function loadOrders() {
+    try {
+      const data = await apiRequest<any[]>('/api/public/customer/orders', { headers: { 'X-Customer-Id': String(customer.customerId) } });
+      setOrders(data);
+      setStatus(data.length ? '' : 'Aún no tienes pedidos de domicilio');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudieron cargar tus pedidos');
+    }
+  }
+
+  useEffect(() => {
+    loadOrders();
+    const timer = window.setInterval(loadOrders, 15000);
+    return () => window.clearInterval(timer);
+  }, [customer.customerId]);
+
+  async function saveProfile() {
+    try {
+      const result = await apiRequest<{ customer: CustomerAccount }>('/api/auth/customers/me', {
+        method: 'PUT',
+        headers: { 'X-Customer-Id': String(customer.customerId) },
+        body: JSON.stringify({ fullName: form.fullName, phone: form.phone, nit: form.nit, address: form.address })
+      });
+      onUpdate(result.customer);
+      setForm(result.customer);
+      setEditing(false);
+      setStatus('Datos actualizados correctamente.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudieron actualizar tus datos');
+    }
+  }
+
+  return (
+    <div className="internal-page-container">
+      <div className="panel-card">
+        <div className="panel-head">
+          <h2>Mis pedidos y entregas</h2>
+          <span className="pill-tag">Actualización automática</span>
+        </div>
+        <div className="panel-card" style={{ marginBottom: '1rem' }}>
+          <div className="panel-head"><h3>Mi información</h3><div style={{ display: 'flex', gap: '0.5rem' }}><button type="button" className="btn-secondary" onClick={() => setEditing(!editing)}>{editing ? 'Cancelar' : 'Editar datos'}</button><button type="button" className="btn-secondary" onClick={onLogout}>Cerrar sesión</button></div></div>
+          {editing ? (
+            <div className="form-grid-2">
+              <div className="form-field"><label>Nombre completo</label><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></div>
+              <div className="form-field"><label>Correo</label><input value={form.email} disabled /></div>
+              <div className="form-field"><label>Teléfono</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
+              <div className="form-field"><label>NIT o C/F</label><input value={form.nit} onChange={(e) => setForm({ ...form, nit: e.target.value })} /></div>
+              <div className="form-field" style={{ gridColumn: '1 / -1' }}><label>Dirección principal</label><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Calle, municipio, número de casa" /></div>
+              <button type="button" className="btn-primary" onClick={saveProfile}>Guardar datos</button>
+            </div>
+          ) : <p>{customer.fullName} · {customer.phone} · {customer.address || 'Sin dirección guardada'}</p>}
+        </div>
+        {status && <div className="checkout-status-msg">{status}</div>}
+        <div className="item-list-stack">
+          {orders.map((order) => <div key={order.code} className="compact-list-row">
+            <div><strong>{order.code}</strong><p>{order.address}</p><small>Estado: {order.status} · Última actualización: {new Date(order.updatedAt).toLocaleString('es-GT')}</small>{order.latitude && order.longitude && <CustomerLiveMap latitude={Number(order.latitude)} longitude={Number(order.longitude)} />}</div>
+            {order.latitude && order.longitude && <span className="pill-tag">Repartidor en ruta</span>}
+          </div>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LoginPage({ onLogin, onSuccess }: { onLogin: (token: string, profile: EmployeeProfile) => void; onSuccess: () => void }) {
   const [email, setEmail] = useState('admin@derkas.com');
   const [password, setPassword] = useState('Admin123*');
@@ -1482,6 +1671,10 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
   const [status, setStatus] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedProductForModal, setSelectedProductForModal] = useState<ProductCard | null>(null);
+  const [editingProduct, setEditingProduct] = useState<ProductCard | null>(null);
+  const [editForm, setEditForm] = useState<Partial<ProductCard>>({});
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
 
   // New Product Form State
   const [newProd, setNewProd] = useState({
@@ -1659,6 +1852,60 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
       setStatus(error instanceof Error ? error.message : 'Error al registrar lote');
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  function startEditingProduct(product: ProductCard) {
+    setEditingProduct(product);
+    setEditForm({ ...product });
+    setEditImageFile(null);
+    setEditImagePreview(product.imageUrl ?? null);
+  }
+
+  async function saveProductChanges() {
+    if (!editingProduct || !token) return;
+    try {
+      let imageUrl = editForm.imageUrl ?? null;
+      if (editImageFile) {
+        const uploadRes = await uploadProductImage(editImageFile, token);
+        imageUrl = uploadRes.url;
+      }
+      await apiRequest(`/api/warehouse/products/${editingProduct.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          sku: editForm.sku,
+          name: editForm.name,
+          categoryId: editForm.categoryId ?? null,
+          brand: editForm.brand,
+          laboratory: editForm.laboratory,
+          presentation: editForm.presentation,
+          unitMeasure: editForm.unitMeasure,
+          sanitaryRegistry: editForm.sanitaryRegistry,
+          requiresPrescription: editForm.requiresPrescription,
+          description: editForm.description,
+          price: Number(editForm.price),
+          cost: Number(editForm.cost),
+          imageUrl
+        })
+      }, token);
+      setStatus('Producto actualizado correctamente.');
+      setEditingProduct(null);
+      setEditImageFile(null);
+      setEditImagePreview(null);
+      await loadAllData();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo actualizar el producto');
+    }
+  }
+
+  async function removeProduct(product: ProductCard) {
+    if (!token || !window.confirm(`¿Deseas eliminar "${product.name}"?`)) return;
+    try {
+      await apiRequest(`/api/warehouse/products/${product.id}`, { method: 'DELETE' }, token);
+      setStatus('Producto eliminado del catálogo.');
+      await loadAllData();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo eliminar el producto');
     }
   }
 
@@ -2314,10 +2561,56 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                     <span className="product-price">{money(p.price)}</span>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Costo: {money(p.cost ?? 0)}</span>
                   </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.65rem' }} onClick={(e) => e.stopPropagation()}>
+                    <button type="button" className="btn-secondary" onClick={() => startEditingProduct(p)}>Editar</button>
+                    <button type="button" className="btn-secondary" onClick={() => removeProduct(p)}>Eliminar</button>
+                  </div>
                 </div>
               </article>
             ))}
           </div>
+
+          {editingProduct && (
+            <div className="modal-backdrop" onClick={() => setEditingProduct(null)}>
+              <div className="product-detail-modal" onClick={(e) => e.stopPropagation()}>
+                <button type="button" className="modal-close-btn" onClick={() => setEditingProduct(null)} title="Cerrar">✕</button>
+                <h2 className="modal-title">Editar medicamento</h2>
+                <div className="form-grid-2">
+                  {(['name', 'sku', 'brand', 'laboratory', 'presentation', 'unitMeasure', 'sanitaryRegistry'] as const).map((field) => (
+                    <div className="form-field" key={field}>
+                      <label>{field === 'name' ? 'Nombre' : field === 'sku' ? 'SKU' : field}</label>
+                      <input value={String(editForm[field] ?? '')} onChange={(e) => setEditForm({ ...editForm, [field]: e.target.value })} />
+                    </div>
+                  ))}
+                  <div className="form-field">
+                    <label>Categoría</label>
+                    <select value={editForm.categoryId ?? ''} onChange={(e) => setEditForm({ ...editForm, categoryId: e.target.value ? Number(e.target.value) : null })}>
+                      <option value="">Sin categoría</option>
+                      {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-field"><label>Precio</label><input type="number" min="0.01" step="0.01" value={Number(editForm.price ?? 0)} onChange={(e) => setEditForm({ ...editForm, price: Number(e.target.value) })} /></div>
+                  <div className="form-field"><label>Costo</label><input type="number" min="0.01" step="0.01" value={Number(editForm.cost ?? 0)} onChange={(e) => setEditForm({ ...editForm, cost: Number(e.target.value) })} /></div>
+                </div>
+                <div className="form-field"><label>Descripción</label><textarea rows={3} value={String(editForm.description ?? '')} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} /></div>
+                <label className="checkbox-inline-label"><input type="checkbox" checked={Boolean(editForm.requiresPrescription)} onChange={(e) => setEditForm({ ...editForm, requiresPrescription: e.target.checked })} /> Requiere receta</label>
+                <div className="form-field">
+                  <label>Fotografía del medicamento</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      setEditImageFile(file);
+                      setEditImagePreview(file ? URL.createObjectURL(file) : editingProduct.imageUrl ?? null);
+                    }}
+                  />
+                  {editImagePreview && <img src={editImagePreview} alt="Vista previa" className="image-preview-img" style={{ maxHeight: '160px', marginTop: '0.5rem' }} />}
+                </div>
+                <button type="button" className="btn-primary" onClick={saveProductChanges}>Guardar cambios</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2337,15 +2630,94 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
 }
 
 
+function RouteMap({ origin, destination }: { origin: string; destination: string }) {
+  const mapElement = useRef<HTMLDivElement | null>(null);
+  const [mapStatus, setMapStatus] = useState('Calculando ruta...');
+
+  useEffect(() => {
+    let map: L.Map | null = null;
+    let cancelled = false;
+
+    async function loadMap() {
+      try {
+        const geocode = async (address: string) => {
+          const cleanedAddress = address.replace(/\s+/g, ' ').trim();
+          const withoutHouseNumber = cleanedAddress
+            .replace(/,?\s*(casa|casa no\.?|#)\s*[^,]+/i, '')
+            .replace(/,\s*$/, '')
+            .trim();
+          const municipalityMatch = cleanedAddress.match(/(Jocotenango|Antigua Guatemala|Ciudad Vieja|Pastores|San Lucas Sacatepequez|Santa Maria de Jesus)/i);
+          const municipality = municipalityMatch?.[1] ?? 'Sacatepequez';
+          const street = withoutHouseNumber.split(',')[0].trim();
+          const queries = Array.from(new Set([
+            `${cleanedAddress}, Sacatepequez, Guatemala`,
+            `${withoutHouseNumber}, ${municipality}, Sacatepequez, Guatemala`,
+            `${street}, ${municipality}, Sacatepequez, Guatemala`,
+            `${municipality}, Sacatepequez, Guatemala`
+          ].filter(Boolean)));
+
+          for (const query of queries) {
+            const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=gt&q=${encodeURIComponent(query)}`);
+            if (!response.ok) continue;
+            const results = await response.json() as Array<{ lat: string; lon: string }>;
+            if (results[0]) {
+              return { lat: Number(results[0].lat), lon: Number(results[0].lon), approximate: query !== queries[0] };
+            }
+          }
+
+          throw new Error(`No se encontró una ubicación para: ${address}`);
+        };
+
+        const [start, end] = await Promise.all([geocode(`${origin}, Sacatepéquez, Guatemala`), geocode(`${destination}, Sacatepéquez, Guatemala`)]);
+        if (cancelled || !mapElement.current) return;
+
+        map = L.map(mapElement.current).setView([end.lat, end.lon], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+        L.circleMarker([start.lat, start.lon], { radius: 8, color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 1 }).addTo(map).bindPopup('Sucursal de salida');
+        L.circleMarker([end.lat, end.lon], { radius: 8, color: '#b91c1c', fillColor: '#ef4444', fillOpacity: 1 }).addTo(map).bindPopup(end.approximate ? 'Ubicación aproximada de entrega' : 'Dirección de entrega');
+
+        const routeResponse = await fetch(`https://router.project-osrm.org/route/v1/driving/${start.lon},${start.lat};${end.lon},${end.lat}?overview=full&geometries=geojson`);
+        if (!routeResponse.ok) throw new Error('No se pudo calcular la ruta');
+        const routeData = await routeResponse.json() as { routes?: Array<{ geometry: { coordinates: [number, number][] } }> };
+        const coordinates = routeData.routes?.[0]?.geometry.coordinates;
+        if (!coordinates?.length) throw new Error('No se encontró una ruta para la dirección');
+        const line = L.polyline(coordinates.map(([lon, lat]) => [lat, lon] as [number, number]), { color: '#2563eb', weight: 5 }).addTo(map);
+        map.fitBounds(line.getBounds(), { padding: [24, 24] });
+        setMapStatus(start.approximate || end.approximate
+          ? 'Ruta aproximada calculada. El número de casa no está registrado en el mapa.'
+          : 'Ruta calculada dentro de la aplicación');
+      } catch (error) {
+        if (!cancelled) setMapStatus(error instanceof Error ? error.message : 'No se pudo cargar la ruta');
+      }
+    }
+
+    loadMap();
+    return () => {
+      cancelled = true;
+      map?.remove();
+    };
+  }, [origin, destination]);
+
+  return (
+    <div>
+      <div ref={mapElement} style={{ width: '100%', height: '360px', borderRadius: '8px', overflow: 'hidden', marginTop: '0.75rem' }} />
+      <p className="checkout-status-msg" style={{ marginTop: '0.5rem' }}>{mapStatus}</p>
+    </div>
+  );
+}
+
 function DeliveryPage({ token }: { token: string | null }) {
   const [orders, setOrders] = useState<any[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [status, setStatus] = useState('');
   const [recipe, setRecipe] = useState<File | null>(null);
   const [orderId, setOrderId] = useState('');
 
   async function loadRoute() {
     if (!token) return;
-    const data = await apiRequest<any[]>(`/api/pos/pickup-orders?branchId=1`, {}, token);
+    const data = await apiRequest<any[]>(`/api/pos/deliveries?branchId=1`, {}, token);
     setOrders(data);
   }
 
@@ -2364,6 +2736,25 @@ function DeliveryPage({ token }: { token: string | null }) {
     }
   }
 
+  async function updateDeliveryLocation(orderId: number, nextStatus = 'IN_ROUTE') {
+    if (!token || !navigator.geolocation) {
+      setStatus('Este dispositivo no permite compartir ubicación');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      try {
+        await apiRequest(`/api/pos/deliveries/${orderId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: nextStatus, latitude: position.coords.latitude, longitude: position.coords.longitude })
+        }, token);
+        setStatus(nextStatus === 'DELIVERED' ? 'Entrega marcada como completada.' : 'Ubicación compartida. El cliente ya puede verla.');
+        await loadRoute();
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'No se pudo actualizar la entrega');
+      }
+    }, () => setStatus('Debes permitir la ubicación para iniciar la entrega'));
+  }
+
   return (
     <div className="internal-page-container">
       <div className="two-col-grid">
@@ -2374,17 +2765,41 @@ function DeliveryPage({ token }: { token: string | null }) {
           </div>
           <div className="item-list-stack">
             {orders.map((order, idx) => (
-              <div key={order.id} className="route-row">
+              <button key={order.id} type="button" className="route-row" onClick={() => setSelectedOrder(order)} style={{ width: '100%', textAlign: 'left', border: 0, cursor: 'pointer' }}>
                 <div className="route-num">{idx + 1}</div>
                 <div>
                   <strong>{order.code}</strong>
                   <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>{order.customer?.name ?? 'Cliente'} · {order.branch?.name}</p>
+                  <small>{order.address || 'Sin dirección registrada'}</small>
                   <small>{money(order.total)} · {order.status}</small>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }} onClick={(event) => event.stopPropagation()}>
+                    <button type="button" className="btn-secondary" onClick={() => updateDeliveryLocation(order.id)}>Iniciar / actualizar ruta</button>
+                    <button type="button" className="btn-secondary" onClick={() => updateDeliveryLocation(order.id, 'DELIVERED')}>Marcar entregado</button>
+                  </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
+
+        {selectedOrder && (
+          <div className="panel-card">
+            <div className="panel-head">
+              <h2>Ruta de entrega {selectedOrder.code}</h2>
+              <button type="button" className="btn-secondary" onClick={() => setSelectedOrder(null)}>Cerrar</button>
+            </div>
+            <p><strong>Sale de:</strong> {selectedOrder.branch?.name ?? 'Sucursal asignada'}</p>
+            <p><strong>Dirección:</strong> {selectedOrder.address || 'No registrada'}</p>
+            {selectedOrder.address ? (
+              <>
+                <RouteMap
+                  origin={selectedOrder.branch?.address || selectedOrder.branch?.name || 'Sacatepéquez'}
+                  destination={selectedOrder.address}
+                />
+              </>
+            ) : <p className="checkout-status-msg">Esta orden no tiene una dirección de entrega.</p>}
+          </div>
+        )}
 
         <div className="panel-card">
           <div className="panel-head">
@@ -2419,15 +2834,19 @@ function AdminPage({ token }: { token: string | null }) {
   const [status, setStatus] = useState('');
   const [employee, setEmployee] = useState({ fullName: 'Nuevo Usuario', email: 'nuevo@derkas.com', password: 'Clave123*', role: 'Cajero', branchId: 1, supervisorId: null as number | null });
   const [crosscheckOrderId, setCrosscheckOrderId] = useState('1');
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [newCategory, setNewCategory] = useState({ name: '', parentId: null as number | null });
 
   async function loadAll() {
     if (!token) return;
-    const [dash, rep] = await Promise.all([
+    const [dash, rep, categoryData] = await Promise.all([
       apiRequest<DashboardMetrics>('/api/admin/dashboard', {}, token),
-      apiRequest('/api/admin/reports', {}, token)
+      apiRequest('/api/admin/reports', {}, token),
+      apiRequest<Category[]>('/api/admin/categories', {}, token)
     ]);
     setDashboard(dash);
     setReports(rep);
+    setCategories(categoryData);
   }
 
   useEffect(() => {
@@ -2456,6 +2875,29 @@ function AdminPage({ token }: { token: string | null }) {
       setStatus(`Crosscheck registrado para orden #${crosscheckOrderId}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Error en crosscheck');
+    }
+  }
+
+  async function addCategory() {
+    try {
+      if (!newCategory.name.trim()) throw new Error('Escribe el nombre de la categoría');
+      await apiRequest('/api/admin/categories', { method: 'POST', body: JSON.stringify(newCategory) }, token);
+      setNewCategory({ name: '', parentId: null });
+      setStatus('Categoría creada correctamente.');
+      await loadAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo crear la categoría');
+    }
+  }
+
+  async function removeCategory(category: Category) {
+    if (!window.confirm(`¿Eliminar la categoría "${category.name}"?`)) return;
+    try {
+      await apiRequest(`/api/admin/categories/${category.id}`, { method: 'DELETE' }, token);
+      setStatus('Categoría eliminada correctamente.');
+      await loadAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo eliminar la categoría');
     }
   }
 
@@ -2547,6 +2989,16 @@ function AdminPage({ token }: { token: string | null }) {
           {status && <div className="checkout-status-msg">{status}</div>}
         </div>
       </div>
+
+      <div className="panel-card" style={{ marginTop: '1rem' }}>
+        <div className="panel-head"><h2>Categorías de medicamentos</h2><span className="pill-tag">Administrador / Gerente</span></div>
+        <div className="form-grid-2">
+          <div className="form-field"><label>Nombre de categoría</label><input value={newCategory.name} onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })} placeholder="Ej. Vitaminas" /></div>
+          <div className="form-field"><label>Categoría principal</label><select value={newCategory.parentId ?? ''} onChange={(e) => setNewCategory({ ...newCategory, parentId: e.target.value ? Number(e.target.value) : null })}><option value="">Sin categoría principal</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div>
+        </div>
+        <button type="button" className="btn-primary" onClick={addCategory}>Agregar categoría</button>
+        <div className="item-list-stack" style={{ marginTop: '0.75rem' }}>{categories.map((category) => <div className="compact-list-row" key={category.id}><strong>{category.name}</strong><button type="button" className="btn-secondary" onClick={() => removeCategory(category)}>Eliminar</button></div>)}</div>
+      </div>
     </div>
   );
 }
@@ -2559,6 +3011,14 @@ export default function App() {
   const [activePortal, setActivePortal] = useState<Portal>('public');
   const [token, setToken] = useState<string | null>(() => readToken());
   const [profile, setProfile] = useState<EmployeeProfile | null>(() => readProfile());
+  const [customer, setCustomer] = useState<CustomerAccount | null>(() => {
+    if (readToken()) {
+      localStorage.removeItem('derkas.customer');
+      return null;
+    }
+    const raw = localStorage.getItem('derkas.customer');
+    return raw ? JSON.parse(raw) as CustomerAccount : null;
+  });
 
   // Public Catalog State
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -2575,12 +3035,15 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [checkout, setCheckout] = useState({
-    name: 'Kevin Leonardo Cay Cay',
-    nit: '4893877-1',
-    email: 'kevincay590@gmail.com',
-    phone: '48938771',
+    name: '',
+    nit: '',
+    email: '',
+    phone: '',
     deliveryMode: 'DELIVERY' as 'DELIVERY' | 'PICKUP',
-    address: '3a Calle Oriente No. 15, Antigua Guatemala'
+    paymentMethod: 'STRIPE' as 'STRIPE' | 'CASH',
+    address: '',
+    deliveryLatitude: null as number | null,
+    deliveryLongitude: null as number | null
   });
 
   // Verify profile if token exists
@@ -2673,6 +3136,9 @@ export default function App() {
 
   async function handleCheckoutCart() {
     try {
+      if (checkout.deliveryMode === 'DELIVERY' && !customer) {
+        throw new Error('Inicia sesión o crea una cuenta para poder rastrear tu entrega a domicilio.');
+      }
       setIsSubmitting(true);
       setStatus('Procesando orden y validación sanitaria...');
       const requiresPrescription = products.some(
@@ -2687,14 +3153,18 @@ export default function App() {
         prescriptionWebUrl = uploaded.url;
       }
 
-      const result = await apiRequest<{ paymentUrl: string; mode: string; order: { code: string; total: number } }>(
+      const result = await apiRequest<{ paymentUrl: string | null; mode: string; order: { code: string; total: number } }>(
         '/api/public/checkout',
         {
           method: 'POST',
+          headers: customer ? { 'X-Customer-Id': String(customer.customerId) } : undefined,
           body: JSON.stringify({
             branchId,
             deliveryMode: checkout.deliveryMode,
+            paymentMethod: checkout.paymentMethod,
             address: checkout.deliveryMode === 'DELIVERY' ? checkout.address : null,
+            deliveryLatitude: checkout.deliveryMode === 'DELIVERY' ? checkout.deliveryLatitude : null,
+            deliveryLongitude: checkout.deliveryMode === 'DELIVERY' ? checkout.deliveryLongitude : null,
             customer: {
               name: checkout.name,
               nit: checkout.nit,
@@ -2707,12 +3177,15 @@ export default function App() {
         }
       );
 
-      setPaymentUrl(result.paymentUrl);
+      setPaymentUrl(result.paymentUrl ?? '');
       if (result.mode === 'stripe' && result.paymentUrl) {
         window.location.assign(result.paymentUrl);
         return;
       }
-      setStatus(`¡Orden ${result.order.code} generada exitosamente!`);
+      setStatus(result.mode === 'cash'
+        ? `¡Pedido ${result.order.code} recibido! ${checkout.deliveryMode === 'DELIVERY' ? 'Pagarás en efectivo al recibirlo.' : 'Pagarás en efectivo al recogerlo.'}`
+        : `¡Orden ${result.order.code} generada exitosamente!`);
+      setCart([]);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'No se pudo procesar el pago');
     } finally {
@@ -2721,6 +3194,8 @@ export default function App() {
   }
 
   function handleLogin(nextToken: string, nextProfile: EmployeeProfile) {
+    localStorage.removeItem('derkas.customer');
+    setCustomer(null);
     saveSession(nextToken, nextProfile);
     setToken(nextToken);
     setProfile(nextProfile);
@@ -2731,6 +3206,42 @@ export default function App() {
     setToken(null);
     setProfile(null);
     setActivePortal('public');
+  }
+
+  function handleCustomerLogin(nextCustomer: CustomerAccount) {
+    clearSession();
+    setToken(null);
+    setProfile(null);
+    localStorage.setItem('derkas.customer', JSON.stringify(nextCustomer));
+    setCustomer(nextCustomer);
+    setCheckout((previous) => ({
+      ...previous,
+      name: nextCustomer.fullName,
+      email: nextCustomer.email,
+      phone: nextCustomer.phone,
+      nit: nextCustomer.nit,
+      address: nextCustomer.address || previous.address
+    }));
+    setActivePortal('public');
+  }
+
+  function handleCustomerLogout() {
+    localStorage.removeItem('derkas.customer');
+    setCustomer(null);
+    setActivePortal('public');
+  }
+
+  function handleCustomerUpdate(nextCustomer: CustomerAccount) {
+    localStorage.setItem('derkas.customer', JSON.stringify(nextCustomer));
+    setCustomer(nextCustomer);
+    setCheckout((previous) => ({
+      ...previous,
+      name: nextCustomer.fullName,
+      email: nextCustomer.email,
+      phone: nextCustomer.phone,
+      nit: nextCustomer.nit,
+      address: nextCustomer.address || previous.address
+    }));
   }
 
   const cartTotal = cart.reduce((sum, item) => {
@@ -2759,6 +3270,8 @@ export default function App() {
         token={token}
         profile={profile}
         onLogout={handleLogout}
+        customer={customer}
+        onCustomerLogout={handleCustomerLogout}
       />
 
       {/* 2. TOP PAYMENT SECTION DIRECTLY ABOVE CATALOG */}
@@ -2814,6 +3327,8 @@ export default function App() {
       {activePortal === 'login' && (
         <LoginPage onLogin={handleLogin} onSuccess={() => setActivePortal('admin')} />
       )}
+      {activePortal === 'customer' && !customer && <CustomerAuthPage onLogin={handleCustomerLogin} />}
+      {customer && activePortal === 'customer' && <CustomerOrdersPage customer={customer} onUpdate={handleCustomerUpdate} onLogout={handleCustomerLogout} />}
 
       {activePortal === 'pos' && <PosPage token={token} profile={profile} categories={categories} />}
       {activePortal === 'warehouse' && <WarehousePage token={token} categories={categories} />}

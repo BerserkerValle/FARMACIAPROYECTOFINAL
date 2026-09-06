@@ -89,8 +89,12 @@ export interface Customer {
   nit: string;
   email: string;
   phone: string;
+  address?: string;
   createdAt: string;
   updatedAt: string;
+  passwordHash?: string;
+  deliveryLatitude?: number | null;
+  deliveryLongitude?: number | null;
 }
 
 export interface Employee {
@@ -120,9 +124,12 @@ export interface Order {
   source: OrderSource;
   branchId: number;
   customerId: number;
+  customerEmail?: string;
   employeeId: number | null;
   deliveryMode: 'DELIVERY' | 'PICKUP';
   address: string | null;
+  deliveryLatitude?: number | null;
+  deliveryLongitude?: number | null;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   requiresPrescription: boolean;
@@ -211,7 +218,10 @@ export interface DataSnapshot {
 export interface PublicCheckoutInput {
   branchId: number;
   deliveryMode: 'DELIVERY' | 'PICKUP';
+  paymentMethod: 'STRIPE' | 'CASH';
   address?: string | null;
+  deliveryLatitude?: number | null;
+  deliveryLongitude?: number | null;
   customer: {
     name: string;
     nit: string;

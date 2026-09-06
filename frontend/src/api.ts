@@ -21,6 +21,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}, tok
   try {
     response = await fetch(`${API_URL}${path}`, {
       ...options,
+      cache: 'no-store',
       headers
     });
   } catch {

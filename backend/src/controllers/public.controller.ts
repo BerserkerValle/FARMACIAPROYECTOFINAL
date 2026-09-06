@@ -1,13 +1,16 @@
 import type { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { z } from 'zod';
-import { createDatabaseCheckout, databaseEnabled, getDatabaseBranches, getDatabaseCategories, getDatabaseSuppliers, registerDatabasePayment, searchDatabaseCatalog } from '../db.js';
+import { createDatabaseCheckout, createDatabaseDeliveryTracking, databaseEnabled, findDatabaseCustomerAccount, findDatabaseCustomerAccountById, getDatabaseBranches, getDatabaseCategories, getDatabaseSuppliers, listDatabaseCustomerOrders, registerDatabasePayment, searchDatabaseCatalog } from '../db.js';
 import { store } from '../store.js';
 
 const checkoutSchema = z.object({
   branchId: z.number().int().positive(),
   deliveryMode: z.enum(['DELIVERY', 'PICKUP']),
+  paymentMethod: z.enum(['STRIPE', 'CASH']),
   address: z.string().trim().optional().nullable(),
+  deliveryLatitude: z.number().min(-90).max(90).optional().nullable(),
+  deliveryLongitude: z.number().min(-180).max(180).optional().nullable(),
   customer: z.object({
     name: z.string().min(2),
     nit: z.string().min(3),
@@ -68,7 +71,37 @@ export async function checkout(req: Request, res: Response) {
   try {
     const payload = checkoutSchema.parse(req.body);
     const created = databaseEnabled ? await createDatabaseCheckout(payload) : store.createWebCheckout(payload);
-    const stripe = stripeClient();
+    const customerAccountId = Number(req.header('x-customer-id'));
+    if (databaseEnabled && payload.deliveryMode === 'DELIVERY') {
+      const account = Number.isInteger(customerAccountId) && customerAccountId > 0
+        ? await findDatabaseCustomerAccountById(customerAccountId)
+        : await findDatabaseCustomerAccount(payload.customer.email);
+      if (!account) throw new Error('No se encontró la cuenta de cliente para registrar el seguimiento');
+      await createDatabaseDeliveryTracking({
+        orderCode: created.order.code,
+        customerId: account.customerId,
+        branchId: payload.branchId,
+        address: payload.address ?? '',
+          latitude: payload.deliveryLatitude ?? null,
+          longitude: payload.deliveryLongitude ?? null,
+        deliveryMode: payload.deliveryMode
+      });
+    }
+    const stripe = payload.paymentMethod === 'STRIPE' ? stripeClient() : null;
+
+    if (payload.paymentMethod === 'CASH') {
+      return res.json({
+        success: true,
+        data: {
+          order: created.order,
+          paymentUrl: null,
+          mode: 'cash',
+          message: payload.deliveryMode === 'DELIVERY'
+            ? 'Pedido recibido. Pagarás en efectivo al recibirlo.'
+            : 'Pedido recibido. Pagarás en efectivo al recogerlo en la sucursal.'
+        }
+      });
+    }
 
     if (!stripe) {
       const paidOrder = databaseEnabled
@@ -187,4 +220,13 @@ export function trackOrder(req: Request, res: Response) {
     return res.status(404).json({ success: false, message: 'Orden no encontrada' });
   }
   return res.json({ success: true, data: order });
+}
+
+export async function customerOrders(req: Request, res: Response) {
+  const customerId = Number(req.header('x-customer-id'));
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    return res.status(401).json({ success: false, message: 'Inicia sesión como cliente para ver tus pedidos' });
+  }
+  const data = databaseEnabled ? await listDatabaseCustomerOrders(customerId) : store.listCustomerOrders(customerId);
+  return res.json({ success: true, data });
 }
