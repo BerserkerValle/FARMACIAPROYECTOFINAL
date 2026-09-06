@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import bcrypt from 'bcryptjs';
 import { databaseEnabled, initializeDatabase, loadDatabaseSnapshot, saveDatabaseSnapshot } from './db.js';
 import type {
   Branch,
@@ -85,6 +86,7 @@ export class PharmacyStore {
       const databaseSnapshot = await loadDatabaseSnapshot();
       if (databaseSnapshot) {
         this.snapshot = databaseSnapshot;
+        await this.migrateEmployeePasswords();
         return;
       }
       this.snapshot = this.seed();
@@ -98,11 +100,23 @@ export class PharmacyStore {
       if (!this.snapshot.counters.product) {
         this.snapshot.counters.product = Math.max(0, ...this.snapshot.products.map((p) => p.id));
       }
+      await this.migrateEmployeePasswords();
       return;
     } catch {
       this.snapshot = this.seed();
       await this.save();
     }
+  }
+
+  private async migrateEmployeePasswords() {
+    let changed = false;
+    for (const employee of this.snapshot.employees) {
+      if (!employee.password.startsWith('$2')) {
+        employee.password = bcrypt.hashSync(employee.password, 12);
+        changed = true;
+      }
+    }
+    if (changed) await this.save();
   }
 
   private async save() {
@@ -790,7 +804,7 @@ export class PharmacyStore {
       id: ++this.snapshot.counters.employee,
       fullName: input.fullName,
       email: input.email,
-      password: input.password,
+      password: bcrypt.hashSync(input.password, 12),
       role: input.role,
       branchId: input.branchId,
       supervisorId: input.supervisorId,
@@ -805,7 +819,10 @@ export class PharmacyStore {
     this.assertReady();
     const employee = this.snapshot.employees.find((item) => item.id === id);
     if (!employee) throw new Error(`Empleado #${id} no encontrado`);
-    Object.assign(employee, input);
+    Object.assign(employee, {
+      ...input,
+      ...(input.password ? { password: bcrypt.hashSync(input.password, 12) } : {})
+    });
     this.touch();
     return clone(employee);
   }
@@ -993,7 +1010,9 @@ export class PharmacyStore {
 
   findEmployeeByCredentials(email: string, password: string) {
     this.assertReady();
-    return this.snapshot.employees.find((employee) => employee.email === email && employee.password === password && employee.active) ?? null;
+    const employee = this.snapshot.employees.find((item) => item.email.toLowerCase() === email.toLowerCase() && item.active);
+    if (!employee || !bcrypt.compareSync(password, employee.password)) return null;
+    return clone(employee);
   }
 }
 

@@ -17,7 +17,8 @@
     "multer": "^2.0.2",
     "stripe": "^17.4.0",
     "zod": "^3.23.8",
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "bcryptjs": "^3.0.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

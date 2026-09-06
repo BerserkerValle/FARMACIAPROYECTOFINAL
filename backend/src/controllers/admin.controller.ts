@@ -97,11 +97,14 @@ export function deleteSupplier(req: Request, res: Response) {
 export function createEmployee(req: Request, res: Response) {
   const payload = employeeSchema.parse(req.body);
   const employee = store.addEmployee(payload);
-  return res.status(201).json({ success: true, data: employee });
+  const { password: _password, ...safeEmployee } = employee;
+  return res.status(201).json({ success: true, data: safeEmployee });
 }
 
 export function updateEmployee(req: Request, res: Response) {
-  return res.json({ success: true, data: store.updateEmployee(Number(req.params.id), employeeSchema.partial().parse(req.body)) });
+  const employee = store.updateEmployee(Number(req.params.id), employeeSchema.partial().parse(req.body));
+  const { password: _password, ...safeEmployee } = employee;
+  return res.json({ success: true, data: safeEmployee });
 }
 
 export function deleteEmployee(req: Request, res: Response) {

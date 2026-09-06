@@ -9,13 +9,20 @@ function secret() {
 }
 
 const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(4)
-});
+  email: z.string().email().optional(),
+  password: z.string().min(4).optional(),
+  correo_corporativo: z.string().email().optional(),
+  contrasena: z.string().min(4).optional()
+}).refine(
+  (value) => (value.email || value.correo_corporativo) && (value.password || value.contrasena),
+  { message: 'Correo y contraseña son obligatorios' }
+);
 
 export function login(req: Request, res: Response) {
   const payload = loginSchema.parse(req.body);
-  const employee = store.findEmployeeByCredentials(payload.email, payload.password);
+  const email = payload.email ?? payload.correo_corporativo!;
+  const password = payload.password ?? payload.contrasena!;
+  const employee = store.findEmployeeByCredentials(email, password);
   if (!employee) {
     return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
   }
