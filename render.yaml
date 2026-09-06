@@ -11,7 +11,15 @@ services:
         value: production
       - key: JWT_SECRET
         sync: false
-      - key: DATABASE_URL
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
@@ -33,4 +41,4 @@ services:
         fromService:
           type: web
           name: derkas-farmacia-api
-          property: host
+          property: hostport

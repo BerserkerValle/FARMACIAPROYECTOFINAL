@@ -20,6 +20,7 @@ Proyecto fullstack para farmacia con backend en Express/TypeScript y frontend en
 - `PORT=4000`
 - `DATABASE_URL=postgresql://...` (preferida en Render; no la subas al repositorio)
 - Alternativa: `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSL=require`
+- También acepta las variables usadas en tu servicio Render: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`.
 - `STRIPE_SECRET_KEY=...`
 - `STRIPE_WEBHOOK_SECRET=...`
 - `APP_BASE_URL=http://localhost:5173`

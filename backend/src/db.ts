@@ -9,9 +9,13 @@ function connectionString() {
     return process.env.DATABASE_URL.trim();
   }
 
-  if (process.env.PGHOST && process.env.PGUSER && process.env.PGPASSWORD && process.env.PGDATABASE) {
-    const port = process.env.PGPORT ?? '5432';
-    return `postgresql://${encodeURIComponent(process.env.PGUSER)}:${encodeURIComponent(process.env.PGPASSWORD)}@${process.env.PGHOST}:${port}/${encodeURIComponent(process.env.PGDATABASE)}`;
+  const host = process.env.PGHOST ?? process.env.DB_HOST;
+  const user = process.env.PGUSER ?? process.env.DB_USER;
+  const password = process.env.PGPASSWORD ?? process.env.DB_PASSWORD;
+  const database = process.env.PGDATABASE ?? process.env.DB_NAME;
+  if (host && user && password && database) {
+    const port = process.env.PGPORT ?? process.env.DB_PORT ?? '5432';
+    return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(database)}`;
   }
 
   return null;
