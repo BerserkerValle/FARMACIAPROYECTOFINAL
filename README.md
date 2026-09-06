@@ -1,4 +1,4 @@
-# Derkas Farmacia Suite
+# Farmacia los pollos hermanos
 
 Proyecto fullstack para farmacia con backend en Express/TypeScript y frontend en React/Vite.
 
