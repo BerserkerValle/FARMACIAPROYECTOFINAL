@@ -1,11 +1,16 @@
 import type { NextFunction, Request, Response } from 'express';
 import { databaseEnabled, findDatabaseEmployeeById } from '../db.js';
 import { store } from '../store.js';
+import { getEmployeeIdFromToken } from '../utils/jwt.js';
 
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
-  const employeeId = Number(req.header('x-employee-id'));
-  if (!Number.isInteger(employeeId) || employeeId <= 0) {
-    return res.status(401).json({ success: false, message: 'Falta la sesión del empleado' });
+  const authorization = req.header('authorization');
+  const token = authorization?.startsWith('Bearer ')
+    ? authorization.slice('Bearer '.length).trim()
+    : '';
+  const employeeId = token ? getEmployeeIdFromToken(token) : null;
+  if (!employeeId) {
+    return res.status(401).json({ success: false, message: 'Token inválido o expirado' });
   }
 
   const employee = databaseEnabled ? await findDatabaseEmployeeById(employeeId) : store.getEmployeeById(employeeId);

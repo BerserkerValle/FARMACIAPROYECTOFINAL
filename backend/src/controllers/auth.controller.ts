@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { createDatabaseCustomerAccount, databaseEnabled, findDatabaseCustomerAccount, findDatabaseCustomerAccountById, findDatabaseEmployeeByEmail, updateDatabaseCustomerAccount } from '../db.js';
 import { store } from '../store.js';
+import { createEmployeeToken } from '../utils/jwt.js';
 
 const loginSchema = z.object({
   email: z.string().email().optional(),
@@ -41,11 +42,13 @@ export async function login(req: Request, res: Response) {
       return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
     }
   }
+  const employeeId = 'employeeId' in employee ? employee.employeeId : employee.id;
   return res.json({
     success: true,
     data: {
+      token: createEmployeeToken(employeeId),
       employee: {
-        employeeId: 'employeeId' in employee ? employee.employeeId : employee.id,
+        employeeId,
         fullName: employee.fullName,
         email: employee.email,
         role: employee.role,
