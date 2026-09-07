@@ -309,7 +309,7 @@ export class PharmacyStore {
 
   getProducts() {
     this.assertReady();
-    return clone(this.snapshot.products);
+    return clone(this.snapshot.products.filter((p) => p.active !== false));
   }
 
   getProductById(id: number) {
@@ -370,15 +370,15 @@ export class PharmacyStore {
     }
     if (input.name !== undefined) product.name = input.name.trim();
     if (input.sku !== undefined) product.sku = input.sku.trim().toUpperCase();
-    if (input.categoryId !== undefined) product.categoryId = Number(input.categoryId);
-    if (input.brand !== undefined) product.brand = input.brand.trim();
-    if (input.laboratory !== undefined) product.laboratory = input.laboratory.trim();
-    if (input.presentation !== undefined) product.presentation = input.presentation.trim();
-    if (input.unitMeasure !== undefined) product.unitMeasure = input.unitMeasure.trim();
-    if (input.sanitaryRegistry !== undefined) product.sanitaryRegistry = input.sanitaryRegistry.trim();
+    if (input.categoryId !== undefined) product.categoryId = input.categoryId == null ? null : Number(input.categoryId);
+    if (input.brand !== undefined) product.brand = (input.brand ?? '').trim();
+    if (input.laboratory !== undefined) product.laboratory = (input.laboratory ?? '').trim();
+    if (input.presentation !== undefined) product.presentation = (input.presentation ?? '').trim();
+    if (input.unitMeasure !== undefined) product.unitMeasure = (input.unitMeasure ?? '').trim();
+    if (input.sanitaryRegistry !== undefined) product.sanitaryRegistry = (input.sanitaryRegistry ?? '').trim();
     if (input.requiresPrescription !== undefined) product.requiresPrescription = Boolean(input.requiresPrescription);
     if (input.active !== undefined) product.active = Boolean(input.active);
-    if (input.description !== undefined) product.description = input.description.trim();
+    if (input.description !== undefined) product.description = (input.description ?? '').trim();
     if (input.price !== undefined) product.price = Number(input.price);
     if (input.cost !== undefined) product.cost = Number(input.cost);
     if (input.imageUrl !== undefined) product.imageUrl = input.imageUrl?.trim() || null;
@@ -392,6 +392,7 @@ export class PharmacyStore {
     const product = this.snapshot.products.find((candidate) => candidate.id === id);
     if (!product) throw new Error(`Producto #${id} no encontrado`);
     product.active = false;
+    this.snapshot.lots = this.snapshot.lots.filter((l) => l.productId !== id);
     this.touch();
     return clone(product);
   }
@@ -583,16 +584,29 @@ export class PharmacyStore {
     return clone(customer);
   }
 
-  searchCatalog(query: string, branchId?: number) {
+  getCategoryWithDescendants(categoryId: number): number[] {
+    const ids = [categoryId];
+    const children = this.snapshot.categories.filter((c) => c.parentId === categoryId);
+    for (const child of children) {
+      ids.push(...this.getCategoryWithDescendants(child.id));
+    }
+    return ids;
+  }
+
+  searchCatalog(query: string, branchId?: number, categoryId?: number) {
     this.assertReady();
     const normalized = query.trim().toLowerCase();
+    const allowedCategoryIds = categoryId ? this.getCategoryWithDescendants(categoryId) : null;
     return this.snapshot.products
       .filter((product) => product.active)
+      .filter((product) => (allowedCategoryIds ? (product.categoryId && allowedCategoryIds.includes(product.categoryId)) : true))
       .filter((product) => {
         if (!normalized) {
           return true;
         }
-        return [product.name, product.brand, product.laboratory, product.sku].some((text) => text.toLowerCase().includes(normalized));
+        const cat = this.snapshot.categories.find((c) => c.id === product.categoryId);
+        const catName = cat?.name ?? '';
+        return [product.name, product.brand, product.laboratory, product.sku, catName].some((text) => text.toLowerCase().includes(normalized));
       })
       .map((product) => ({
         ...product,

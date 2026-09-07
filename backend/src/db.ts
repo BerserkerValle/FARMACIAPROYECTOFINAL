@@ -387,7 +387,7 @@ export async function getDatabaseSuppliers() {
   return result.rows;
 }
 
-export async function searchDatabaseCatalog(query: string, branchId?: number) {
+export async function searchDatabaseCatalog(query: string, branchId?: number, categoryId?: number) {
   if (!pool) return null;
   const result = await pool.query(
     `SELECT p.id_producto AS id,
@@ -419,17 +419,21 @@ export async function searchDatabaseCatalog(query: string, branchId?: number) {
               '[]'::jsonb
             ) AS lots
        FROM Productos p
+       LEFT JOIN Categorias cat ON cat.id_categoria = p.id_categoria
        LEFT JOIN Lotes l ON l.id_producto = p.id_producto
        LEFT JOIN Stock_Sucursal ss
          ON ss.id_lote = l.id_lote
         AND ($2::integer IS NULL OR ss.id_sucursal = $2)
-      WHERE ($1 = '' OR p.nombre_producto ILIKE '%' || $1 || '%'
+      WHERE COALESCE(p.activo, true) = true
+        AND ($1 = '' OR p.nombre_producto ILIKE '%' || $1 || '%'
                     OR p.sku_codigo ILIKE '%' || $1 || '%'
                     OR COALESCE(p.marca, '') ILIKE '%' || $1 || '%'
-                    OR COALESCE(p.laboratorio, '') ILIKE '%' || $1 || '%')
+                    OR COALESCE(p.laboratorio, '') ILIKE '%' || $1 || '%'
+                    OR COALESCE(cat.nombre_categoria, '') ILIKE '%' || $1 || '%')
+        AND ($3::integer IS NULL OR p.id_categoria = $3 OR cat.id_categoria_padre = $3)
       GROUP BY p.id_producto
       ORDER BY p.nombre_producto`,
-    [query.trim(), branchId ?? null]
+    [query.trim(), branchId ?? null, categoryId ?? null]
   );
   return result.rows;
 }
@@ -448,12 +452,13 @@ export async function listDatabaseProducts() {
             COALESCE(p.registro_sanitario, '') AS "sanitaryRegistry",
             COALESCE(p.requiere_receta, false) AS "requiresPrescription",
             p.imagen_url AS "imageUrl",
-            true AS active,
+            COALESCE(p.activo, true) AS active,
             ''::text AS description,
             COALESCE(MIN(l.precio_venta), 0) AS price,
             COALESCE(MIN(l.precio_costo), 0) AS cost
        FROM Productos p
        LEFT JOIN Lotes l ON l.id_producto = p.id_producto
+      WHERE COALESCE(p.activo, true) = true
       GROUP BY p.id_producto
       ORDER BY p.id_producto DESC`
   );
@@ -473,8 +478,10 @@ export async function listDatabaseLots(branchId?: number, productId?: number) {
             l.precio_venta AS "salePrice",
             ss.cantidad_disponible AS "quantityAvailable"
        FROM Lotes l
+       JOIN Productos p ON p.id_producto = l.id_producto
        LEFT JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
-      WHERE ($1::integer IS NULL OR ss.id_sucursal = $1)
+      WHERE COALESCE(p.activo, true) = true
+        AND ($1::integer IS NULL OR ss.id_sucursal = $1)
         AND ($2::integer IS NULL OR l.id_producto = $2)
       ORDER BY l.fecha_vencimiento`
     , [branchId ?? null, productId ?? null]
@@ -578,7 +585,7 @@ export async function createDatabaseProduct(input: CreateProductInput) {
       initialLot = { id: lotId, productId, branchId: Number(input.initialStock.branchId), supplierId: Number(input.initialStock.supplierId), batchCode: input.initialStock.batchCode, expirationDate: input.initialStock.expirationDate, productionDate: input.initialStock.productionDate, costPrice: Number(input.cost), salePrice: Number(input.price), quantityAvailable: Number(input.initialStock.quantity) };
     }
     await client.query('COMMIT');
-    return { product: { id: productId, sku: input.sku.trim().toUpperCase(), name: input.name.trim(), categoryId: input.categoryId == null ? 0 : Number(input.categoryId), brand: input.brand.trim(), laboratory: input.laboratory.trim(), presentation: input.presentation.trim(), unitMeasure: input.unitMeasure.trim(), sanitaryRegistry: input.sanitaryRegistry.trim(), requiresPrescription: Boolean(input.requiresPrescription), active: true, description: input.description.trim(), price: Number(input.price), cost: Number(input.cost), imageUrl: input.imageUrl?.trim() || null }, initialLot };
+    return { product: { id: productId, sku: input.sku.trim().toUpperCase(), name: input.name.trim(), categoryId: input.categoryId == null ? 0 : Number(input.categoryId), brand: input.brand.trim(), laboratory: input.laboratory.trim(), presentation: input.presentation.trim(), unitMeasure: input.unitMeasure.trim(), sanitaryRegistry: input.sanitaryRegistry.trim(), requiresPrescription: Boolean(input.requiresPrescription), active: true, description: (input.description || '').trim(), price: Number(input.price), cost: Number(input.cost), imageUrl: input.imageUrl?.trim() || null }, initialLot };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -589,12 +596,86 @@ export async function createDatabaseProduct(input: CreateProductInput) {
 
 export async function deleteDatabaseProduct(id: number) {
   const database = requirePool();
-  const result = await database.query(
-    'DELETE FROM Productos WHERE id_producto = $1 RETURNING id_producto AS id',
-    [id]
-  );
-  if (!result.rows[0]) throw new Error(`Producto #${id} no encontrado`);
-  return { id: Number(result.rows[0].id), deleted: true };
+  const client = await database.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true');
+
+    const check = await client.query('SELECT id_producto FROM Productos WHERE id_producto = $1', [id]);
+    if (!check.rows[0]) {
+      throw new Error(`Producto #${id} no encontrado`);
+    }
+
+    let hasSales = false;
+    try {
+      const salesCheck = await client.query(
+        `SELECT 1 FROM Detalle_Facturas df
+           JOIN Lotes l ON l.id_lote = df.id_lote
+          WHERE l.id_producto = $1
+          LIMIT 1`,
+        [id]
+      );
+      if (salesCheck.rows.length > 0) {
+        hasSales = true;
+      }
+    } catch {
+      // Ignore if table does not exist
+    }
+
+    if (hasSales) {
+      await client.query(
+        `UPDATE Productos
+            SET activo = false, ultima_modificacion = CURRENT_TIMESTAMP
+          WHERE id_producto = $1`,
+        [id]
+      );
+      await client.query(
+        `UPDATE Stock_Sucursal
+            SET cantidad_disponible = 0, ultima_modificacion = CURRENT_TIMESTAMP
+          WHERE id_lote IN (SELECT id_lote FROM Lotes WHERE id_producto = $1)`,
+        [id]
+      );
+      await client.query('COMMIT');
+      return { id, deleted: true, softDeleted: true };
+    }
+
+    try {
+      await client.query(
+        `DELETE FROM Stock_Sucursal
+          WHERE id_lote IN (SELECT id_lote FROM Lotes WHERE id_producto = $1)`,
+        [id]
+      );
+      await client.query('DELETE FROM Lotes WHERE id_producto = $1', [id]);
+      const result = await client.query(
+        'DELETE FROM Productos WHERE id_producto = $1 RETURNING id_producto AS id',
+        [id]
+      );
+      await client.query('COMMIT');
+      return { id: Number(result.rows[0].id), deleted: true };
+    } catch {
+      await client.query('ROLLBACK');
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE Productos
+            SET activo = false, ultima_modificacion = CURRENT_TIMESTAMP
+          WHERE id_producto = $1`,
+        [id]
+      );
+      await client.query(
+        `UPDATE Stock_Sucursal
+            SET cantidad_disponible = 0, ultima_modificacion = CURRENT_TIMESTAMP
+          WHERE id_lote IN (SELECT id_lote FROM Lotes WHERE id_producto = $1)`,
+        [id]
+      );
+      await client.query('COMMIT');
+      return { id, deleted: true, softDeleted: true };
+    }
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function updateDatabaseProduct(id: number, input: Record<string, unknown>) {
@@ -629,7 +710,32 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
     [id, ...fields.map(([, value]) => value)]
   );
   if (!result.rows[0]) throw new Error(`Producto #${id} no encontrado`);
-  return result.rows[0];
+
+  if (input.price !== undefined || input.cost !== undefined) {
+    const lotUpdates: string[] = [];
+    const lotParams: unknown[] = [id];
+    if (input.price !== undefined && !Number.isNaN(Number(input.price))) {
+      lotParams.push(Number(input.price));
+      lotUpdates.push(`precio_venta = $${lotParams.length}`);
+    }
+    if (input.cost !== undefined && !Number.isNaN(Number(input.cost))) {
+      lotParams.push(Number(input.cost));
+      lotUpdates.push(`precio_costo = $${lotParams.length}`);
+    }
+    if (lotUpdates.length > 0) {
+      await database.query(
+        `UPDATE Lotes SET ${lotUpdates.join(', ')} WHERE id_producto = $1`,
+        lotParams
+      );
+    }
+  }
+
+  return {
+    ...result.rows[0],
+    price: input.price !== undefined ? Number(input.price) : 0,
+    cost: input.cost !== undefined ? Number(input.cost) : 0,
+    description: typeof input.description === 'string' ? input.description : ''
+  };
 }
 
 export async function createDatabaseCheckout(input: PublicCheckoutInput) {
@@ -718,6 +824,7 @@ export async function initializeDatabase() {
     )
   `);
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS imagen_url TEXT');
+  await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS pharmacy_customer_accounts (
       id BIGSERIAL PRIMARY KEY,

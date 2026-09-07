@@ -63,7 +63,10 @@ export async function suppliers(_req: Request, res: Response) {
 export async function catalog(req: Request, res: Response) {
   const query = String(req.query.q ?? '').trim();
   const branchId = req.query.branchId ? Number(req.query.branchId) : undefined;
-  const data = databaseEnabled ? await searchDatabaseCatalog(query, branchId) : store.searchCatalog(query, branchId);
+  const categoryId = req.query.categoryId ? Number(req.query.categoryId) : undefined;
+  const data = databaseEnabled
+    ? await searchDatabaseCatalog(query, branchId, categoryId)
+    : store.searchCatalog(query, branchId, categoryId);
   return res.json({ success: true, data: data ?? [] });
 }
 

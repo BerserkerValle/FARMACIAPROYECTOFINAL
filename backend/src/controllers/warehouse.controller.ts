@@ -19,14 +19,14 @@ const createProductSchema = z.object({
   sku: z.string().min(2),
   name: z.string().min(2),
   categoryId: z.coerce.number().int().positive().nullable().default(null),
-  brand: z.string().min(1),
-  laboratory: z.string().min(1),
-  presentation: z.string().min(1),
-  unitMeasure: z.string().min(1),
-  sanitaryRegistry: z.string().min(1),
+  brand: z.string().default(''),
+  laboratory: z.string().default(''),
+  presentation: z.string().default(''),
+  unitMeasure: z.string().default(''),
+  sanitaryRegistry: z.string().default(''),
   requiresPrescription: z.boolean().default(false),
   active: z.boolean().optional().default(true),
-  description: z.string().min(1),
+  description: z.string().nullish().transform((v) => v ?? ''),
   price: z.coerce.number().positive(),
   cost: z.coerce.number().positive(),
   imageUrl: z.string().trim().optional().nullable(),
@@ -47,15 +47,15 @@ const createProductSchema = z.object({
 const updateProductSchema = z.object({
   sku: z.string().min(2).optional(),
   name: z.string().min(2).optional(),
-  categoryId: z.coerce.number().int().positive().optional(),
-  brand: z.string().min(1).optional(),
-  laboratory: z.string().min(1).optional(),
-  presentation: z.string().min(1).optional(),
-  unitMeasure: z.string().min(1).optional(),
-  sanitaryRegistry: z.string().min(1).optional(),
+  categoryId: z.coerce.number().int().positive().nullable().optional(),
+  brand: z.string().nullish().transform((v) => (v == null ? undefined : v)),
+  laboratory: z.string().nullish().transform((v) => (v == null ? undefined : v)),
+  presentation: z.string().nullish().transform((v) => (v == null ? undefined : v)),
+  unitMeasure: z.string().nullish().transform((v) => (v == null ? undefined : v)),
+  sanitaryRegistry: z.string().nullish().transform((v) => (v == null ? undefined : v)),
   requiresPrescription: z.boolean().optional(),
   active: z.boolean().optional(),
-  description: z.string().min(1).optional(),
+  description: z.string().nullish().transform((v) => (v == null ? '' : v)),
   price: z.coerce.number().positive().optional(),
   cost: z.coerce.number().positive().optional(),
   imageUrl: z.string().trim().optional().nullable()
@@ -109,7 +109,12 @@ export async function createProduct(req: Request, res: Response) {
     const result = databaseEnabled ? await createDatabaseProduct(payload) : store.addProduct(payload);
     return res.status(201).json({ success: true, data: result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'No se pudo crear el producto';
+    let message = 'No se pudo crear el producto';
+    if (error instanceof z.ZodError) {
+      message = error.errors.map((e) => `Campo ${e.path.join('.') || 'inválido'}: ${e.message}`).join(', ');
+    } else if (error instanceof Error) {
+      message = error.message;
+    }
     return res.status(400).json({ success: false, message });
   }
 }
@@ -121,7 +126,12 @@ export async function updateProduct(req: Request, res: Response) {
     const updated = databaseEnabled ? await updateDatabaseProduct(productId, payload) : store.updateProduct(productId, payload);
     return res.json({ success: true, data: updated });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'No se pudo actualizar el producto';
+    let message = 'No se pudo actualizar el producto';
+    if (error instanceof z.ZodError) {
+      message = error.errors.map((e) => `Campo ${e.path.join('.') || 'inválido'}: ${e.message}`).join(', ');
+    } else if (error instanceof Error) {
+      message = error.message;
+    }
     return res.status(400).json({ success: false, message });
   }
 }

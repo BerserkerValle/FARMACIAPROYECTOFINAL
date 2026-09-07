@@ -133,7 +133,7 @@
       "unitMeasure": "frasco",
       "sanitaryRegistry": "MSPAS-2026-9912",
       "requiresPrescription": false,
-      "active": true,
+      "active": false,
       "description": "Suplemento infantil de rotación media.",
       "price": 48,
       "cost": 26,
@@ -143,7 +143,7 @@
       "id": 5,
       "sku": "SKU-AM-ENS220",
       "name": "Ensure Vainilla 220ml Líquido",
-      "categoryId": 0,
+      "categoryId": null,
       "brand": "Ensure",
       "laboratory": "Abbott Nutrition",
       "presentation": "Botella x 220 ml",
@@ -151,10 +151,10 @@
       "sanitaryRegistry": "MSPAS-2026-134",
       "requiresPrescription": false,
       "active": true,
-      "description": "Suplemento multivitamínico y multimineral para adultos. Ayuda a complementar la ingesta diaria de vitaminas y minerales y contribuye al mantenimiento de las funciones normales del organismo.",
+      "description": "Suplemento",
       "price": 34.97,
       "cost": 24.48,
-      "imageUrl": "http://localhost:4000/uploads/med-1788668731569-522802968.png"
+      "imageUrl": "http://localhost:4000/uploads/med-1788756638677-643797656.png"
     }
   ],
   "suppliers": [
@@ -224,18 +224,6 @@
       "quantityAvailable": 23
     },
     {
-      "id": 4,
-      "productId": 4,
-      "branchId": 1,
-      "supplierId": 3,
-      "batchCode": "LOT-2026-C3",
-      "expirationDate": "2026-12-15",
-      "productionDate": "2026-03-05",
-      "costPrice": 26,
-      "salePrice": 48,
-      "quantityAvailable": 9
-    },
-    {
       "id": 5,
       "productId": 2,
       "branchId": 2,
@@ -270,18 +258,6 @@
       "costPrice": 12,
       "salePrice": 28,
       "quantityAvailable": 14
-    },
-    {
-      "id": 8,
-      "productId": 4,
-      "branchId": 4,
-      "supplierId": 3,
-      "batchCode": "LOT-2026-C4",
-      "expirationDate": "2026-09-30",
-      "productionDate": "2026-02-22",
-      "costPrice": 26,
-      "salePrice": 48,
-      "quantityAvailable": 6
     },
     {
       "id": 9,

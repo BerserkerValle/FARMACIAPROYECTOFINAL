@@ -100,6 +100,15 @@ function clearSession() {
   localStorage.removeItem('derkas.profile');
 }
 
+function getCategoryHierarchyIds(categoryId: number, allCategories: Category[]): number[] {
+  const ids = [categoryId];
+  const children = allCategories.filter((c) => c.parentId === categoryId);
+  for (const child of children) {
+    ids.push(...getCategoryHierarchyIds(child.id, allCategories));
+  }
+  return ids;
+}
+
 /* =========================================================================
    TOP HEADER
    ========================================================================= */
@@ -1094,16 +1103,23 @@ function PublicCatalogView({
   onAddToCart: (productId: number, quantity?: number) => void;
   toastMessage: string | null;
 }) {
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | 'all'>('all');
   const [filterType, setFilterType] = useState<'all' | 'otc' | 'rx'>('all');
   const [recentlyAddedId, setRecentlyAddedId] = useState<number | null>(null);
   const [selectedProductForModal, setSelectedProductForModal] = useState<ProductCard | null>(null);
 
   const selectedBranch = branches.find((b) => b.id === branchId);
 
-  // Filter products based on filterType
+  // Filter products based on filterType and selectedCategoryId
   const filteredProducts = products.filter((product) => {
-    if (filterType === 'otc') return !product.requiresPrescription;
-    if (filterType === 'rx') return product.requiresPrescription;
+    if (filterType === 'otc' && product.requiresPrescription) return false;
+    if (filterType === 'rx' && !product.requiresPrescription) return false;
+    if (selectedCategoryId !== 'all') {
+      const allowedCategoryIds = getCategoryHierarchyIds(selectedCategoryId, categories);
+      if (!product.categoryId || !allowedCategoryIds.includes(product.categoryId)) {
+        return false;
+      }
+    }
     return true;
   });
 
@@ -1162,15 +1178,43 @@ function PublicCatalogView({
           </div>
         </div>
 
-        {/* Category & Prescription Filters */}
+        {/* Categories Bar */}
+        {categories.length > 0 && (
+          <div className="filter-pills-row" style={{ marginTop: '0.25rem' }}>
+            <button
+              type="button"
+              className={`filter-pill-btn ${selectedCategoryId === 'all' ? 'active' : ''}`}
+              onClick={() => setSelectedCategoryId('all')}
+            >
+              <span>📁 Todas las Categorías</span>
+              <span className="filter-pill-count">{products.length}</span>
+            </button>
+            {categories.map((cat) => {
+              const allowedIds = getCategoryHierarchyIds(cat.id, categories);
+              const count = products.filter((p) => p.categoryId && allowedIds.includes(p.categoryId)).length;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  className={`filter-pill-btn ${selectedCategoryId === cat.id ? 'active' : ''}`}
+                  onClick={() => setSelectedCategoryId(selectedCategoryId === cat.id ? 'all' : cat.id)}
+                >
+                  <span>{cat.name}</span>
+                  <span className="filter-pill-count">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Prescription & Clean Filters */}
         <div className="filter-pills-row">
           <button
             type="button"
             className={`filter-pill-btn ${filterType === 'all' ? 'active' : ''}`}
             onClick={() => setFilterType('all')}
           >
-            <span>Todos los Productos</span>
-            <span className="filter-pill-count">{products.length}</span>
+            <span>Todos los Tipos</span>
           </button>
           <button
             type="button"
@@ -1188,6 +1232,21 @@ function PublicCatalogView({
             <span>📋 Requiere Receta</span>
             <span className="filter-pill-count">{rxCount}</span>
           </button>
+
+          {(selectedCategoryId !== 'all' || filterType !== 'all' || query) && (
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ padding: '0.4rem 0.9rem', fontSize: '0.82rem', marginLeft: 'auto', borderRadius: 'var(--radius-full)' }}
+              onClick={() => {
+                setSelectedCategoryId('all');
+                setFilterType('all');
+                onQueryChange('');
+              }}
+            >
+              ✕ Limpiar Filtros
+            </button>
+          )}
         </div>
       </div>
 
@@ -1203,6 +1262,8 @@ function PublicCatalogView({
             const inCartItem = cart.find((i) => i.productId === product.id);
             const inCartQty = inCartItem ? inCartItem.quantity : 0;
             const isAdded = recentlyAddedId === product.id;
+
+            const productCategory = categories.find((c) => c.id === product.categoryId);
 
             return (
               <article
@@ -1241,6 +1302,19 @@ function PublicCatalogView({
                     {/* Badges Overlaid over top of image */}
                     <div className="product-card-badges-overlay">
                       <span className="badge-sku">{product.sku}</span>
+                      {productCategory && (
+                        <span
+                          className="badge-sku"
+                          style={{ background: 'rgba(15, 23, 42, 0.75)', cursor: 'pointer' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedCategoryId(productCategory.id);
+                          }}
+                          title={`Filtrar por ${productCategory.name}`}
+                        >
+                          📁 {productCategory.name}
+                        </span>
+                      )}
                       <span className={`badge-prescription ${product.requiresPrescription ? 'rx' : 'otc'}`}>
                         {product.requiresPrescription ? '📋 Con Receta' : '🟢 Venta Libre'}
                       </span>
@@ -1249,7 +1323,9 @@ function PublicCatalogView({
 
                   {/* Content */}
                   <div className="product-content">
-                    <span className="product-brand">{product.brand} · {product.laboratory}</span>
+                    <span className="product-brand">
+                      {productCategory ? `${productCategory.name} · ` : ''}{product.brand} · {product.laboratory}
+                    </span>
                     <h3 className="product-name">{product.name}</h3>
                     {product.presentation && <span className="product-presentation">{product.presentation}</span>}
                     <p className="product-desc">{product.description}</p>
@@ -1375,7 +1451,9 @@ function CustomerLiveMap({ latitude, longitude }: { latitude: number; longitude:
     const map = L.map(mapElement.current).setView([latitude, longitude], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
     L.circleMarker([latitude, longitude], { radius: 9, color: '#1d4ed8', fillColor: '#3b82f6', fillOpacity: 1 }).addTo(map).bindPopup('Ubicación actual del repartidor').openPopup();
-    return () => map.remove();
+    return () => {
+      map.remove();
+    };
   }, [latitude, longitude]);
 
   return <div ref={mapElement} style={{ width: '100%', height: '260px', borderRadius: '8px', overflow: 'hidden', marginTop: '0.75rem' }} />;
@@ -1496,6 +1574,8 @@ function LoginPage({ onLogin, onSuccess }: { onLogin: (token: string, profile: E
 function PosPage({ token, profile, categories }: { token: string | null; profile: EmployeeProfile | null; categories?: Category[] }) {
   const [orders, setOrders] = useState<any[]>([]);
   const [products, setProducts] = useState<ProductCard[]>([]);
+  const [productSearch, setProductSearch] = useState('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | 'all'>('all');
   const [status, setStatus] = useState('');
   const [branchId] = useState(profile?.branchId ?? 1);
   const [sale, setSale] = useState({ name: 'Cliente de mostrador', nit: 'CF', email: 'mostrador@demo.com', phone: '0000-0000', productId: 1, quantity: 1 });
@@ -1517,6 +1597,22 @@ function PosPage({ token, profile, categories }: { token: string | null; profile
   useEffect(() => {
     loadData().catch((error) => setStatus(error.message));
   }, [token, branchId]);
+
+  const filteredProducts = products.filter((p) => {
+    if (selectedCategoryId !== 'all') {
+      const allowedIds = getCategoryHierarchyIds(selectedCategoryId, categories ?? []);
+      if (!p.categoryId || !allowedIds.includes(p.categoryId)) return false;
+    }
+    if (productSearch.trim()) {
+      const q = productSearch.toLowerCase().trim();
+      const cat = (categories ?? []).find((c) => c.id === p.categoryId);
+      const match = [p.name, p.sku, p.brand, p.laboratory, cat?.name ?? '', p.presentation].some((f) =>
+        f.toLowerCase().includes(q)
+      );
+      if (!match) return false;
+    }
+    return true;
+  });
 
   async function processSale() {
     try {
@@ -1569,17 +1665,97 @@ function PosPage({ token, profile, categories }: { token: string | null; profile
             </div>
           </div>
 
+          {/* Product Search & Category Filter for Cashier */}
+          <div className="form-grid-2" style={{ marginTop: '0.65rem', marginBottom: '0.35rem' }}>
+            <div className="form-field">
+              <label>🔍 Buscar Medicamento</label>
+              <input
+                type="text"
+                placeholder="Nombre, SKU, marca..."
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+              />
+            </div>
+            <div className="form-field">
+              <label>📁 Filtrar por Categoría</label>
+              <select
+                value={selectedCategoryId}
+                onChange={(e) => setSelectedCategoryId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              >
+                <option value="all">Todas las Categorías ({products.length})</option>
+                {(categories ?? []).map((cat) => {
+                  const allowedIds = getCategoryHierarchyIds(cat.id, categories ?? []);
+                  const count = products.filter((p) => p.categoryId && allowedIds.includes(p.categoryId)).length;
+                  return (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name} ({count})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+
+          {(productSearch || selectedCategoryId !== 'all') && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              <span>Mostrando {filteredProducts.length} de {products.length} medicamentos</span>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ padding: '0.2rem 0.6rem', fontSize: '0.78rem' }}
+                onClick={() => {
+                  setProductSearch('');
+                  setSelectedCategoryId('all');
+                }}
+              >
+                ✕ Limpiar búsqueda
+              </button>
+            </div>
+          )}
+
+          {/* Quick selection chips */}
+          {filteredProducts.length > 0 && (productSearch || selectedCategoryId !== 'all') && (
+            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.75rem', maxHeight: '120px', overflowY: 'auto' }}>
+              {filteredProducts.slice(0, 10).map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setSale((prev) => ({ ...prev, productId: p.id }))}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: 'var(--radius-sm)',
+                    border: p.id === sale.productId ? '2px solid var(--primary)' : '1px solid var(--border)',
+                    background: p.id === sale.productId ? 'var(--primary-light, #e6fffa)' : 'var(--surface)',
+                    color: 'var(--text-main)',
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                    fontWeight: p.id === sale.productId ? 700 : 500
+                  }}
+                >
+                  {p.name} · {money(p.price)}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="form-field">
-            <label>Medicamento</label>
+            <label>Medicamento Seleccionado</label>
             <select
               value={sale.productId}
               onChange={(e) => setSale({ ...sale, productId: Number(e.target.value) })}
             >
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.sku}) · {money(p.price)} · Stock: {p.stock}
-                </option>
-              ))}
+              {filteredProducts.length === 0 ? (
+                <option value="">No hay medicamentos con los filtros actuales</option>
+              ) : (
+                filteredProducts.map((p) => {
+                  const cat = (categories ?? []).find((c) => c.id === p.categoryId);
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.sku}) · {cat ? `[${cat.name}] · ` : ''}{money(p.price)} · Stock: {p.stock}
+                    </option>
+                  );
+                })
+              )}
             </select>
           </div>
 
@@ -1675,6 +1851,44 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
   const [editForm, setEditForm] = useState<Partial<ProductCard>>({});
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
   const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
+
+  const [listSearch, setListSearch] = useState('');
+  const [listCategoryId, setListCategoryId] = useState<number | 'all'>('all');
+  const [listPrescriptionFilter, setListPrescriptionFilter] = useState<'all' | 'otc' | 'rx'>('all');
+  const [lotProductSearch, setLotProductSearch] = useState('');
+  const [lotProductCategoryId, setLotProductCategoryId] = useState<number | 'all'>('all');
+
+  const filteredWarehouseProducts = products.filter((p) => {
+    if (listPrescriptionFilter === 'otc' && p.requiresPrescription) return false;
+    if (listPrescriptionFilter === 'rx' && !p.requiresPrescription) return false;
+    if (listCategoryId !== 'all') {
+      const allowedIds = getCategoryHierarchyIds(listCategoryId, categories);
+      if (!p.categoryId || !allowedIds.includes(p.categoryId)) return false;
+    }
+    if (listSearch.trim()) {
+      const q = listSearch.toLowerCase().trim();
+      const cat = categories.find((c) => c.id === p.categoryId);
+      const match = [p.name, p.sku, p.brand, p.laboratory, p.sanitaryRegistry ?? '', cat?.name ?? '', p.description].some(
+        (f) => f.toLowerCase().includes(q)
+      );
+      if (!match) return false;
+    }
+    return true;
+  });
+
+  const availableLotProducts = products.filter((p) => {
+    if (lotProductCategoryId !== 'all') {
+      const allowedIds = getCategoryHierarchyIds(lotProductCategoryId, categories);
+      if (!p.categoryId || !allowedIds.includes(p.categoryId)) return false;
+    }
+    if (lotProductSearch.trim()) {
+      const q = lotProductSearch.toLowerCase().trim();
+      const cat = categories.find((c) => c.id === p.categoryId);
+      const match = [p.name, p.sku, p.brand, cat?.name ?? ''].some((f) => f.toLowerCase().includes(q));
+      if (!match) return false;
+    }
+    return true;
+  });
 
   // New Product Form State
   const [newProd, setNewProd] = useState({
@@ -1875,14 +2089,14 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
         body: JSON.stringify({
           sku: editForm.sku,
           name: editForm.name,
-          categoryId: editForm.categoryId ?? null,
-          brand: editForm.brand,
-          laboratory: editForm.laboratory,
-          presentation: editForm.presentation,
-          unitMeasure: editForm.unitMeasure,
-          sanitaryRegistry: editForm.sanitaryRegistry,
-          requiresPrescription: editForm.requiresPrescription,
-          description: editForm.description,
+          categoryId: editForm.categoryId ? Number(editForm.categoryId) : null,
+          brand: editForm.brand ?? '',
+          laboratory: editForm.laboratory ?? '',
+          presentation: editForm.presentation ?? '',
+          unitMeasure: editForm.unitMeasure ?? '',
+          sanitaryRegistry: editForm.sanitaryRegistry ?? '',
+          requiresPrescription: Boolean(editForm.requiresPrescription),
+          description: editForm.description ?? '',
           price: Number(editForm.price),
           cost: Number(editForm.cost),
           imageUrl
@@ -2330,9 +2544,33 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
               <span className="pill-tag">Ingreso PEPS</span>
             </div>
 
-            {/* Product Selector */}
+            {/* Product Selector with Search & Category */}
+            <div className="form-grid-2" style={{ marginBottom: '0.4rem' }}>
+              <div className="form-field">
+                <label>🔍 Buscar Medicamento</label>
+                <input
+                  type="text"
+                  placeholder="Nombre o SKU..."
+                  value={lotProductSearch}
+                  onChange={(e) => setLotProductSearch(e.target.value)}
+                />
+              </div>
+              <div className="form-field">
+                <label>📁 Filtrar por Categoría</label>
+                <select
+                  value={lotProductCategoryId}
+                  onChange={(e) => setLotProductCategoryId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                >
+                  <option value="all">Todas las Categorías ({products.length})</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div className="form-field">
-              <label>Seleccionar Medicamento *</label>
+              <label>Seleccionar Medicamento * ({availableLotProducts.length} encontrados)</label>
               <select
                 value={lotForm.productId}
                 onChange={(e) => {
@@ -2346,11 +2584,18 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                   });
                 }}
               >
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.sku}) · {money(p.price)}
-                  </option>
-                ))}
+                {availableLotProducts.length === 0 ? (
+                  <option value="">No hay medicamentos con los filtros actuales</option>
+                ) : (
+                  availableLotProducts.map((p) => {
+                    const cat = categories.find((c) => c.id === p.categoryId);
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.sku}) · {cat ? `[${cat.name}] · ` : ''}{money(p.price)}
+                      </option>
+                    );
+                  })
+                )}
               </select>
             </div>
 
@@ -2521,54 +2766,208 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
             </button>
           </div>
 
-          <div className="products-grid" style={{ marginTop: '1rem' }}>
-            {products.map((p) => (
-              <article
-                key={p.id}
-                className="product-card product-card-clickable"
-                style={{ padding: '1rem' }}
-                onClick={() => setSelectedProductForModal(p)}
-                title="Haz clic para ver especificaciones y detalles completos"
+          {/* Search & Category Filter Controls */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ flex: 1, minWidth: '240px' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Buscar por nombre, SKU, marca, laboratorio o registro sanitario..."
+                  value={listSearch}
+                  onChange={(e) => setListSearch(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border)',
+                    fontSize: '0.9rem'
+                  }}
+                />
+              </div>
+              <div style={{ minWidth: '220px' }}>
+                <select
+                  value={listCategoryId}
+                  onChange={(e) => setListCategoryId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border)',
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  <option value="all">📁 Todas las Categorías ({products.length})</option>
+                  {categories.map((cat) => {
+                    const allowedIds = getCategoryHierarchyIds(cat.id, categories);
+                    const count = products.filter((p) => p.categoryId && allowedIds.includes(p.categoryId)).length;
+                    return (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name} ({count})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            </div>
+
+            {/* Category pills for quick click */}
+            {categories.length > 0 && (
+              <div className="filter-pills-row" style={{ marginTop: '0.2rem' }}>
+                <button
+                  type="button"
+                  className={`filter-pill-btn ${listCategoryId === 'all' ? 'active' : ''}`}
+                  onClick={() => setListCategoryId('all')}
+                >
+                  <span>Todas ({products.length})</span>
+                </button>
+                {categories.map((cat) => {
+                  const allowedIds = getCategoryHierarchyIds(cat.id, categories);
+                  const count = products.filter((p) => p.categoryId && allowedIds.includes(p.categoryId)).length;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      className={`filter-pill-btn ${listCategoryId === cat.id ? 'active' : ''}`}
+                      onClick={() => setListCategoryId(listCategoryId === cat.id ? 'all' : cat.id)}
+                    >
+                      <span>{cat.name}</span>
+                      <span className="filter-pill-count">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Prescription filter & count & clear */}
+            <div className="filter-pills-row">
+              <button
+                type="button"
+                className={`filter-pill-btn ${listPrescriptionFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setListPrescriptionFilter('all')}
               >
-                <div className="product-image-wrap" style={{ height: '160px' }}>
-                  {p.imageUrl ? (
-                    <img src={p.imageUrl} alt={p.name} className="product-card-img" />
-                  ) : (
-                    <div className="product-img-fallback">
-                      <span>💊 {p.brand}</span>
-                    </div>
-                  )}
-                  <div className="product-card-badges-overlay">
-                    <span className="badge-sku">{p.sku}</span>
-                    <span className={`badge-prescription ${p.requiresPrescription ? 'rx' : 'otc'}`}>
-                      {p.requiresPrescription ? '📋 Con Receta' : '🟢 Venta Libre'}
-                    </span>
-                  </div>
-                </div>
+                <span>Todos</span>
+              </button>
+              <button
+                type="button"
+                className={`filter-pill-btn ${listPrescriptionFilter === 'otc' ? 'active' : ''}`}
+                onClick={() => setListPrescriptionFilter('otc')}
+              >
+                <span>🟢 Venta Libre</span>
+              </button>
+              <button
+                type="button"
+                className={`filter-pill-btn ${listPrescriptionFilter === 'rx' ? 'active' : ''}`}
+                onClick={() => setListPrescriptionFilter('rx')}
+              >
+                <span>📋 Con Receta</span>
+              </button>
 
-                <div className="product-content">
-                  <span className="product-brand">{p.brand} · {p.laboratory}</span>
-                  <h3 className="product-name" style={{ fontSize: '1.05rem' }}>{p.name}</h3>
-                  <span className="product-presentation">{p.presentation}</span>
-                  <p className="product-desc">{p.description}</p>
-                  <span className="quick-view-badge">
-                    🔍 Ver ficha técnica y especificaciones
-                  </span>
-                </div>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                Mostrando {filteredWarehouseProducts.length} de {products.length} medicamentos
+              </span>
 
-                <div className="product-footer" style={{ marginTop: '0.5rem' }}>
-                  <div className="product-price-row">
-                    <span className="product-price">{money(p.price)}</span>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Costo: {money(p.cost ?? 0)}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.65rem' }} onClick={(e) => e.stopPropagation()}>
-                    <button type="button" className="btn-secondary" onClick={() => startEditingProduct(p)}>Editar</button>
-                    <button type="button" className="btn-secondary" onClick={() => removeProduct(p)}>Eliminar</button>
-                  </div>
-                </div>
-              </article>
-            ))}
+              {(listSearch || listCategoryId !== 'all' || listPrescriptionFilter !== 'all') && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem', marginLeft: 'auto', borderRadius: 'var(--radius-full)' }}
+                  onClick={() => {
+                    setListSearch('');
+                    setListCategoryId('all');
+                    setListPrescriptionFilter('all');
+                  }}
+                >
+                  ✕ Limpiar Filtros
+                </button>
+              )}
+            </div>
           </div>
+
+          {filteredWarehouseProducts.length === 0 ? (
+            <div className="catalog-empty-state" style={{ marginTop: '1.5rem' }}>
+              <h3>No se encontraron medicamentos</h3>
+              <p>No hay medicamentos que coincidan con la búsqueda o categoría seleccionada.</p>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ marginTop: '0.75rem' }}
+                onClick={() => {
+                  setListSearch('');
+                  setListCategoryId('all');
+                  setListPrescriptionFilter('all');
+                }}
+              >
+                Limpiar Filtros
+              </button>
+            </div>
+          ) : (
+            <div className="products-grid" style={{ marginTop: '1rem' }}>
+              {filteredWarehouseProducts.map((p) => {
+                const cat = categories.find((c) => c.id === p.categoryId);
+                return (
+                  <article
+                    key={p.id}
+                    className="product-card product-card-clickable"
+                    style={{ padding: '1rem' }}
+                    onClick={() => setSelectedProductForModal(p)}
+                    title="Haz clic para ver especificaciones y detalles completos"
+                  >
+                    <div className="product-image-wrap" style={{ height: '160px' }}>
+                      {p.imageUrl ? (
+                        <img src={p.imageUrl} alt={p.name} className="product-card-img" />
+                      ) : (
+                        <div className="product-img-fallback">
+                          <span>💊 {p.brand}</span>
+                        </div>
+                      )}
+                      <div className="product-card-badges-overlay">
+                        <span className="badge-sku">{p.sku}</span>
+                        {cat && (
+                          <span
+                            className="badge-sku"
+                            style={{ background: 'rgba(15, 23, 42, 0.75)', cursor: 'pointer' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setListCategoryId(cat.id);
+                            }}
+                            title={`Filtrar por ${cat.name}`}
+                          >
+                            📁 {cat.name}
+                          </span>
+                        )}
+                        <span className={`badge-prescription ${p.requiresPrescription ? 'rx' : 'otc'}`}>
+                          {p.requiresPrescription ? '📋 Con Receta' : '🟢 Venta Libre'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="product-content">
+                      <span className="product-brand">
+                        {cat ? `${cat.name} · ` : ''}{p.brand} · {p.laboratory}
+                      </span>
+                      <h3 className="product-name" style={{ fontSize: '1.05rem' }}>{p.name}</h3>
+                      <span className="product-presentation">{p.presentation}</span>
+                      <p className="product-desc">{p.description}</p>
+                      <span className="quick-view-badge">
+                        🔍 Ver ficha técnica y especificaciones
+                      </span>
+                    </div>
+
+                    <div className="product-footer" style={{ marginTop: '0.5rem' }}>
+                      <div className="product-price-row">
+                        <span className="product-price">{money(p.price)}</span>
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Costo: {money(p.cost ?? 0)}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.65rem' }} onClick={(e) => e.stopPropagation()}>
+                        <button type="button" className="btn-secondary" onClick={() => startEditingProduct(p)}>Editar</button>
+                        <button type="button" className="btn-secondary" onClick={() => removeProduct(p)}>Eliminar</button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
 
           {editingProduct && (
             <div className="modal-backdrop" onClick={() => setEditingProduct(null)}>
@@ -2576,10 +2975,18 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                 <button type="button" className="modal-close-btn" onClick={() => setEditingProduct(null)} title="Cerrar">✕</button>
                 <h2 className="modal-title">Editar medicamento</h2>
                 <div className="form-grid-2">
-                  {(['name', 'sku', 'brand', 'laboratory', 'presentation', 'unitMeasure', 'sanitaryRegistry'] as const).map((field) => (
-                    <div className="form-field" key={field}>
-                      <label>{field === 'name' ? 'Nombre' : field === 'sku' ? 'SKU' : field}</label>
-                      <input value={String(editForm[field] ?? '')} onChange={(e) => setEditForm({ ...editForm, [field]: e.target.value })} />
+                  {([
+                    { key: 'name', label: 'Nombre comercial' },
+                    { key: 'sku', label: 'Código SKU' },
+                    { key: 'brand', label: 'Marca' },
+                    { key: 'laboratory', label: 'Laboratorio' },
+                    { key: 'presentation', label: 'Presentación' },
+                    { key: 'unitMeasure', label: 'Unidad de medida' },
+                    { key: 'sanitaryRegistry', label: 'Registro Sanitario' }
+                  ] as const).map(({ key, label }) => (
+                    <div className="form-field" key={key}>
+                      <label>{label}</label>
+                      <input value={String(editForm[key] ?? '')} onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })} />
                     </div>
                   ))}
                   <div className="form-field">
