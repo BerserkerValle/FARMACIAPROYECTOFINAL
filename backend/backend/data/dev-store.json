@@ -155,6 +155,23 @@
       "price": 34.97,
       "cost": 24.48,
       "imageUrl": "http://localhost:4000/uploads/med-1788756638677-643797656.png"
+    },
+    {
+      "id": 6,
+      "sku": "SKU-LOCAL-001",
+      "name": "Medicamento actualizado",
+      "categoryId": 0,
+      "brand": "Marca Actualizada",
+      "laboratory": "Laboratorio Local",
+      "presentation": "Caja x 10 unidades",
+      "unitMeasure": "unidad",
+      "sanitaryRegistry": "REG-LOCAL-001",
+      "requiresPrescription": false,
+      "active": false,
+      "description": "Descripción actualizada.",
+      "price": 40,
+      "cost": 22,
+      "imageUrl": null
     }
   ],
   "suppliers": [
@@ -184,6 +201,15 @@
       "phone": "2255-8811",
       "address": "Mixco, Guatemala",
       "active": true
+    },
+    {
+      "id": 4,
+      "name": "Proveedor actualizado",
+      "nit": "1111111-1",
+      "email": "actualizado@prueba.com",
+      "phone": "55551111",
+      "address": "Zona 10",
+      "active": false
     }
   ],
   "lots": [
@@ -282,6 +308,18 @@
       "costPrice": 24.48,
       "salePrice": 34.97,
       "quantityAvailable": 21
+    },
+    {
+      "id": 11,
+      "productId": 1,
+      "branchId": 1,
+      "supplierId": 1,
+      "batchCode": "LOTE-PRUEBA-001",
+      "expirationDate": "2027-12-31",
+      "productionDate": "2026-09-12",
+      "costPrice": 20,
+      "salePrice": 35,
+      "quantityAvailable": 50
     }
   ],
   "customers": [
@@ -329,6 +367,16 @@
       "createdAt": "2026-09-06T06:50:08.834Z",
       "updatedAt": "2026-09-06T06:51:25.498Z",
       "address": "3a Calle 2-45, Zona 1, Ciudad Vieja, Sacatepéquez."
+    },
+    {
+      "id": 5,
+      "name": "Cliente Prueba",
+      "nit": "1234567-8",
+      "email": "cliente@example.com",
+      "phone": "55554444",
+      "passwordHash": "$2b$12$tyVFM9VglXkyaqF657UMlOy30HPeCX/Kfyk26MaB9OWW8e.jPF40a",
+      "createdAt": "2026-09-13T03:26:44.734Z",
+      "updatedAt": "2026-09-13T03:26:44.734Z"
     }
   ],
   "employees": [
@@ -391,6 +439,16 @@
       "branchId": null,
       "supervisorId": null,
       "active": true
+    },
+    {
+      "id": 7,
+      "fullName": "Empleado actualizado",
+      "email": "empleado.actualizado@farmaciafjk.com",
+      "password": "$2b$12$/AG68xnJRNuVWcbWcQcrIeAR7w6aRt9WGNdQ9v06spCqGoNONm9pK",
+      "role": "Bodeguero",
+      "branchId": 1,
+      "supervisorId": null,
+      "active": false
     }
   ],
   "orders": [
@@ -1154,15 +1212,15 @@
     }
   ],
   "counters": {
-    "customer": 4,
-    "employee": 6,
+    "customer": 5,
+    "employee": 7,
     "order": 18,
     "orderItem": 19,
     "payment": 12,
     "invoice": 12,
     "return": 0,
     "crosscheck": 1,
-    "lot": 10,
-    "product": 5
+    "lot": 11,
+    "product": 6
   }
 }

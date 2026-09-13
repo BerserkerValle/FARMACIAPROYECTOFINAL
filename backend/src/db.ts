@@ -312,6 +312,43 @@ export async function getDatabaseBranches() {
   return result.rows;
 }
 
+export async function createDatabaseBranch(input: { name: string; city?: string; address?: string }) {
+  const database = requirePool();
+  const result = await database.query(
+    `INSERT INTO Sucursales (nombre_sucursal) VALUES ($1)
+     RETURNING id_sucursal AS id, nombre_sucursal AS name`,
+    [input.name.trim()]
+  );
+  return { ...result.rows[0], city: input.city ?? '', address: input.address ?? '' };
+}
+
+export async function updateDatabaseBranch(id: number, input: { name?: string; city?: string; address?: string }) {
+  const database = requirePool();
+  if (input.name === undefined) throw new Error('El nombre de la sucursal es obligatorio');
+  const result = await database.query(
+    `UPDATE Sucursales SET nombre_sucursal = $2 WHERE id_sucursal = $1
+     RETURNING id_sucursal AS id, nombre_sucursal AS name`,
+    [id, input.name.trim()]
+  );
+  if (!result.rows[0]) throw new Error(`Sucursal #${id} no encontrada`);
+  return { ...result.rows[0], city: input.city ?? '', address: input.address ?? '' };
+}
+
+export async function deleteDatabaseBranch(id: number) {
+  const database = requirePool();
+  const used = await database.query(
+    `SELECT EXISTS (SELECT 1 FROM Compras WHERE id_sucursal = $1) AS purchases_used,
+            EXISTS (SELECT 1 FROM Facturas WHERE id_sucursal = $1) AS invoices_used`,
+    [id]
+  );
+  if (used.rows[0]?.purchases_used || used.rows[0]?.invoices_used) {
+    throw new Error('No se puede eliminar una sucursal con compras o facturas asociadas');
+  }
+  const result = await database.query('DELETE FROM Sucursales WHERE id_sucursal = $1 RETURNING id_sucursal AS id, nombre_sucursal AS name', [id]);
+  if (!result.rows[0]) throw new Error(`Sucursal #${id} no encontrada`);
+  return result.rows[0];
+}
+
 export async function getDatabaseCategories() {
   if (!pool) return null;
   const result = await pool.query(
@@ -385,6 +422,43 @@ export async function getDatabaseSuppliers() {
       ORDER BY id_proveedor`
   );
   return result.rows;
+}
+
+export async function createDatabaseSupplier(input: { name: string; nit: string; email: string; phone: string; address: string; active: boolean }) {
+  const database = requirePool();
+  const result = await database.query(
+    `INSERT INTO Proveedores (nombre_proveedor, nit, correo, telefono, direccion, estado)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id_proveedor AS id, nombre_proveedor AS name, nit, correo AS email, telefono AS phone, direccion AS address, LOWER(estado) = 'activo' AS active`,
+    [input.name.trim(), input.nit.trim(), input.email.trim(), input.phone.trim(), input.address.trim(), input.active ? 'Activo' : 'Inactivo']
+  );
+  return result.rows[0];
+}
+
+export async function updateDatabaseSupplier(id: number, input: Partial<{ name: string; nit: string; email: string; phone: string; address: string; active: boolean }>) {
+  const database = requirePool();
+  const fields: Array<[string, unknown]> = [];
+  const mapping: Array<[keyof typeof input, string]> = [['name', 'nombre_proveedor'], ['nit', 'nit'], ['email', 'correo'], ['phone', 'telefono'], ['address', 'direccion']];
+  for (const [key, column] of mapping) if (input[key] !== undefined) fields.push([column, input[key]]);
+  if (input.active !== undefined) fields.push(['estado', input.active ? 'Activo' : 'Inactivo']);
+  if (!fields.length) throw new Error('No hay campos para actualizar');
+  const assignments = fields.map(([column], index) => `${column} = $${index + 2}`).join(', ');
+  const result = await database.query(
+    `UPDATE Proveedores SET ${assignments} WHERE id_proveedor = $1
+     RETURNING id_proveedor AS id, nombre_proveedor AS name, nit, correo AS email, telefono AS phone, direccion AS address, LOWER(estado) = 'activo' AS active`,
+    [id, ...fields.map(([, value]) => value)]
+  );
+  if (!result.rows[0]) throw new Error(`Proveedor #${id} no encontrado`);
+  return result.rows[0];
+}
+
+export async function deleteDatabaseSupplier(id: number) {
+  const database = requirePool();
+  const used = await database.query('SELECT EXISTS (SELECT 1 FROM Lotes WHERE id_proveedor = $1) AS used', [id]);
+  if (used.rows[0]?.used) throw new Error('No se puede eliminar un proveedor con lotes asociados');
+  const result = await database.query('DELETE FROM Proveedores WHERE id_proveedor = $1 RETURNING id_proveedor AS id, nombre_proveedor AS name', [id]);
+  if (!result.rows[0]) throw new Error(`Proveedor #${id} no encontrado`);
+  return result.rows[0];
 }
 
 export async function searchDatabaseCatalog(query: string, branchId?: number, categoryId?: number) {

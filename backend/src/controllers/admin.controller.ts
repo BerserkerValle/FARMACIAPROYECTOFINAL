@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { createDatabaseCategory, createDatabaseEmployee, databaseEnabled, deleteDatabaseCategory, deactivateDatabaseEmployee, listDatabaseEmployees, updateDatabaseCategory, updateDatabaseEmployee } from '../db.js';
+import { createDatabaseBranch, createDatabaseCategory, createDatabaseEmployee, createDatabaseSupplier, databaseEnabled, deleteDatabaseBranch, deleteDatabaseCategory, deleteDatabaseSupplier, deactivateDatabaseEmployee, getDatabaseBranches, getDatabaseCategories, getDatabaseSuppliers, listDatabaseEmployees, updateDatabaseBranch, updateDatabaseCategory, updateDatabaseEmployee, updateDatabaseSupplier } from '../db.js';
 import { store } from '../store.js';
 
 const employeeSchema = z.object({
@@ -48,24 +48,29 @@ export async function employees(_req: Request, res: Response) {
   return res.json({ success: true, data: data ?? [] });
 }
 
-export function branches(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getBranches() });
+export async function branches(_req: Request, res: Response) {
+  const data = databaseEnabled ? await getDatabaseBranches() : store.getBranches();
+  return res.json({ success: true, data: data ?? [] });
 }
 
-export function createBranch(req: Request, res: Response) {
-  return res.status(201).json({ success: true, data: store.addBranch(branchSchema.parse(req.body)) });
+export async function createBranch(req: Request, res: Response) {
+  try { const payload = branchSchema.parse(req.body); const data = databaseEnabled ? await createDatabaseBranch(payload) : store.addBranch(payload); return res.status(201).json({ success: true, data }); }
+  catch (error) { return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo crear la sucursal' }); }
 }
 
-export function updateBranch(req: Request, res: Response) {
-  return res.json({ success: true, data: store.updateBranch(Number(req.params.id), branchSchema.partial().parse(req.body)) });
+export async function updateBranch(req: Request, res: Response) {
+  try { const payload = branchSchema.partial().parse(req.body); const data = databaseEnabled ? await updateDatabaseBranch(Number(req.params.id), payload) : store.updateBranch(Number(req.params.id), payload); return res.json({ success: true, data }); }
+  catch (error) { return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo actualizar la sucursal' }); }
 }
 
-export function deleteBranch(req: Request, res: Response) {
-  return res.json({ success: true, data: store.deleteBranch(Number(req.params.id)) });
+export async function deleteBranch(req: Request, res: Response) {
+  try { const data = databaseEnabled ? await deleteDatabaseBranch(Number(req.params.id)) : store.deleteBranch(Number(req.params.id)); return res.json({ success: true, data }); }
+  catch (error) { return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo eliminar la sucursal' }); }
 }
 
-export function categories(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getCategories() });
+export async function categories(_req: Request, res: Response) {
+  const data = databaseEnabled ? await getDatabaseCategories() : store.getCategories();
+  return res.json({ success: true, data: data ?? [] });
 }
 
 export async function createCategory(req: Request, res: Response) {
@@ -100,20 +105,24 @@ export async function deleteCategory(req: Request, res: Response) {
   }
 }
 
-export function suppliers(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getSuppliers() });
+export async function suppliers(_req: Request, res: Response) {
+  const data = databaseEnabled ? await getDatabaseSuppliers() : store.getSuppliers();
+  return res.json({ success: true, data: data ?? [] });
 }
 
-export function createSupplier(req: Request, res: Response) {
-  return res.status(201).json({ success: true, data: store.addSupplier(supplierSchema.parse(req.body)) });
+export async function createSupplier(req: Request, res: Response) {
+  try { const payload = supplierSchema.parse(req.body); const data = databaseEnabled ? await createDatabaseSupplier(payload) : store.addSupplier(payload); return res.status(201).json({ success: true, data }); }
+  catch (error) { return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo crear el proveedor' }); }
 }
 
-export function updateSupplier(req: Request, res: Response) {
-  return res.json({ success: true, data: store.updateSupplier(Number(req.params.id), supplierSchema.partial().parse(req.body)) });
+export async function updateSupplier(req: Request, res: Response) {
+  try { const payload = supplierSchema.partial().parse(req.body); const data = databaseEnabled ? await updateDatabaseSupplier(Number(req.params.id), payload) : store.updateSupplier(Number(req.params.id), payload); return res.json({ success: true, data }); }
+  catch (error) { return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo actualizar el proveedor' }); }
 }
 
-export function deleteSupplier(req: Request, res: Response) {
-  return res.json({ success: true, data: store.deleteSupplier(Number(req.params.id)) });
+export async function deleteSupplier(req: Request, res: Response) {
+  try { const data = databaseEnabled ? await deleteDatabaseSupplier(Number(req.params.id)) : store.deleteSupplier(Number(req.params.id)); return res.json({ success: true, data }); }
+  catch (error) { return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo eliminar el proveedor' }); }
 }
 
 export async function createEmployee(req: Request, res: Response) {

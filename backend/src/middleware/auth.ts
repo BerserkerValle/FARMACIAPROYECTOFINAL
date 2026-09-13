@@ -3,9 +3,9 @@ import { databaseEnabled, findDatabaseEmployeeById } from '../db.js';
 import { store } from '../store.js';
 
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
-  const employeeId = Number(req.header('x-employee-id'));
+  const employeeId = Number(req.header('x-employee-id') ?? req.header('x-empleado-id') ?? req.header('x-user-id'));
   if (!Number.isInteger(employeeId) || employeeId <= 0) {
-    return res.status(401).json({ success: false, message: 'Falta la sesión del empleado' });
+    return res.status(401).json({ success: false, message: 'Falta la sesión del empleado. Agrega el header X-Employee-Id: 1 después de iniciar sesión.' });
   }
 
   const employee = databaseEnabled ? await findDatabaseEmployeeById(employeeId) : store.getEmployeeById(employeeId);
