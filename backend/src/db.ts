@@ -1,3 +1,31 @@
+/**
+ * ============================================================================
+ * PROYECTO FARMACIA - CAPA DE PERSISTENCIA Y ACCESO A DATOS (POSTGRESQL)
+ * ============================================================================
+ * Este módulo implementa la interacción con la base de datos relacional PostgreSQL:
+ * 1. Conectividad y Pool de Conexiones:
+ *    - Inicialización de `pg.Pool` con soporte SSL y límite de conexiones concurrentes.
+ *    - Detección automática de variables de entorno (DATABASE_URL o PGHOST/PGUSER/etc.).
+ * 2. Cuentas de Clientes y Telemetría:
+ *    - Creación y autenticación de cuentas e-commerce con hash bcrypt.
+ *    - Tabla `pharmacy_delivery_tracking` para seguimiento geográfico en tiempo real.
+ * 3. Gestión de Personal (Empleados):
+ *    - Consulta con filtros, creación, actualización y baja lógica (`deactivateDatabaseEmployee`).
+ * 4. Catálogos Maestros (CRUDs):
+ *    - Sucursales, Categorías jerárquicas y Proveedores.
+ * 5. Control de Medicamentos e Inventario FEFO:
+ *    - Catálogo con búsqueda textual (`ILIKE`), cálculo de existencias en tiempo real.
+ *    - Alta transaccional de productos con lote inicial opcional.
+ *    - Recepción formal de lotes (`receiveDatabaseLot`) y registro de kardex / movimientos.
+ *    - Eliminación inteligente: borrado físico si no tiene historial; baja lógica (soft delete) si tiene ventas.
+ * 6. Checkout y Facturación Transaccional:
+ *    - Operación atómica (`BEGIN ... COMMIT / ROLLBACK`) que reserva stock según caducidad (FEFO),
+ *      registra el cliente, emite factura legal y asocia detalle de lotes.
+ * 7. Inicialización y Respaldo (Fallback State):
+ *    - Tablas de estado `pharmacy_state` para snapshots JSONB sincronizados.
+ * ============================================================================
+ */
+
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
@@ -5,7 +33,15 @@ import type { CreateProductInput, DataSnapshot, PublicCheckoutInput } from './do
 
 dotenv.config();
 
-function connectionString() {
+// ============================================================================
+// CONFIGURACIÓN DEL POOL DE CONEXIONES POSTGRESQL
+// ============================================================================
+
+/**
+ * Construye la cadena de conexión de PostgreSQL a partir de variables de entorno.
+ * Soporta DATABASE_URL completa o variables individuales estándar de PG.
+ */
+function connectionString(): string | null {
   if (process.env.DATABASE_URL?.trim()) {
     return process.env.DATABASE_URL.trim();
   }
@@ -23,7 +59,11 @@ function connectionString() {
 }
 
 const url = connectionString();
+
+/** Bandera que indica si la base de datos PostgreSQL está habilitada y configurada */
 export const databaseEnabled = Boolean(url);
+
+/** Instancia del pool de conexiones `pg.Pool` */
 const pool = url
   ? new Pool({
       connectionString: url,
@@ -32,10 +72,18 @@ const pool = url
     })
   : null;
 
-function requirePool() {
+/**
+ * Asegura que el pool esté disponible antes de ejecutar una consulta obligatoria.
+ * Lanza un error si PostgreSQL no está configurado.
+ */
+function requirePool(): Pool {
   if (!pool) throw new Error('PostgreSQL no está configurado');
   return pool;
 }
+
+// ============================================================================
+// MODELOS Y MAPEADORES DE CLIENTES Y TELEMETRÍA
+// ============================================================================
 
 export interface DatabaseEmployee {
   employeeId: number;
@@ -56,17 +104,19 @@ export interface DatabaseCustomerAccount {
   address: string;
 }
 
+/** Transforma una fila de PostgreSQL al modelo de cuenta de cliente en memoria */
 function mapCustomerAccount(row: Record<string, unknown>): DatabaseCustomerAccount {
   return {
     customerId: Number(row.id),
     fullName: String(row.full_name),
     email: String(row.email),
     phone: String(row.phone ?? ''),
-    nit: String(row.nit ?? '')
-    ,address: String(row.address ?? '')
+    nit: String(row.nit ?? ''),
+    address: String(row.address ?? '')
   };
 }
 
+/** Crea una nueva cuenta de cliente con contraseña encriptada (bcrypt 12 rondas) */
 export async function createDatabaseCustomerAccount(input: { fullName: string; email: string; password: string; phone: string; nit: string }) {
   const database = requirePool();
   const result = await database.query(
@@ -78,6 +128,7 @@ export async function createDatabaseCustomerAccount(input: { fullName: string; e
   return mapCustomerAccount(result.rows[0]);
 }
 
+/** Busca una cuenta de cliente por correo y valida opcionalmente la contraseña con bcrypt */
 export async function findDatabaseCustomerAccount(email: string, password?: string) {
   const database = requirePool();
   const result = await database.query(
@@ -90,12 +141,14 @@ export async function findDatabaseCustomerAccount(email: string, password?: stri
   return mapCustomerAccount(row);
 }
 
+/** Recupera una cuenta de cliente por su ID primario */
 export async function findDatabaseCustomerAccountById(id: number) {
   const database = requirePool();
   const result = await database.query('SELECT id, full_name, email, phone, nit, address FROM pharmacy_customer_accounts WHERE id = $1', [id]);
   return result.rows[0] ? mapCustomerAccount(result.rows[0]) : null;
 }
 
+/** Actualiza los datos fiscales y de dirección de un cliente */
 export async function updateDatabaseCustomerAccount(id: number, input: { fullName: string; phone: string; nit: string; address: string }) {
   const database = requirePool();
   const result = await database.query(
@@ -109,6 +162,7 @@ export async function updateDatabaseCustomerAccount(id: number, input: { fullNam
   return mapCustomerAccount(result.rows[0]);
 }
 
+/** Registra el seguimiento GPS y telemetría de una orden de entrega a domicilio */
 export async function createDatabaseDeliveryTracking(input: { orderCode: string; customerId: number | null; branchId: number; address: string; latitude: number | null; longitude: number | null; deliveryMode: string }) {
   if (input.deliveryMode !== 'DELIVERY') return;
   const database = requirePool();
@@ -120,6 +174,7 @@ export async function createDatabaseDeliveryTracking(input: { orderCode: string;
   );
 }
 
+/** Lista los pedidos en seguimiento asociados a un cliente */
 export async function listDatabaseCustomerOrders(customerId: number) {
   const database = requirePool();
   const result = await database.query(
@@ -133,6 +188,7 @@ export async function listDatabaseCustomerOrders(customerId: number) {
   return result.rows;
 }
 
+/** Lista los pedidos pendientes de entrega asignados a una sucursal */
 export async function listDatabaseDeliveries(branchId: number) {
   const database = requirePool();
   const result = await database.query(
@@ -147,6 +203,7 @@ export async function listDatabaseDeliveries(branchId: number) {
   return result.rows;
 }
 
+/** Actualiza el estado y las coordenadas GPS en tiempo real de una entrega */
 export async function updateDatabaseDeliveryTracking(id: number, input: { status?: string; latitude?: number; longitude?: number }) {
   const database = requirePool();
   const fields: Array<[string, unknown]> = [];
@@ -165,6 +222,10 @@ export async function updateDatabaseDeliveryTracking(id: number, input: { status
   return result.rows[0];
 }
 
+// ============================================================================
+// GESTIÓN DE EMPLEADOS (PERSONAL DE FARMACIA)
+// ============================================================================
+
 function mapEmployee(row: Record<string, unknown>): DatabaseEmployee {
   return {
     employeeId: Number(row.id_empleado),
@@ -177,6 +238,7 @@ function mapEmployee(row: Record<string, unknown>): DatabaseEmployee {
   };
 }
 
+/** Busca un empleado activo por correo electrónico para autenticación */
 export async function findDatabaseEmployeeByEmail(email: string) {
   if (!pool) return null;
   const result = await pool.query(
@@ -191,6 +253,7 @@ export async function findDatabaseEmployeeByEmail(email: string) {
   return result.rows[0] ? mapEmployee(result.rows[0]) : null;
 }
 
+/** Recupera un empleado por su ID primario */
 export async function findDatabaseEmployeeById(id: number) {
   if (!pool) return null;
   const result = await pool.query(
@@ -217,6 +280,7 @@ function mapEmployeeForAdmin(row: Record<string, unknown>) {
   };
 }
 
+/** Lista todos los empleados para el panel de administración */
 export async function listDatabaseEmployees() {
   if (!pool) return null;
   const result = await pool.query(
@@ -228,6 +292,7 @@ export async function listDatabaseEmployees() {
   return result.rows.map(mapEmployeeForAdmin);
 }
 
+/** Crea un nuevo empleado en la base de datos con contraseña encriptada con bcrypt */
 export async function createDatabaseEmployee(input: {
   fullName: string;
   email: string;
@@ -257,6 +322,7 @@ export async function createDatabaseEmployee(input: {
   return mapEmployeeForAdmin(result.rows[0]);
 }
 
+/** Actualiza datos y rol de un empleado */
 export async function updateDatabaseEmployee(id: number, input: Record<string, unknown>) {
   const database = requirePool();
   const fields: Array<[string, unknown]> = [];
@@ -285,6 +351,7 @@ export async function updateDatabaseEmployee(id: number, input: Record<string, u
   return mapEmployeeForAdmin(result.rows[0]);
 }
 
+/** Desactiva a un empleado removiendo su contraseña de acceso */
 export async function deactivateDatabaseEmployee(id: number) {
   const database = requirePool();
   const result = await database.query(
@@ -298,6 +365,10 @@ export async function deactivateDatabaseEmployee(id: number) {
   if (!result.rows[0]) throw new Error(`Empleado #${id} no encontrado`);
   return mapEmployeeForAdmin(result.rows[0]);
 }
+
+// ============================================================================
+// GESTIÓN DE SUCURSALES (SUCURSALES)
+// ============================================================================
 
 export async function getDatabaseBranches() {
   if (!pool) return null;
@@ -348,6 +419,10 @@ export async function deleteDatabaseBranch(id: number) {
   if (!result.rows[0]) throw new Error(`Sucursal #${id} no encontrada`);
   return result.rows[0];
 }
+
+// ============================================================================
+// GESTIÓN DE CATEGORÍAS (CATEGORIAS)
+// ============================================================================
 
 export async function getDatabaseCategories() {
   if (!pool) return null;
@@ -408,6 +483,10 @@ export async function deleteDatabaseCategory(id: number) {
   return result.rows[0];
 }
 
+// ============================================================================
+// GESTIÓN DE PROVEEDORES (PROVEEDORES)
+// ============================================================================
+
 export async function getDatabaseSuppliers() {
   if (!pool) return null;
   const result = await pool.query(
@@ -461,6 +540,13 @@ export async function deleteDatabaseSupplier(id: number) {
   return result.rows[0];
 }
 
+// ============================================================================
+// CATÁLOGO DE PRODUCTOS Y BÚSQUEDA AVANZADA CON LOTES
+// ============================================================================
+
+/**
+ * Realiza búsqueda en catálogo consolidando lotes disponibles en sucursal mediante `jsonb_agg`.
+ */
 export async function searchDatabaseCatalog(query: string, branchId?: number, categoryId?: number) {
   if (!pool) return null;
   const result = await pool.query(
@@ -539,6 +625,10 @@ export async function listDatabaseProducts() {
   return result.rows;
 }
 
+// ============================================================================
+// CONTROL DE LOTES Y MOVIMIENTOS DE BODEGA
+// ============================================================================
+
 export async function listDatabaseLots(branchId?: number, productId?: number) {
   if (!pool) return null;
   const result = await pool.query(
@@ -557,12 +647,16 @@ export async function listDatabaseLots(branchId?: number, productId?: number) {
       WHERE COALESCE(p.activo, true) = true
         AND ($1::integer IS NULL OR ss.id_sucursal = $1)
         AND ($2::integer IS NULL OR l.id_producto = $2)
-      ORDER BY l.fecha_vencimiento`
-    , [branchId ?? null, productId ?? null]
+      ORDER BY l.fecha_vencimiento`,
+    [branchId ?? null, productId ?? null]
   );
   return result.rows;
 }
 
+/**
+ * Registra la recepción formal de un lote de medicamentos con transacción ACID.
+ * Inserta en `Lotes`, actualiza `Stock_Sucursal` y registra en `MovimientoInventario`.
+ */
 export async function receiveDatabaseLot(input: {
   branchId: number;
   supplierId: number;
@@ -599,7 +693,17 @@ export async function receiveDatabaseLot(input: {
       [lotId, input.quantity, input.employeeId]
     );
     await client.query('COMMIT');
-    return { id: lotId, productId: input.productId, branchId: input.branchId, supplierId: input.supplierId, batchCode: input.batchCode, expirationDate: input.expirationDate, quantityAvailable: input.quantity, costPrice: input.costPrice, salePrice: input.salePrice };
+    return { 
+      id: lotId, 
+      productId: input.productId, 
+      branchId: input.branchId, 
+      supplierId: input.supplierId, 
+      batchCode: input.batchCode, 
+      expirationDate: input.expirationDate, 
+      quantityAvailable: input.quantity, 
+      costPrice: input.costPrice, 
+      salePrice: input.salePrice 
+    };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -608,6 +712,9 @@ export async function receiveDatabaseLot(input: {
   }
 }
 
+/**
+ * Crea un producto en PostgreSQL y opcionalmente su primer lote de inventario inicial.
+ */
 export async function createDatabaseProduct(input: CreateProductInput) {
   const database = requirePool();
   const client = await database.connect();
@@ -656,10 +763,40 @@ export async function createDatabaseProduct(input: CreateProductInput) {
          VALUES ($1, $2, $3)`,
         [Number(input.initialStock.branchId), lotId, Number(input.initialStock.quantity)]
       );
-      initialLot = { id: lotId, productId, branchId: Number(input.initialStock.branchId), supplierId: Number(input.initialStock.supplierId), batchCode: input.initialStock.batchCode, expirationDate: input.initialStock.expirationDate, productionDate: input.initialStock.productionDate, costPrice: Number(input.cost), salePrice: Number(input.price), quantityAvailable: Number(input.initialStock.quantity) };
+      initialLot = { 
+        id: lotId, 
+        productId, 
+        branchId: Number(input.initialStock.branchId), 
+        supplierId: Number(input.initialStock.supplierId), 
+        batchCode: input.initialStock.batchCode, 
+        expirationDate: input.initialStock.expirationDate, 
+        productionDate: input.initialStock.productionDate, 
+        costPrice: Number(input.cost), 
+        salePrice: Number(input.price), 
+        quantityAvailable: Number(input.initialStock.quantity) 
+      };
     }
     await client.query('COMMIT');
-    return { product: { id: productId, sku: input.sku.trim().toUpperCase(), name: input.name.trim(), categoryId: input.categoryId == null ? 0 : Number(input.categoryId), brand: input.brand.trim(), laboratory: input.laboratory.trim(), presentation: input.presentation.trim(), unitMeasure: input.unitMeasure.trim(), sanitaryRegistry: input.sanitaryRegistry.trim(), requiresPrescription: Boolean(input.requiresPrescription), active: true, description: (input.description || '').trim(), price: Number(input.price), cost: Number(input.cost), imageUrl: input.imageUrl?.trim() || null }, initialLot };
+    return { 
+      product: { 
+        id: productId, 
+        sku: input.sku.trim().toUpperCase(), 
+        name: input.name.trim(), 
+        categoryId: input.categoryId == null ? 0 : Number(input.categoryId), 
+        brand: input.brand.trim(), 
+        laboratory: input.laboratory.trim(), 
+        presentation: input.presentation.trim(), 
+        unitMeasure: input.unitMeasure.trim(), 
+        sanitaryRegistry: input.sanitaryRegistry.trim(), 
+        requiresPrescription: Boolean(input.requiresPrescription), 
+        active: true, 
+        description: (input.description || '').trim(), 
+        price: Number(input.price), 
+        cost: Number(input.cost), 
+        imageUrl: input.imageUrl?.trim() || null 
+      }, 
+      initialLot 
+    };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -668,6 +805,10 @@ export async function createDatabaseProduct(input: CreateProductInput) {
   }
 }
 
+/**
+ * Elimina un producto. Si ya posee historial de ventas registradas, aplica una baja lógica
+ * marcándolo como inactivo y poniendo su stock a cero para preservar la integridad referencial.
+ */
 export async function deleteDatabaseProduct(id: number) {
   const database = requirePool();
   const client = await database.connect();
@@ -693,7 +834,7 @@ export async function deleteDatabaseProduct(id: number) {
         hasSales = true;
       }
     } catch {
-      // Ignore if table does not exist
+      // Ignora si la tabla no existe
     }
 
     if (hasSales) {
@@ -752,6 +893,7 @@ export async function deleteDatabaseProduct(id: number) {
   }
 }
 
+/** Actualiza los atributos de un producto y opcionalmente sus lotes de inventario */
 export async function updateDatabaseProduct(id: number, input: Record<string, unknown>) {
   const database = requirePool();
   const fields: Array<[string, unknown]> = [];
@@ -812,6 +954,17 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
   };
 }
 
+// ============================================================================
+// CHECKOUT Y PROCESAMIENTO DE COMPRAS (TRANSACCIÓN ATÓMICA FEFO)
+// ============================================================================
+
+/**
+ * Realiza el proceso de compra completo dentro de una transacción PostgreSQL aislada:
+ * 1. Upsert del cliente por NIT.
+ * 2. Deducción de inventario respetando FEFO (`ORDER BY fecha_vencimiento ASC`).
+ * 3. Inserción de movimientos de kardex.
+ * 4. Generación de factura fiscal electrónica y sus partidas detalladas.
+ */
 export async function createDatabaseCheckout(input: PublicCheckoutInput) {
   const database = requirePool();
   const client = await database.connect();
@@ -827,6 +980,7 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
     );
     const customer = customerResult.rows[0];
     const items: Array<{ product: Record<string, unknown>; quantity: number; subtotal: number; lots: Array<{ id: number; quantity: number; price: number }> }> = [];
+    
     for (const item of input.items) {
       const productResult = await client.query(
         `SELECT id_producto, sku_codigo, nombre_producto, requiere_receta, COALESCE(marca, '') AS marca,
@@ -836,6 +990,8 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
       );
       const product = productResult.rows[0];
       if (!product) throw new Error(`Producto no encontrado: ${item.productId}`);
+      
+      // Consulta de lotes disponibles ordenados por vencimiento más próximo (FEFO)
       const stockResult = await client.query(
         `SELECT l.id_lote, l.precio_venta, ss.cantidad_disponible
            FROM Lotes l JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
@@ -845,6 +1001,7 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
       );
       const available = stockResult.rows.reduce((sum: number, row: { cantidad_disponible: number }) => sum + Number(row.cantidad_disponible), 0);
       if (available < item.quantity) throw new Error(`Stock insuficiente para ${product.nombre_producto}`);
+      
       let remaining = item.quantity;
       const lots: Array<{ id: number; quantity: number; price: number }> = [];
       for (const row of stockResult.rows) {
@@ -858,6 +1015,7 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
       const price = Number(stockResult.rows[0].precio_venta);
       items.push({ product, quantity: item.quantity, subtotal: price * item.quantity, lots });
     }
+    
     const total = items.reduce((sum, item) => sum + item.subtotal, 0);
     const invoiceResult = await client.query(
       `INSERT INTO Facturas (id_cliente, id_sucursal, fecha_emision, correlativo_sat, total_neto)
@@ -871,7 +1029,27 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
       }
     }
     await client.query('COMMIT');
-    return { order: { id: invoiceId, code: `WEB-${String(invoiceId).padStart(6, '0')}`, total, deliveryMode: input.deliveryMode, status: 'AWAITING_PAYMENT', paymentStatus: 'PENDING' }, customer, items: items.map((item) => ({ product: { id: Number(item.product.id_producto), name: String(item.product.nombre_producto), description: `${String(item.product.marca)} ${String(item.product.presentacion)}`, price: item.subtotal / item.quantity }, quantity: item.quantity, subtotal: item.subtotal })) };
+    return { 
+      order: { 
+        id: invoiceId, 
+        code: `WEB-${String(invoiceId).padStart(6, '0')}`, 
+        total, 
+        deliveryMode: input.deliveryMode, 
+        status: 'AWAITING_PAYMENT', 
+        paymentStatus: 'PENDING' 
+      }, 
+      customer, 
+      items: items.map((item) => ({ 
+        product: { 
+          id: Number(item.product.id_producto), 
+          name: String(item.product.nombre_producto), 
+          description: `${String(item.product.marca)} ${String(item.product.presentacion)}`, 
+          price: item.subtotal / item.quantity 
+        }, 
+        quantity: item.quantity, 
+        subtotal: item.subtotal 
+      })) 
+    };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -880,6 +1058,7 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
   }
 }
 
+/** Registra el comprobante de pago vinculado a una factura */
 export async function registerDatabasePayment(invoiceId: number, transactionId: string, amount: number) {
   const database = requirePool();
   const method = await database.query(`INSERT INTO MetodosPago (nombre_metodo) VALUES ('Stripe') ON CONFLICT DO NOTHING RETURNING id_metodo_pago`);
@@ -888,6 +1067,13 @@ export async function registerDatabasePayment(invoiceId: number, transactionId: 
   await database.query(`INSERT INTO Pagos (id_factura, id_metodo_pago, transaccion_pasarela_id, monto_pagado) VALUES ($1, $2, $3, $4)`, [invoiceId, methodId, transactionId, amount]);
 }
 
+// ============================================================================
+// INICIALIZACIÓN, MIGRACIONES DINÁMICAS Y PERSISTENCIA DE ESTADO
+// ============================================================================
+
+/**
+ * Ejecuta las migraciones estructurales si no existen las tablas necesarias en la base de datos.
+ */
 export async function initializeDatabase() {
   if (!pool) return;
   await pool.query(`
@@ -927,12 +1113,14 @@ export async function initializeDatabase() {
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS longitude NUMERIC');
 }
 
-export async function loadDatabaseSnapshot() {
+/** Carga el snapshot de estado en formato JSONB de la base de datos */
+export async function loadDatabaseSnapshot(): Promise<DataSnapshot | null> {
   if (!pool) return null;
   const result = await pool.query<{ snapshot: DataSnapshot }>('SELECT snapshot FROM pharmacy_state WHERE id = 1');
   return result.rows[0]?.snapshot ?? null;
 }
 
+/** Guarda el snapshot de estado en formato JSONB para sincronización */
 export async function saveDatabaseSnapshot(snapshot: DataSnapshot) {
   if (!pool) return;
   await pool.query(
@@ -943,6 +1131,7 @@ export async function saveDatabaseSnapshot(snapshot: DataSnapshot) {
   );
 }
 
+/** Comprueba la salud y conectividad de la base de datos ejecutando SELECT 1 */
 export async function databaseHealth() {
   if (!pool) return { configured: false, connected: false };
   await pool.query('SELECT 1');

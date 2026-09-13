@@ -1,3 +1,24 @@
+/**
+ * ============================================================================
+ * PROYECTO FARMACIA - ALMACÉN DE DATOS EN MEMORIA Y PERSISTENCIA JSON (STORE)
+ * ============================================================================
+ * Este módulo proporciona una capa de persistencia dual para el sistema:
+ * 1. Modo PostgreSQL: Cuando `DATABASE_URL` está configurada, sincroniza snapshots
+ *    en formato JSONB y ejecuta migraciones iniciales.
+ * 2. Modo Local / Fallback: En ausencia de base de datos externa, opera en memoria
+ *    con persistencia automática en disco (`data/dev-store.json`).
+ *
+ * MÉTODOS Y ALGORITMOS CLAVE:
+ * - Algoritmo FEFO (First Expired, First Out):
+ *   Al procesar una venta (POS o Web), las existencias se descuentan de los lotes
+ *   cuya fecha de vencimiento sea más próxima (`sort((a, b) => a.expirationDate - b.expirationDate)`).
+ * - Cifrado Dinámico:
+ *   Migra automáticamente contraseñas de empleados no cifradas a hashes bcrypt de 12 rondas.
+ * - Motor de Métricas y KPIs:
+ *   Calcula ventas diarias, mensuales, productos con rotación crítica y alertas de caducidad (< 90 días).
+ * ============================================================================
+ */
+
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -28,7 +49,14 @@ import type {
   Supplier
 } from './domain.js';
 
-function getStorageFilePath() {
+// ============================================================================
+// CONFIGURACIÓN DE RUTA DEL ARCHIVO DE ALMACENAMIENTO LOCAL
+// ============================================================================
+
+/**
+ * Resuelve la ruta adecuada al archivo dev-store.json según el directorio de ejecución.
+ */
+function getStorageFilePath(): string {
   const cwd = process.cwd();
   const pathInBackendBackend = resolve(cwd, 'backend', 'data', 'dev-store.json');
   const pathInBackendData = resolve(cwd, 'data', 'dev-store.json');
@@ -39,34 +67,43 @@ function getStorageFilePath() {
 
 const storageFile = getStorageFilePath();
 
-function now() {
+// ============================================================================
+// FUNCIONES AUXILIARES DE FECHAS Y CORRELATIVOS
+// ============================================================================
+
+function now(): string {
   return new Date().toISOString();
 }
 
-function monthKey(date = new Date()) {
+function monthKey(date = new Date()): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
-function startOfDay(value: string | Date) {
+function startOfDay(value: string | Date): Date {
   const date = new Date(value);
   date.setUTCHours(0, 0, 0, 0);
   return date;
 }
 
-function startOfMonth(value: string | Date) {
+function startOfMonth(value: string | Date): Date {
   const date = new Date(value);
   date.setUTCDate(1);
   date.setUTCHours(0, 0, 0, 0);
   return date;
 }
 
-function code(prefix: string, id: number) {
+function code(prefix: string, id: number): string {
   return `${prefix}-${String(id).padStart(5, '0')}`;
 }
 
+/** Realiza una copia profunda de un objeto para evitar mutaciones directas */
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
+
+// ============================================================================
+// CLASE PRINCIPAL: PharmacyStore
+// ============================================================================
 
 export class PharmacyStore {
   private snapshot!: DataSnapshot;
@@ -76,10 +113,12 @@ export class PharmacyStore {
     this.ready = this.load();
   }
 
+  /** Permite al servidor esperar a que los datos estén completamente cargados antes de responder peticiones */
   async waitUntilReady() {
     await this.ready;
   }
 
+  /** Carga los datos desde PostgreSQL o desde el archivo JSON local */
   private async load() {
     if (databaseEnabled) {
       await initializeDatabase();
@@ -108,6 +147,7 @@ export class PharmacyStore {
     }
   }
 
+  /** Cifra con bcrypt cualquier contraseña almacenada en texto plano */
   private async migrateEmployeePasswords() {
     let changed = false;
     for (const employee of this.snapshot.employees) {
@@ -119,6 +159,7 @@ export class PharmacyStore {
     if (changed) await this.save();
   }
 
+  /** Persiste el snapshot en PostgreSQL o en disco local */
   private async save() {
     if (databaseEnabled) {
       await saveDatabaseSnapshot(this.snapshot);
@@ -128,6 +169,7 @@ export class PharmacyStore {
     await writeFile(storageFile, JSON.stringify(this.snapshot, null, 2), 'utf8');
   }
 
+  /** Genera los datos semilla iniciales para pruebas del sistema de farmacia */
   private seed(): DataSnapshot {
     const branches: Branch[] = [
       { id: 1, name: 'Antigua Central', city: 'Antigua Guatemala', address: '7a Avenida Norte 12' },
@@ -283,9 +325,14 @@ export class PharmacyStore {
     }
   }
 
+  /** Invoca el guardado en segundo plano */
   private touch() {
     void this.save();
   }
+
+  // ============================================================================
+  // SUCURSALES, CATEGORÍAS Y PROVEEDORES
+  // ============================================================================
 
   getBranches() {
     this.assertReady();
@@ -481,6 +528,10 @@ export class PharmacyStore {
     return clone(supplier);
   }
 
+  // ============================================================================
+  // CLIENTES Y CUENTAS DE USUARIO
+  // ============================================================================
+
   getCustomerByIdentifier(nit: string, email: string) {
     this.assertReady();
     return this.snapshot.customers.find((customer) => customer.nit === nit || customer.email === email) ?? null;
@@ -536,7 +587,15 @@ export class PharmacyStore {
       })
       .map((order) => {
         const orderCustomer = this.snapshot.customers.find((candidate) => candidate.id === order.customerId);
-        return { code: order.code, branchId: order.branchId, address: order.address, status: order.status, latitude: orderCustomer?.deliveryLatitude ?? null, longitude: orderCustomer?.deliveryLongitude ?? null, updatedAt: order.releasedAt ?? order.createdAt };
+        return { 
+          code: order.code, 
+          branchId: order.branchId, 
+          address: order.address, 
+          status: order.status, 
+          latitude: orderCustomer?.deliveryLatitude ?? null, 
+          longitude: orderCustomer?.deliveryLongitude ?? null, 
+          updatedAt: order.releasedAt ?? order.createdAt 
+        };
       });
   }
 
@@ -555,7 +614,13 @@ export class PharmacyStore {
       customer.updatedAt = now();
     }
     this.touch();
-    return clone({ id: order.id, code: order.code, status: order.status, latitude: orderCustomer?.deliveryLatitude ?? null, longitude: orderCustomer?.deliveryLongitude ?? null });
+    return clone({ 
+      id: order.id, 
+      code: order.code, 
+      status: order.status, 
+      latitude: orderCustomer?.deliveryLatitude ?? null, 
+      longitude: orderCustomer?.deliveryLongitude ?? null 
+    });
   }
 
   upsertCustomer(input: PublicCheckoutInput['customer']) {
@@ -583,6 +648,10 @@ export class PharmacyStore {
     this.touch();
     return clone(customer);
   }
+
+  // ============================================================================
+  // CATÁLOGO Y CONTROL DE LOTES
+  // ============================================================================
 
   getCategoryWithDescendants(categoryId: number): number[] {
     const ids = [categoryId];
@@ -633,6 +702,10 @@ export class PharmacyStore {
   getStock(productId: number, branchId?: number) {
     return this.getLots(productId, branchId).reduce((sum, lot) => sum + lot.quantityAvailable, 0);
   }
+
+  // ============================================================================
+  // VENTAS WEB Y PUNTO DE VENTA (POS)
+  // ============================================================================
 
   createWebCheckout(input: PublicCheckoutInput) {
     this.assertReady();
@@ -814,6 +887,10 @@ export class PharmacyStore {
     }
   }
 
+  /**
+   * Deduce el inventario aplicando la regla FEFO (First Expired, First Out).
+   * Ordena los lotes por `expirationDate` ascendente y descuenta progresivamente.
+   */
   private consumeStock(branchId: number, productId: number, quantity: number) {
     const lots = this.snapshot.lots
       .filter((lot) => lot.branchId === branchId && lot.productId === productId)
@@ -881,6 +958,10 @@ export class PharmacyStore {
     return clone(lot);
   }
 
+  // ============================================================================
+  // GESTIÓN DE PERSONAL Y PERMISOS
+  // ============================================================================
+
   addEmployee(input: {
     fullName: string;
     email: string;
@@ -925,6 +1006,10 @@ export class PharmacyStore {
     this.touch();
     return clone(employee);
   }
+
+  // ============================================================================
+  // AUDITORÍA Y CONTROL DE CALIDAD
+  // ============================================================================
 
   crosscheckOrder(orderId: number, input: CrosscheckInput) {
     this.assertReady();
@@ -1002,6 +1087,10 @@ export class PharmacyStore {
       .filter((order) => (branchId ? order.branchId === branchId : true))
       .map((order) => this.enrichOrder(order));
   }
+
+  // ============================================================================
+  // ANALÍTICA, DASHBOARD Y REPORTES
+  // ============================================================================
 
   getDashboard(): DashboardMetrics {
     this.assertReady();
