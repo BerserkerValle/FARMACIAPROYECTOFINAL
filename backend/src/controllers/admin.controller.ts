@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { createDatabaseCategory, createDatabaseEmployee, databaseEnabled, deleteDatabaseCategory, deactivateDatabaseEmployee, listDatabaseEmployees, updateDatabaseCategory, updateDatabaseEmployee } from '../db.js';
+import { createDatabaseCategory, createDatabaseEmployee, createDatabaseSupplier, databaseEnabled, deleteDatabaseCategory, deactivateDatabaseEmployee, getDatabaseDashboard, getDatabaseSuppliers, listDatabaseEmployees, updateDatabaseCategory, updateDatabaseEmployee, updateDatabaseSupplier } from '../db.js';
 import { store } from '../store.js';
 
 const employeeSchema = z.object({
@@ -27,16 +27,27 @@ const returnSchema = z.object({
 const branchSchema = z.object({ name: z.string().min(2), city: z.string().min(2), address: z.string().min(3) });
 const categorySchema = z.object({ name: z.string().min(2), parentId: z.number().int().positive().nullable() });
 const supplierSchema = z.object({
-  name: z.string().min(2),
-  nit: z.string().min(3),
+  name: z.string().trim().min(2),
+  contactName: z.string().trim().min(2),
+  nit: z.string().trim().min(3),
   email: z.string().email(),
   phone: z.string().min(6),
   address: z.string().min(3),
   active: z.boolean().default(true)
 });
 
-export function dashboard(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getDashboard() });
+function assertLocalSupplierUnique(input: Partial<{ id: number; nit: string; email: string }>) {
+  const duplicate = store.getSuppliers().find((supplier) => supplier.id !== input.id && (supplier.nit.toLowerCase() === input.nit?.trim().toLowerCase() || supplier.email.toLowerCase() === input.email?.trim().toLowerCase()));
+  if (duplicate) throw new Error('Ya existe un proveedor con ese NIT o correo');
+}
+
+export async function dashboard(_req: Request, res: Response) {
+  try {
+    const data = databaseEnabled ? await getDatabaseDashboard() : store.getDashboard();
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo cargar el dashboard' });
+  }
 }
 
 export function reports(_req: Request, res: Response) {
@@ -100,20 +111,48 @@ export async function deleteCategory(req: Request, res: Response) {
   }
 }
 
-export function suppliers(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getSuppliers() });
+export async function suppliers(req: Request, res: Response) {
+  try {
+    const search = String(req.query.search ?? '').trim().toLowerCase();
+    const data = databaseEnabled ? await getDatabaseSuppliers() : store.getSuppliers();
+    const filtered = (data ?? []).filter((supplier) => !search || [supplier.name, supplier.contactName, supplier.nit, supplier.email, supplier.phone].some((value) => String(value ?? '').toLowerCase().includes(search)));
+    return res.json({ success: true, data: filtered });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'No se pudieron cargar los proveedores' });
+  }
 }
 
-export function createSupplier(req: Request, res: Response) {
-  return res.status(201).json({ success: true, data: store.addSupplier(supplierSchema.parse(req.body)) });
+export async function createSupplier(req: Request, res: Response) {
+  try {
+    const payload = supplierSchema.parse(req.body);
+    if (!databaseEnabled) assertLocalSupplierUnique(payload);
+    const data = databaseEnabled ? await createDatabaseSupplier(payload) : store.addSupplier(payload);
+    return res.status(201).json({ success: true, data });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo crear el proveedor' });
+  }
 }
 
-export function updateSupplier(req: Request, res: Response) {
-  return res.json({ success: true, data: store.updateSupplier(Number(req.params.id), supplierSchema.partial().parse(req.body)) });
+export async function updateSupplier(req: Request, res: Response) {
+  try {
+    const payload = supplierSchema.partial().parse(req.body);
+    if (!databaseEnabled && (payload.nit !== undefined || payload.email !== undefined)) {
+      assertLocalSupplierUnique({ id: Number(req.params.id), nit: payload.nit, email: payload.email });
+    }
+    const data = databaseEnabled ? await updateDatabaseSupplier(Number(req.params.id), payload) : store.updateSupplier(Number(req.params.id), payload);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo actualizar el proveedor' });
+  }
 }
 
-export function deleteSupplier(req: Request, res: Response) {
-  return res.json({ success: true, data: store.deleteSupplier(Number(req.params.id)) });
+export async function deleteSupplier(req: Request, res: Response) {
+  try {
+    const data = databaseEnabled ? await updateDatabaseSupplier(Number(req.params.id), { active: false }) : store.deleteSupplier(Number(req.params.id));
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo desactivar el proveedor' });
+  }
 }
 
 export async function createEmployee(req: Request, res: Response) {

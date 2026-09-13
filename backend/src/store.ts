@@ -219,9 +219,9 @@ export class PharmacyStore {
     ];
 
     const suppliers: Supplier[] = [
-      { id: 1, name: 'Laboratorios Genfar', nit: '5489321-4', email: 'compras@genfar.com', phone: '2299-0011', address: 'Zona 10, Ciudad de Guatemala', active: true },
-      { id: 2, name: 'Laboratorios MK', nit: '1458992-7', email: 'ventas@mk.com', phone: '2233-7788', address: 'Zona 4, Ciudad de Guatemala', active: true },
-      { id: 3, name: 'PediaLife S.A.', nit: '7744211-3', email: 'pedidos@pedialife.com', phone: '2255-8811', address: 'Mixco, Guatemala', active: true }
+      { id: 1, name: 'Laboratorios Genfar', contactName: 'Compras Genfar', nit: '5489321-4', email: 'compras@genfar.com', phone: '2299-0011', address: 'Zona 10, Ciudad de Guatemala', active: true },
+      { id: 2, name: 'Laboratorios MK', contactName: 'Ventas MK', nit: '1458992-7', email: 'ventas@mk.com', phone: '2233-7788', address: 'Zona 4, Ciudad de Guatemala', active: true },
+      { id: 3, name: 'PediaLife S.A.', contactName: 'Pedidos PediaLife', nit: '7744211-3', email: 'pedidos@pedialife.com', phone: '2255-8811', address: 'Mixco, Guatemala', active: true }
     ];
 
     const employees: Employee[] = [
@@ -1001,7 +1001,20 @@ export class PharmacyStore {
       .filter((order) => order.paymentStatus === 'PAID')
       .filter((order) => new Date(order.paidAt ?? order.createdAt) >= month)
       .reduce((sum, order) => sum + order.total, 0);
-    const lowStockCount = this.snapshot.products.filter((product) => this.snapshot.branches.some((branch) => this.getStock(product.id, branch.id) > 0 && this.getStock(product.id, branch.id) <= 10)).length;
+    const lowStockProducts = this.snapshot.products.flatMap((product) => this.snapshot.branches.flatMap((branch) => {
+      const stock = this.getStock(product.id, branch.id);
+      if (stock > 10) return [];
+      return [{
+        productId: product.id,
+        name: product.name,
+        sku: product.sku,
+        branchId: branch.id,
+        branchName: branch.name,
+        stock,
+        severity: stock <= 0 ? 'critical' as const : stock <= 5 ? 'urgent' as const : 'low' as const
+      }];
+    })).sort((left, right) => left.stock - right.stock || left.name.localeCompare(right.name));
+    const lowStockCount = new Set(lowStockProducts.map((item) => item.productId)).size;
     const expiringLotsCount = this.snapshot.lots.filter((lot) => {
       const diffDays = Math.ceil((new Date(lot.expirationDate).getTime() - Date.now()) / 86_400_000);
       return diffDays < 90;
@@ -1013,7 +1026,9 @@ export class PharmacyStore {
       lowStockCount,
       expiringLotsCount,
       registeredCustomers: this.snapshot.customers.length,
-      pendingOrders
+      pendingOrders,
+      suppliersCount: this.snapshot.suppliers.length,
+      lowStockProducts
     };
   }
 

@@ -22,6 +22,7 @@ interface Category {
 interface Supplier {
   id: number;
   name: string;
+  contactName?: string;
   nit: string;
   email: string;
   phone: string;
@@ -72,6 +73,18 @@ interface DashboardMetrics {
   expiringLotsCount: number;
   registeredCustomers: number;
   pendingOrders: number;
+  suppliersCount: number;
+  lowStockProducts: LowStockProduct[];
+}
+
+interface LowStockProduct {
+  productId: number;
+  name: string;
+  sku: string;
+  branchId: number;
+  branchName: string;
+  stock: number;
+  severity: 'critical' | 'urgent' | 'low';
 }
 
 const moneyFormatter = new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' });
@@ -136,18 +149,22 @@ function TopHeader({
       <div className="header-inner">
         {/* Brand */}
         <div className="brand-link" onClick={() => onNavigatePortal('public')}>
-          {token && profile ? (
-            <div className="brand-icon"><span>+</span></div>
-          ) : (
-            <button
-              type="button"
-              className="brand-icon brand-access-trigger"
-              onClick={(event) => { event.stopPropagation(); onNavigatePortal(activePortal === 'login' ? 'public' : 'login'); }}
-              title="Acceso Personal"
-            >
-              <span>+</span>
-            </button>
-          )}
+          <button
+            type="button"
+            className="brand-icon brand-access-trigger"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (activePortal === 'login') {
+                onNavigatePortal('public');
+              } else {
+                onNavigatePortal(token && profile ? 'admin' : 'login');
+              }
+            }}
+            title={token && profile ? 'Abrir panel administrativo' : 'Acceso Personal'}
+            aria-label={token && profile ? 'Abrir panel administrativo' : 'Abrir login administrativo'}
+          >
+            <span>+</span>
+          </button>
           <div className="brand-info">
             <h1>DERKAS</h1>
             <p>Farmacia Digital</p>
@@ -2828,25 +2845,155 @@ function DeliveryPage({ token }: { token: string | null }) {
   );
 }
 
+type AdminReports = {
+  monthlySales?: Array<{ month: string; total: number }>;
+  topProducts?: Array<{ name: string; quantity: number; total: number }>;
+  salesByBranch?: Array<{ branch: string; total: number }>;
+  purchasesBySupplier?: Array<{ supplier: string; total: number }>;
+};
+
+function formatChartLabel(value: string) {
+  if (/^\d{4}-\d{2}$/.test(value)) {
+    const [year, month] = value.split('-');
+    return new Intl.DateTimeFormat('es-GT', { month: 'short' }).format(new Date(Number(year), Number(month) - 1, 1));
+  }
+  return value.length > 16 ? `${value.slice(0, 16)}...` : value;
+}
+
+function monthKeyFromDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function addMonths(date: Date, amount: number) {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+}
+
+function fillMonthlySales(rows: Array<{ month: string; total: number }>, count: number, endDate = new Date()) {
+  const totals = new Map(rows.map((row) => [row.month, Number(row.total)]));
+  const endMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+  const startMonth = addMonths(endMonth, -(count - 1));
+  return Array.from({ length: count }, (_, index) => {
+    const date = addMonths(startMonth, index);
+    const month = monthKeyFromDate(date);
+    return { month, total: totals.get(month) ?? 0 };
+  });
+}
+
+function SalesTrendChart({ rows }: { rows: Array<{ month: string; total: number }> }) {
+  const data = rows.slice(-8);
+  const max = Math.max(...data.map((row) => row.total), 1);
+  const points = data.map((row, index) => `${data.length === 1 ? 50 : (index / (data.length - 1)) * 100},${100 - (row.total / max) * 82 - 8}`).join(' ');
+  return <div className="chart-shell line-chart-shell">
+    {data.length > 0 ? <>
+      <svg className="line-chart" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Tendencia de ventas mensuales">
+        <defs><linearGradient id="sales-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="var(--primary)" stopOpacity="0.28" /><stop offset="1" stopColor="var(--primary)" stopOpacity="0" /></linearGradient></defs>
+        <path d={`M 0 100 L ${points.replace(/ /g, ' L ')} L 100 100 Z`} fill="url(#sales-area)" />
+        <polyline points={points} fill="none" stroke="var(--primary)" strokeWidth="2.2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+        {data.map((row, index) => <circle key={row.month} cx={data.length === 1 ? 50 : (index / (data.length - 1)) * 100} cy={100 - (row.total / max) * 82 - 8} r="1.8" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.2" vectorEffect="non-scaling-stroke"><title>{row.month}: {money(row.total)}</title></circle>)}
+      </svg>
+      <div className="chart-axis-labels">{data.map((row) => <span key={row.month}>{formatChartLabel(row.month)}</span>)}</div>
+    </> : <div className="chart-empty">Aún no hay ventas registradas para graficar.</div>}
+  </div>;
+}
+
+function HorizontalBars({ rows, labelKey }: { rows: Array<{ label: string; value: number }>; labelKey: string }) {
+  const data = rows.slice(0, 6);
+  const max = Math.max(...data.map((row) => row.value), 1);
+  return <div className="horizontal-bars">
+    {data.length > 0 ? data.map((row) => <div className="bar-row" key={`${labelKey}-${row.label}`}>
+      <div className="bar-row-head"><span title={row.label}>{formatChartLabel(row.label)}</span><strong>{money(row.value)}</strong></div>
+      <div className="bar-track"><span style={{ width: `${Math.max((row.value / max) * 100, row.value > 0 ? 4 : 0)}%` }} /></div>
+    </div>) : <div className="chart-empty">No hay datos disponibles.</div>}
+  </div>;
+}
+
+function AdminCharts({ reports }: { reports: AdminReports | null }) {
+  const [period, setPeriod] = useState<'3m' | '6m' | '12m' | 'all'>('6m');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const monthlySales = reports?.monthlySales ?? [];
+  const filteredMonthlySales = monthlySales.filter((row) => {
+    const monthDate = `${row.month}-01`;
+    if (fromDate && monthDate < `${fromDate.slice(0, 7)}-01`) return false;
+    if (toDate && monthDate > `${toDate.slice(0, 7)}-01`) return false;
+    return true;
+  });
+  const visibleMonthlySales = fromDate || toDate
+    ? (() => {
+      const start = fromDate ? new Date(`${fromDate.slice(0, 7)}-01T00:00:00`) : new Date(`${filteredMonthlySales[0]?.month ?? monthKeyFromDate(new Date())}-01T00:00:00`);
+      const end = toDate ? new Date(`${toDate.slice(0, 7)}-01T00:00:00`) : new Date();
+      const count = Math.max(1, (end.getFullYear() - start.getFullYear()) * 12 + end.getMonth() - start.getMonth() + 1);
+      return fillMonthlySales(monthlySales, count, end).map((row, index) => ({
+        month: monthKeyFromDate(addMonths(start, index)),
+        total: new Map(monthlySales.map((item) => [item.month, Number(item.total)])).get(monthKeyFromDate(addMonths(start, index))) ?? 0
+      }));
+    })()
+    : period === 'all'
+      ? fillMonthlySales(monthlySales, Math.max(monthlySales.length, 1), monthlySales.length ? new Date(`${monthlySales[monthlySales.length - 1].month}-01T00:00:00`) : new Date())
+      : fillMonthlySales(monthlySales, Number(period.replace('m', '')));
+  const branchRows = (reports?.salesByBranch ?? []).map((row) => ({ label: row.branch, value: Number(row.total) }));
+  const productRows = (reports?.topProducts ?? []).map((row) => ({ label: row.name, value: Number(row.total) }));
+  return <section className="dashboard-analytics">
+    <div className="analytics-heading">
+      <div><span className="section-kicker">Lectura operativa</span><h2>Rendimiento de la farmacia</h2></div>
+      <div className="analytics-controls">
+        <div className="period-switcher" role="group" aria-label="Período del gráfico">
+          {(['3m', '6m', '12m', 'all'] as const).map((value) => <button key={value} type="button" className={period === value && !fromDate && !toDate ? 'active' : ''} onClick={() => { setPeriod(value); setFromDate(''); setToDate(''); }}>{value === 'all' ? 'Todo' : value.replace('m', ' meses')}</button>)}
+        </div>
+        <div className="date-filter-group"><label>Desde<input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label>Hasta<input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label></div>
+      </div>
+    </div>
+    <div className="analytics-grid">
+      <div className="analytics-card analytics-card-wide"><div className="analytics-card-head"><div><h3>Ventas mensuales</h3><p>Ingresos confirmados por período seleccionado</p></div><span className="data-freshness">{visibleMonthlySales.length} períodos</span></div><SalesTrendChart rows={visibleMonthlySales} /></div>
+      <div className="analytics-card"><div className="analytics-card-head"><div><h3>Ventas por sucursal</h3><p>Comparación acumulada</p></div><span className="chart-accent blue" /></div><HorizontalBars rows={branchRows} labelKey="branch" /></div>
+      <div className="analytics-card"><div className="analytics-card-head"><div><h3>Productos destacados</h3><p>Mayor contribución a ventas</p></div><span className="chart-accent amber" /></div><HorizontalBars rows={productRows} labelKey="product" /></div>
+    </div>
+  </section>;
+}
+
+function InventoryAlerts({ products }: { products: LowStockProduct[] }) {
+  const visibleProducts = products;
+  return <section className="inventory-alerts analytics-card">
+    <div className="analytics-card-head">
+      <div><span className="section-kicker warning-kicker">Acción requerida</span><h3>Inventario bajo</h3><p>Productos que necesitan reposición por sucursal</p></div>
+      <span className="alert-counter">{products.length}</span>
+    </div>
+    {visibleProducts.length > 0 ? <div className="inventory-alert-list">
+      {visibleProducts.map((product) => <div className="inventory-alert-row" key={`${product.productId}-${product.branchId}`}>
+        <div className="inventory-alert-icon">!</div>
+        <div className="inventory-alert-main"><strong>{product.name}</strong><span>{product.sku} · {product.branchName}</span></div>
+        <div className="inventory-alert-stock"><strong>{product.stock}</strong><span>unidades</span></div>
+        <span className={`inventory-severity ${product.severity}`}>{product.severity === 'critical' ? 'Agotado' : product.severity === 'urgent' ? 'Urgente' : 'Bajo'}</span>
+      </div>)}
+    </div> : <div className="inventory-clear"><span>✓</span><div><strong>Inventario saludable</strong><p>No hay productos por debajo del mínimo de 10 unidades.</p></div></div>}
+  </section>;
+}
+
 function AdminPage({ token }: { token: string | null }) {
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
-  const [reports, setReports] = useState<any>(null);
+  const [reports, setReports] = useState<AdminReports | null>(null);
   const [status, setStatus] = useState('');
   const [employee, setEmployee] = useState({ fullName: 'Nuevo Usuario', email: 'nuevo@derkas.com', password: 'Clave123*', role: 'Cajero', branchId: 1, supervisorId: null as number | null });
   const [crosscheckOrderId, setCrosscheckOrderId] = useState('1');
   const [categories, setCategories] = useState<Category[]>([]);
   const [newCategory, setNewCategory] = useState({ name: '', parentId: null as number | null });
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [editingSupplierId, setEditingSupplierId] = useState<number | null>(null);
+  const [supplierForm, setSupplierForm] = useState({ name: '', contactName: '', nit: '', phone: '', email: '', address: '', active: true });
 
   async function loadAll() {
     if (!token) return;
-    const [dash, rep, categoryData] = await Promise.all([
+    const [dash, rep, categoryData, supplierData] = await Promise.all([
       apiRequest<DashboardMetrics>('/api/admin/dashboard', {}, token),
       apiRequest('/api/admin/reports', {}, token),
-      apiRequest<Category[]>('/api/admin/categories', {}, token)
+      apiRequest<Category[]>('/api/admin/categories', {}, token),
+      apiRequest<Supplier[]>('/api/admin/suppliers', {}, token)
     ]);
     setDashboard(dash);
     setReports(rep);
     setCategories(categoryData);
+    setSuppliers(supplierData);
   }
 
   useEffect(() => {
@@ -2901,6 +3048,54 @@ function AdminPage({ token }: { token: string | null }) {
     }
   }
 
+  function resetSupplierForm() {
+    setEditingSupplierId(null);
+    setSupplierForm({ name: '', contactName: '', nit: '', phone: '', email: '', address: '', active: true });
+  }
+
+  function editSupplier(supplier: Supplier) {
+    setEditingSupplierId(supplier.id);
+    setSupplierForm({
+      name: supplier.name,
+      contactName: supplier.contactName ?? '',
+      nit: supplier.nit,
+      phone: supplier.phone,
+      email: supplier.email,
+      address: supplier.address,
+      active: supplier.active
+    });
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  }
+
+  async function saveSupplier() {
+    try {
+      const payload = { ...supplierForm, name: supplierForm.name.trim(), contactName: supplierForm.contactName.trim(), nit: supplierForm.nit.trim(), phone: supplierForm.phone.trim(), email: supplierForm.email.trim(), address: supplierForm.address.trim() };
+      if (!payload.name || !payload.contactName || !payload.nit || !payload.phone || !payload.email || !payload.address) throw new Error('Completa todos los campos del proveedor');
+      const path = editingSupplierId ? `/api/admin/suppliers/${editingSupplierId}` : '/api/admin/suppliers';
+      await apiRequest(path, { method: editingSupplierId ? 'PUT' : 'POST', body: JSON.stringify(payload) }, token);
+      setStatus(editingSupplierId ? 'Proveedor actualizado correctamente.' : 'Proveedor registrado correctamente.');
+      resetSupplierForm();
+      await loadAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo guardar el proveedor');
+    }
+  }
+
+  async function toggleSupplier(supplier: Supplier) {
+    try {
+      await apiRequest(`/api/admin/suppliers/${supplier.id}`, { method: 'PUT', body: JSON.stringify({ active: !supplier.active }) }, token);
+      setStatus(`Proveedor ${supplier.active ? 'desactivado' : 'activado'} correctamente.`);
+      await loadAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo actualizar el estado del proveedor');
+    }
+  }
+
+  const filteredSuppliers = suppliers.filter((supplier) => {
+    const query = supplierSearch.trim().toLowerCase();
+    return !query || [supplier.name, supplier.contactName, supplier.nit, supplier.email, supplier.phone].some((value) => String(value ?? '').toLowerCase().includes(query));
+  });
+
   return (
     <div className="internal-page-container">
       {/* Metric Cards */}
@@ -2925,7 +3120,15 @@ function AdminPage({ token }: { token: string | null }) {
           <strong>{dashboard ? String(dashboard.pendingOrders) : '...'}</strong>
           <span>Empaque o entrega</span>
         </div>
+        <div className="stat-metric-card">
+          <p>Proveedores</p>
+          <strong>{dashboard ? String(dashboard.suppliersCount) : '...'}</strong>
+          <span>Registrados en el sistema</span>
+        </div>
       </div>
+
+      <AdminCharts reports={reports} />
+      <InventoryAlerts products={dashboard?.lowStockProducts ?? []} />
 
       <div className="two-col-grid">
         <div className="panel-card">
@@ -2977,14 +3180,8 @@ function AdminPage({ token }: { token: string | null }) {
             Registrar Validación de Receta
           </button>
           <div className="reports-summary-grid">
-            <div className="report-summary-box">
-              <strong>{reports?.monthlySales?.length ?? 0}</strong>
-              <span>Ventas Mensuales</span>
-            </div>
-            <div className="report-summary-box">
-              <strong>{reports?.topProducts?.length ?? 0}</strong>
-              <span>Top Productos</span>
-            </div>
+            <div className="report-summary-box"><strong>{reports?.monthlySales?.length ?? 0}</strong><span>Períodos analizados</span></div>
+            <div className="report-summary-box"><strong>{reports?.topProducts?.length ?? 0}</strong><span>Productos con ventas</span></div>
           </div>
           {status && <div className="checkout-status-msg">{status}</div>}
         </div>
@@ -2998,6 +3195,51 @@ function AdminPage({ token }: { token: string | null }) {
         </div>
         <button type="button" className="btn-primary" onClick={addCategory}>Agregar categoría</button>
         <div className="item-list-stack" style={{ marginTop: '0.75rem' }}>{categories.map((category) => <div className="compact-list-row" key={category.id}><strong>{category.name}</strong><button type="button" className="btn-secondary" onClick={() => removeCategory(category)}>Eliminar</button></div>)}</div>
+      </div>
+
+      <div className="panel-card admin-suppliers-panel" style={{ marginTop: '1rem' }}>
+        <div className="panel-head">
+          <div>
+            <h2>Gestión de proveedores</h2>
+            <span className="panel-subtitle">Contactos, compras y estado operativo</span>
+          </div>
+          <span className="pill-tag">Administrador / Gerente</span>
+        </div>
+        <div className="supplier-toolbar">
+          <div className="form-field supplier-search-field">
+            <label>Buscar proveedor</label>
+            <input value={supplierSearch} onChange={(e) => setSupplierSearch(e.target.value)} placeholder="Nombre, NIT, correo o teléfono" />
+          </div>
+          {editingSupplierId && <button type="button" className="btn-secondary" onClick={resetSupplierForm}>Cancelar edición</button>}
+        </div>
+        <div className="form-grid-2 supplier-form-grid">
+          <div className="form-field"><label>Empresa o proveedor</label><input value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} /></div>
+          <div className="form-field"><label>Nombre del contacto</label><input value={supplierForm.contactName} onChange={(e) => setSupplierForm({ ...supplierForm, contactName: e.target.value })} /></div>
+          <div className="form-field"><label>NIT</label><input value={supplierForm.nit} onChange={(e) => setSupplierForm({ ...supplierForm, nit: e.target.value })} /></div>
+          <div className="form-field"><label>Teléfono</label><input value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} /></div>
+          <div className="form-field"><label>Correo electrónico</label><input type="email" value={supplierForm.email} onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })} /></div>
+          <div className="form-field"><label>Dirección</label><input value={supplierForm.address} onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })} /></div>
+        </div>
+        <div className="supplier-form-actions">
+          <label className="checkbox-field"><input type="checkbox" checked={supplierForm.active} onChange={(e) => setSupplierForm({ ...supplierForm, active: e.target.checked })} /> Proveedor activo</label>
+          <button type="button" className="btn-primary" onClick={saveSupplier}>{editingSupplierId ? 'Guardar cambios' : 'Registrar proveedor'}</button>
+        </div>
+        <div className="lots-table-wrap">
+          <table className="lots-table suppliers-table">
+            <thead><tr><th>Proveedor</th><th>Contacto</th><th>NIT</th><th>Comunicación</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <tbody>
+              {filteredSuppliers.map((supplier) => <tr key={supplier.id}>
+                <td><strong>{supplier.name}</strong><small>{supplier.address}</small></td>
+                <td>{supplier.contactName || 'Sin contacto'}</td>
+                <td>{supplier.nit}</td>
+                <td><span>{supplier.email}</span><small>{supplier.phone}</small></td>
+                <td><span className={`supplier-status ${supplier.active ? 'active' : 'inactive'}`}>{supplier.active ? 'Activo' : 'Inactivo'}</span></td>
+                <td><div className="supplier-actions"><button type="button" className="btn-secondary" onClick={() => editSupplier(supplier)}>Editar</button><button type="button" className="btn-secondary" onClick={() => toggleSupplier(supplier)}>{supplier.active ? 'Desactivar' : 'Activar'}</button></div></td>
+              </tr>)}
+              {filteredSuppliers.length === 0 && <tr><td colSpan={6} className="no-lots-msg">No hay proveedores que coincidan con la búsqueda.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

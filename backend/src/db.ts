@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
-import type { CreateProductInput, DataSnapshot, PublicCheckoutInput } from './domain.js';
+import type { CreateProductInput, DashboardMetrics, DataSnapshot, PublicCheckoutInput, Supplier } from './domain.js';
 
 dotenv.config();
 
@@ -376,6 +376,7 @@ export async function getDatabaseSuppliers() {
   const result = await pool.query(
     `SELECT id_proveedor AS id,
             nombre_proveedor AS name,
+            COALESCE(nombre_contacto, '') AS "contactName",
             nit,
             correo AS email,
             telefono AS phone,
@@ -387,7 +388,139 @@ export async function getDatabaseSuppliers() {
   return result.rows;
 }
 
-export async function searchDatabaseCatalog(query: string, branchId?: number) {
+export async function createDatabaseSupplier(input: Omit<Supplier, 'id'>) {
+  const database = requirePool();
+  const duplicate = await database.query(
+    'SELECT 1 FROM Proveedores WHERE nit = $1 OR LOWER(correo) = LOWER($2) LIMIT 1',
+    [input.nit.trim(), input.email.trim()]
+  );
+  if (duplicate.rows[0]) throw new Error('Ya existe un proveedor con ese NIT o correo');
+  const result = await database.query(
+    `INSERT INTO Proveedores (nombre_proveedor, nombre_contacto, nit, correo, telefono, direccion, estado)
+     VALUES ($1, $2, $3, LOWER($4), $5, $6, $7)
+     RETURNING id_proveedor AS id, nombre_proveedor AS name,
+               COALESCE(nombre_contacto, '') AS "contactName", nit, correo AS email,
+               telefono AS phone, direccion AS address,
+               LOWER(COALESCE(estado, 'Activo')) = 'activo' AS active`,
+    [input.name.trim(), input.contactName?.trim() ?? '', input.nit.trim(), input.email.trim(), input.phone.trim(), input.address.trim(), input.active ? 'Activo' : 'Inactivo']
+  );
+  return result.rows[0];
+}
+
+export async function updateDatabaseSupplier(id: number, input: Partial<Omit<Supplier, 'id'>>) {
+  const database = requirePool();
+  const fields: Array<[string, unknown]> = [];
+  const mappings: Array<[keyof Omit<Supplier, 'id'>, string]> = [
+    ['name', 'nombre_proveedor'],
+    ['contactName', 'nombre_contacto'],
+    ['nit', 'nit'],
+    ['email', 'correo'],
+    ['phone', 'telefono'],
+    ['address', 'direccion']
+  ];
+  for (const [key, column] of mappings) {
+    if (key in input && input[key] !== undefined) fields.push([column, key === 'email' ? String(input[key]).trim().toLowerCase() : String(input[key]).trim()]);
+  }
+  if (input.active !== undefined) fields.push(['estado', input.active ? 'Activo' : 'Inactivo']);
+  if (fields.length === 0) throw new Error('No hay campos para actualizar');
+  if (input.nit !== undefined || input.email !== undefined) {
+    const duplicate = await database.query(
+      `SELECT 1 FROM Proveedores WHERE id_proveedor <> $1 AND (nit = COALESCE($2, nit) OR LOWER(correo) = LOWER(COALESCE($3, correo))) LIMIT 1`,
+      [id, input.nit?.trim() ?? null, input.email?.trim() ?? null]
+    );
+    if (duplicate.rows[0]) throw new Error('Ya existe otro proveedor con ese NIT o correo');
+  }
+  const assignments = fields.map(([column], index) => `${column} = $${index + 2}`).join(', ');
+  const result = await database.query(
+    `UPDATE Proveedores SET ${assignments}
+      WHERE id_proveedor = $1
+      RETURNING id_proveedor AS id, nombre_proveedor AS name,
+                COALESCE(nombre_contacto, '') AS "contactName", nit, correo AS email,
+                telefono AS phone, direccion AS address,
+                LOWER(COALESCE(estado, 'Activo')) = 'activo' AS active`,
+    [id, ...fields.map(([, value]) => value)]
+  );
+  if (!result.rows[0]) throw new Error(`Proveedor #${id} no encontrado`);
+  return result.rows[0];
+}
+
+export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
+  const database = requirePool();
+  const result = await database.query(`
+    WITH paid_sales AS (
+      SELECT COALESCE(SUM(f.total_neto) FILTER (WHERE f.fecha_emision >= CURRENT_DATE), 0) AS total,
+             COALESCE(SUM(f.total_neto) FILTER (WHERE f.fecha_emision >= DATE_TRUNC('month', CURRENT_TIMESTAMP)), 0) AS month_total
+        FROM Facturas f
+       WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)
+    ),
+    low_stock AS (
+      SELECT COUNT(DISTINCT stock.product_id) AS total
+        FROM (
+          SELECT l.id_producto AS product_id, ss.id_sucursal
+            FROM Lotes l
+            JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+            JOIN Productos p ON p.id_producto = l.id_producto
+           WHERE COALESCE(p.activo, true) = true
+           GROUP BY l.id_producto, ss.id_sucursal
+          HAVING COALESCE(SUM(ss.cantidad_disponible), 0) <= 10
+        ) stock
+    ),
+    low_stock_products AS (
+      SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'productId', stock.product_id,
+        'name', stock.name,
+        'sku', stock.sku,
+        'branchId', stock.branch_id,
+        'branchName', stock.branch_name,
+        'stock', stock.stock,
+        'severity', CASE WHEN stock.stock <= 0 THEN 'critical' WHEN stock.stock <= 5 THEN 'urgent' ELSE 'low' END
+      ) ORDER BY stock.stock, stock.name), '[]'::jsonb) AS products
+      FROM (
+        SELECT p.id_producto AS product_id,
+               p.nombre_producto AS name,
+               p.sku_codigo AS sku,
+               ss.id_sucursal AS branch_id,
+               COALESCE(s.nombre_sucursal, CONCAT('Sucursal #', ss.id_sucursal)) AS branch_name,
+               COALESCE(SUM(ss.cantidad_disponible), 0) AS stock
+          FROM Productos p
+          JOIN Lotes l ON l.id_producto = p.id_producto
+          JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+          LEFT JOIN Sucursales s ON s.id_sucursal = ss.id_sucursal
+         WHERE COALESCE(p.activo, true) = true
+         GROUP BY p.id_producto, p.nombre_producto, p.sku_codigo, ss.id_sucursal, s.nombre_sucursal
+        HAVING COALESCE(SUM(ss.cantidad_disponible), 0) <= 10
+      ) stock
+    ),
+    pending_orders AS (
+      SELECT COUNT(*) AS total
+        FROM Facturas f
+       WHERE NOT EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)
+          OR EXISTS (
+            SELECT 1 FROM pharmacy_delivery_tracking d
+             WHERE d.order_code = CONCAT('WEB-', LPAD(f.id_factura::text, 6, '0'))
+               AND d.status <> 'DELIVERED'
+          )
+    )
+    SELECT (SELECT total FROM paid_sales) AS "salesToday",
+           (SELECT month_total FROM paid_sales) AS "salesMonth",
+           (SELECT total FROM low_stock) AS "lowStockCount",
+           (SELECT total FROM pending_orders) AS "pendingOrders",
+           (SELECT COUNT(*) FROM Proveedores) AS "suppliersCount",
+           (SELECT products FROM low_stock_products) AS "lowStockProducts"
+  `);
+  return {
+    salesToday: Number(result.rows[0]?.salesToday ?? 0),
+    salesMonth: Number(result.rows[0]?.salesMonth ?? 0),
+    lowStockCount: Number(result.rows[0]?.lowStockCount ?? 0),
+    expiringLotsCount: 0,
+    registeredCustomers: 0,
+    pendingOrders: Number(result.rows[0]?.pendingOrders ?? 0),
+    suppliersCount: Number(result.rows[0]?.suppliersCount ?? 0),
+    lowStockProducts: result.rows[0]?.lowStockProducts ?? []
+  };
+}
+
+export async function searchDatabaseCatalog(query: string, branchId?: number, categoryId?: number) {
   if (!pool) return null;
   const result = await pool.query(
     `SELECT p.id_producto AS id,
@@ -419,17 +552,21 @@ export async function searchDatabaseCatalog(query: string, branchId?: number) {
               '[]'::jsonb
             ) AS lots
        FROM Productos p
+       LEFT JOIN Categorias cat ON cat.id_categoria = p.id_categoria
        LEFT JOIN Lotes l ON l.id_producto = p.id_producto
        LEFT JOIN Stock_Sucursal ss
          ON ss.id_lote = l.id_lote
         AND ($2::integer IS NULL OR ss.id_sucursal = $2)
-      WHERE ($1 = '' OR p.nombre_producto ILIKE '%' || $1 || '%'
+      WHERE COALESCE(p.activo, true) = true
+        AND ($1 = '' OR p.nombre_producto ILIKE '%' || $1 || '%'
                     OR p.sku_codigo ILIKE '%' || $1 || '%'
                     OR COALESCE(p.marca, '') ILIKE '%' || $1 || '%'
-                    OR COALESCE(p.laboratorio, '') ILIKE '%' || $1 || '%')
+                    OR COALESCE(p.laboratorio, '') ILIKE '%' || $1 || '%'
+                    OR COALESCE(cat.nombre_categoria, '') ILIKE '%' || $1 || '%')
+        AND ($3::integer IS NULL OR p.id_categoria = $3 OR cat.id_categoria_padre = $3)
       GROUP BY p.id_producto
       ORDER BY p.nombre_producto`,
-    [query.trim(), branchId ?? null]
+    [query.trim(), branchId ?? null, categoryId ?? null]
   );
   return result.rows;
 }
@@ -448,12 +585,13 @@ export async function listDatabaseProducts() {
             COALESCE(p.registro_sanitario, '') AS "sanitaryRegistry",
             COALESCE(p.requiere_receta, false) AS "requiresPrescription",
             p.imagen_url AS "imageUrl",
-            true AS active,
+            COALESCE(p.activo, true) AS active,
             ''::text AS description,
             COALESCE(MIN(l.precio_venta), 0) AS price,
             COALESCE(MIN(l.precio_costo), 0) AS cost
        FROM Productos p
        LEFT JOIN Lotes l ON l.id_producto = p.id_producto
+      WHERE COALESCE(p.activo, true) = true
       GROUP BY p.id_producto
       ORDER BY p.id_producto DESC`
   );
@@ -473,8 +611,10 @@ export async function listDatabaseLots(branchId?: number, productId?: number) {
             l.precio_venta AS "salePrice",
             ss.cantidad_disponible AS "quantityAvailable"
        FROM Lotes l
+       JOIN Productos p ON p.id_producto = l.id_producto
        LEFT JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
-      WHERE ($1::integer IS NULL OR ss.id_sucursal = $1)
+      WHERE COALESCE(p.activo, true) = true
+        AND ($1::integer IS NULL OR ss.id_sucursal = $1)
         AND ($2::integer IS NULL OR l.id_producto = $2)
       ORDER BY l.fecha_vencimiento`
     , [branchId ?? null, productId ?? null]
@@ -578,7 +718,7 @@ export async function createDatabaseProduct(input: CreateProductInput) {
       initialLot = { id: lotId, productId, branchId: Number(input.initialStock.branchId), supplierId: Number(input.initialStock.supplierId), batchCode: input.initialStock.batchCode, expirationDate: input.initialStock.expirationDate, productionDate: input.initialStock.productionDate, costPrice: Number(input.cost), salePrice: Number(input.price), quantityAvailable: Number(input.initialStock.quantity) };
     }
     await client.query('COMMIT');
-    return { product: { id: productId, sku: input.sku.trim().toUpperCase(), name: input.name.trim(), categoryId: input.categoryId == null ? 0 : Number(input.categoryId), brand: input.brand.trim(), laboratory: input.laboratory.trim(), presentation: input.presentation.trim(), unitMeasure: input.unitMeasure.trim(), sanitaryRegistry: input.sanitaryRegistry.trim(), requiresPrescription: Boolean(input.requiresPrescription), active: true, description: input.description.trim(), price: Number(input.price), cost: Number(input.cost), imageUrl: input.imageUrl?.trim() || null }, initialLot };
+    return { product: { id: productId, sku: input.sku.trim().toUpperCase(), name: input.name.trim(), categoryId: input.categoryId == null ? 0 : Number(input.categoryId), brand: input.brand.trim(), laboratory: input.laboratory.trim(), presentation: input.presentation.trim(), unitMeasure: input.unitMeasure.trim(), sanitaryRegistry: input.sanitaryRegistry.trim(), requiresPrescription: Boolean(input.requiresPrescription), active: true, description: (input.description || '').trim(), price: Number(input.price), cost: Number(input.cost), imageUrl: input.imageUrl?.trim() || null }, initialLot };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -589,12 +729,86 @@ export async function createDatabaseProduct(input: CreateProductInput) {
 
 export async function deleteDatabaseProduct(id: number) {
   const database = requirePool();
-  const result = await database.query(
-    'DELETE FROM Productos WHERE id_producto = $1 RETURNING id_producto AS id',
-    [id]
-  );
-  if (!result.rows[0]) throw new Error(`Producto #${id} no encontrado`);
-  return { id: Number(result.rows[0].id), deleted: true };
+  const client = await database.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true');
+
+    const check = await client.query('SELECT id_producto FROM Productos WHERE id_producto = $1', [id]);
+    if (!check.rows[0]) {
+      throw new Error(`Producto #${id} no encontrado`);
+    }
+
+    let hasSales = false;
+    try {
+      const salesCheck = await client.query(
+        `SELECT 1 FROM Detalle_Facturas df
+           JOIN Lotes l ON l.id_lote = df.id_lote
+          WHERE l.id_producto = $1
+          LIMIT 1`,
+        [id]
+      );
+      if (salesCheck.rows.length > 0) {
+        hasSales = true;
+      }
+    } catch {
+      // Ignore if table does not exist
+    }
+
+    if (hasSales) {
+      await client.query(
+        `UPDATE Productos
+            SET activo = false, ultima_modificacion = CURRENT_TIMESTAMP
+          WHERE id_producto = $1`,
+        [id]
+      );
+      await client.query(
+        `UPDATE Stock_Sucursal
+            SET cantidad_disponible = 0, ultima_modificacion = CURRENT_TIMESTAMP
+          WHERE id_lote IN (SELECT id_lote FROM Lotes WHERE id_producto = $1)`,
+        [id]
+      );
+      await client.query('COMMIT');
+      return { id, deleted: true, softDeleted: true };
+    }
+
+    try {
+      await client.query(
+        `DELETE FROM Stock_Sucursal
+          WHERE id_lote IN (SELECT id_lote FROM Lotes WHERE id_producto = $1)`,
+        [id]
+      );
+      await client.query('DELETE FROM Lotes WHERE id_producto = $1', [id]);
+      const result = await client.query(
+        'DELETE FROM Productos WHERE id_producto = $1 RETURNING id_producto AS id',
+        [id]
+      );
+      await client.query('COMMIT');
+      return { id: Number(result.rows[0].id), deleted: true };
+    } catch {
+      await client.query('ROLLBACK');
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE Productos
+            SET activo = false, ultima_modificacion = CURRENT_TIMESTAMP
+          WHERE id_producto = $1`,
+        [id]
+      );
+      await client.query(
+        `UPDATE Stock_Sucursal
+            SET cantidad_disponible = 0, ultima_modificacion = CURRENT_TIMESTAMP
+          WHERE id_lote IN (SELECT id_lote FROM Lotes WHERE id_producto = $1)`,
+        [id]
+      );
+      await client.query('COMMIT');
+      return { id, deleted: true, softDeleted: true };
+    }
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function updateDatabaseProduct(id: number, input: Record<string, unknown>) {
@@ -629,7 +843,32 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
     [id, ...fields.map(([, value]) => value)]
   );
   if (!result.rows[0]) throw new Error(`Producto #${id} no encontrado`);
-  return result.rows[0];
+
+  if (input.price !== undefined || input.cost !== undefined) {
+    const lotUpdates: string[] = [];
+    const lotParams: unknown[] = [id];
+    if (input.price !== undefined && !Number.isNaN(Number(input.price))) {
+      lotParams.push(Number(input.price));
+      lotUpdates.push(`precio_venta = $${lotParams.length}`);
+    }
+    if (input.cost !== undefined && !Number.isNaN(Number(input.cost))) {
+      lotParams.push(Number(input.cost));
+      lotUpdates.push(`precio_costo = $${lotParams.length}`);
+    }
+    if (lotUpdates.length > 0) {
+      await database.query(
+        `UPDATE Lotes SET ${lotUpdates.join(', ')} WHERE id_producto = $1`,
+        lotParams
+      );
+    }
+  }
+
+  return {
+    ...result.rows[0],
+    price: input.price !== undefined ? Number(input.price) : 0,
+    cost: input.cost !== undefined ? Number(input.cost) : 0,
+    description: typeof input.description === 'string' ? input.description : ''
+  };
 }
 
 export async function createDatabaseCheckout(input: PublicCheckoutInput) {
@@ -718,6 +957,8 @@ export async function initializeDatabase() {
     )
   `);
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS imagen_url TEXT');
+  await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true');
+  await pool.query("ALTER TABLE Proveedores ADD COLUMN IF NOT EXISTS nombre_contacto TEXT NOT NULL DEFAULT ''");
   await pool.query(`
     CREATE TABLE IF NOT EXISTS pharmacy_customer_accounts (
       id BIGSERIAL PRIMARY KEY,

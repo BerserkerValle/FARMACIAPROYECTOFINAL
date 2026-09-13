@@ -184,6 +184,16 @@
       "phone": "2255-8811",
       "address": "Mixco, Guatemala",
       "active": true
+    },
+    {
+      "id": 4,
+      "name": "fdsgs",
+      "contactName": "dgsdfg",
+      "nit": "123143",
+      "email": "jonymartinezor@gmail.com",
+      "phone": "23421341234",
+      "address": "4ta calle 1-74 z6",
+      "active": true
     }
   ],
   "lots": [
@@ -316,9 +326,9 @@
       "email": "kevincay590@gmail.com",
       "phone": "48938771",
       "createdAt": "2026-08-18T17:07:17.450Z",
-      "updatedAt": "2026-09-06T06:39:57.837Z",
-      "deliveryLatitude": 14.580457036051394,
-      "deliveryLongitude": -90.7281535581773
+      "updatedAt": "2026-09-07T20:20:11.761Z",
+      "deliveryLatitude": 14.558248359475586,
+      "deliveryLongitude": -90.73154916121055
     },
     {
       "id": 2,
@@ -328,9 +338,9 @@
       "phone": "03124578",
       "passwordHash": "$2b$12$CqSwtWmzUzJLB5lMQ5E8a.w.37cbULHE4Q2BjbpRQUw9m8jp58cj.",
       "createdAt": "2026-09-06T05:54:41.507Z",
-      "updatedAt": "2026-09-06T06:51:37.107Z",
-      "deliveryLatitude": 14.579869572301874,
-      "deliveryLongitude": -90.72809817578504
+      "updatedAt": "2026-09-07T20:20:10.531Z",
+      "deliveryLatitude": 14.558248359475586,
+      "deliveryLongitude": -90.73154916121055
     },
     {
       "id": 3,
@@ -351,8 +361,10 @@
       "phone": "03124578",
       "passwordHash": "$2b$12$g6.zSi80iMZY0xbf1qeSoOa2k2/J5qizPXohci.cuiWFieYa/yrz.",
       "createdAt": "2026-09-06T06:50:08.834Z",
-      "updatedAt": "2026-09-06T06:51:25.498Z",
-      "address": "3a Calle 2-45, Zona 1, Ciudad Vieja, Sacatepéquez."
+      "updatedAt": "2026-09-07T20:20:10.531Z",
+      "address": "3a Calle 2-45, Zona 1, Ciudad Vieja, Sacatepéquez.",
+      "deliveryLatitude": 14.558248359475586,
+      "deliveryLongitude": -90.73154916121055
     }
   ],
   "employees": [
@@ -522,7 +534,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "3a Calle Oriente No. 15, Antigua Guatemala",
-      "status": "PACKING",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -541,7 +553,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "Calle Real de Jocotenango Sacatepequez, Casa #1-C",
-      "status": "PACKING",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -560,7 +572,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "Jardines de Parramos, San Luis Pueblo Nuevo",
-      "status": "PACKING",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -579,7 +591,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "Jardines de Parramos",
-      "status": "PACKING",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -598,7 +610,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "Parque Ecoturístico Cerro Niño, Aldea, Pastores",
-      "status": "PACKING",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -617,7 +629,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
-      "status": "IN_ROUTE",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -636,7 +648,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
-      "status": "IN_ROUTE",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -655,7 +667,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
-      "status": "IN_ROUTE",
+      "status": "DELIVERED",
       "paymentStatus": "PENDING",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
