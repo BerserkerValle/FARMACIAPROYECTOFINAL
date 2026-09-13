@@ -81,23 +81,23 @@ function money(value: number) {
 }
 
 function readToken() {
-  const sessionId = localStorage.getItem('derkas.token');
+  const sessionId = localStorage.getItem('farmacia-fjk.token');
   return sessionId && /^\d+$/.test(sessionId) ? sessionId : null;
 }
 
 function readProfile() {
-  const raw = localStorage.getItem('derkas.profile');
+  const raw = localStorage.getItem('farmacia-fjk.profile');
   return raw ? (JSON.parse(raw) as EmployeeProfile) : null;
 }
 
 function saveSession(token: string, profile: EmployeeProfile) {
-  localStorage.setItem('derkas.token', token);
-  localStorage.setItem('derkas.profile', JSON.stringify(profile));
+  localStorage.setItem('farmacia-fjk.token', token);
+  localStorage.setItem('farmacia-fjk.profile', JSON.stringify(profile));
 }
 
 function clearSession() {
-  localStorage.removeItem('derkas.token');
-  localStorage.removeItem('derkas.profile');
+  localStorage.removeItem('farmacia-fjk.token');
+  localStorage.removeItem('farmacia-fjk.profile');
 }
 
 function getCategoryHierarchyIds(categoryId: number, allCategories: Category[]): number[] {
@@ -158,7 +158,7 @@ function TopHeader({
             </button>
           )}
           <div className="brand-info">
-            <h1>DERKAS</h1>
+            <h1>Farmacia FJK</h1>
             <p>Farmacia Digital</p>
           </div>
         </div>
@@ -382,7 +382,7 @@ function TopPaymentBar({
 
                 {cart.length === 0 ? (
                   <div className="top-cart-empty">
-                    <p>🛒 Carrito vacío</p>
+                    <p>Carrito vacío</p>
                     <span>Haz clic en "Agregar al Carrito" en cualquier producto del catálogo abajo.</span>
                   </div>
                 ) : (
@@ -409,7 +409,7 @@ function TopPaymentBar({
                                 }}
                               />
                             ) : (
-                              <span className="cart-item-thumb-fallback">💊</span>
+                              <span className="cart-item-thumb-fallback">Medicamento</span>
                             )}
                           </div>
                           <div className="top-item-info">
@@ -452,7 +452,7 @@ function TopPaymentBar({
                           onClick={() => onRemoveItem(item.productId)}
                           title="Eliminar"
                         >
-                          ✕
+                          Quitar
                         </button>
                       </div>
                     ))}
@@ -461,7 +461,7 @@ function TopPaymentBar({
 
                 {hasPrescriptionItems && (
                   <div className="prescription-alert-box" style={{ marginTop: '0.75rem' }}>
-                    <span>⚠️</span>
+                    <span>Aviso</span>
                     <div>
                       <strong>Receta médica requerida</strong>
                       <p>Has seleccionado medicamentos éticos. Adjunta la foto de tu receta a la derecha.</p>
@@ -527,14 +527,14 @@ function TopPaymentBar({
                       className={`delivery-toggle-btn ${checkout.deliveryMode === 'DELIVERY' ? 'active' : ''}`}
                       onClick={() => onUpdateCheckout({ deliveryMode: 'DELIVERY' })}
                     >
-                      🛵 Envío a Domicilio
+                      Envío a domicilio
                     </button>
                     <button
                       type="button"
                       className={`delivery-toggle-btn ${checkout.deliveryMode === 'PICKUP' ? 'active' : ''}`}
                       onClick={() => onUpdateCheckout({ deliveryMode: 'PICKUP' })}
                     >
-                      🏪 Retiro en Sucursal ({selectedBranch ? selectedBranch.name : 'Sede'})
+                      Retiro en sucursal ({selectedBranch ? selectedBranch.name : 'Sede'})
                     </button>
                   </div>
                 </div>
@@ -591,7 +591,7 @@ function TopPaymentBar({
                   <div className="form-field">
                     <label>Fotografía de Receta Médica</label>
                     <label className="prescription-dropzone">
-                      <span>📷</span>
+                            <span>Receta</span>
                       <span style={{ flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                         {recipeFile ? recipeFile.name : 'Subir archivo de receta médica...'}
                       </span>
@@ -710,16 +710,16 @@ function ProductDetailModal({
       <div className="product-detail-modal" onClick={(e) => e.stopPropagation()}>
         {/* Close Button */}
         <button type="button" className="modal-close-btn" onClick={onClose} title="Cerrar (Esc)">
-          ✕
+          Cerrar
         </button>
 
         {/* Modal Top Badges Header */}
         <div className="modal-top-bar">
           <div className="modal-header-badges">
-            <span className="modal-cat-badge">💊 {categoryName}</span>
+            <span className="modal-cat-badge">{categoryName}</span>
             <span className="badge-sku">SKU: {product.sku}</span>
             <span className={`badge-prescription ${product.requiresPrescription ? 'rx' : 'otc'}`}>
-              {product.requiresPrescription ? '📋 Requiere Receta Médica MSPAS' : '🟢 Venta Libre (OTC)'}
+              {product.requiresPrescription ? 'Requiere receta médica MSPAS' : 'Venta libre (OTC)'}
             </span>
           </div>
         </div>
@@ -763,7 +763,7 @@ function ProductDetailModal({
                   <path d="M10.5 20.5l10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" />
                   <path d="m8.5 8.5 7 7" />
                 </svg>
-                <span>Farmacia Derkas</span>
+                <span>Farmacia FJK</span>
               </div>
             </div>
 
@@ -785,7 +785,7 @@ function ProductDetailModal({
               </div>
               <div className="spec-item">
                 <span>Marca Comercial:</span>
-                <strong>{product.brand || 'Derkas'}</strong>
+                    <strong>{product.brand || 'Farmacia FJK'}</strong>
               </div>
               <div className="spec-item">
                 <span>Presentación:</span>
@@ -839,7 +839,7 @@ function ProductDetailModal({
                 className={`modal-tab-btn ${activeTab === 'specs' ? 'active' : ''}`}
                 onClick={() => setActiveTab('specs')}
               >
-                📋 Especificaciones
+                Especificaciones
               </button>
               <button
                 type="button"
@@ -853,7 +853,7 @@ function ProductDetailModal({
                 className={`modal-tab-btn ${activeTab === 'lots' ? 'active' : ''}`}
                 onClick={() => setActiveTab('lots')}
               >
-                📦 Lotes ({product.lots?.length ?? 0})
+                Lotes ({product.lots?.length ?? 0})
               </button>
               <button
                 type="button"
@@ -904,8 +904,8 @@ function ProductDetailModal({
                     <span className="spec-box-label">Condición Sanitaria de Venta</span>
                     <strong className="spec-box-value" style={{ color: product.requiresPrescription ? '#b45309' : '#047857' }}>
                       {product.requiresPrescription
-                        ? '⚠️ Medicamento Ético - Venta Bajo Prescripción Médica Retenida (MSPAS)'
-                        : '🟢 Venta Libre (OTC) - Medicamento de dispensación directa'}
+                        ? 'Medicamento bajo prescripción médica retenida (MSPAS)'
+                        : 'Venta libre (OTC) - dispensación directa'}
                     </strong>
                   </div>
                 </div>
@@ -986,7 +986,7 @@ function ProductDetailModal({
                 <div className="modal-safety-grid">
                   {product.requiresPrescription && (
                     <div className="prescription-alert-box">
-                      <span>⚠️</span>
+                      <span>Aviso</span>
                       <div>
                         <strong>Medicamento Ético con Receta Obligatoria</strong>
                         <p>De acuerdo con la legislación sanitaria del MSPAS, este medicamento requiere receta médica válida emitida por un profesional de la salud colegiado.</p>
@@ -1172,7 +1172,7 @@ function PublicCatalogView({
                 onClick={() => onQueryChange('')}
                 title="Limpiar búsqueda"
               >
-                ✕
+                Cerrar
               </button>
             )}
           </div>
@@ -1186,7 +1186,7 @@ function PublicCatalogView({
               className={`filter-pill-btn ${selectedCategoryId === 'all' ? 'active' : ''}`}
               onClick={() => setSelectedCategoryId('all')}
             >
-              <span>📁 Todas las Categorías</span>
+              <span>Todas las categorías</span>
               <span className="filter-pill-count">{products.length}</span>
             </button>
             {categories.map((cat) => {
@@ -1221,7 +1221,7 @@ function PublicCatalogView({
             className={`filter-pill-btn ${filterType === 'otc' ? 'active' : ''}`}
             onClick={() => setFilterType('otc')}
           >
-            <span>🟢 Venta Libre</span>
+            <span>Venta libre</span>
             <span className="filter-pill-count">{otcCount}</span>
           </button>
           <button
@@ -1229,7 +1229,7 @@ function PublicCatalogView({
             className={`filter-pill-btn ${filterType === 'rx' ? 'active' : ''}`}
             onClick={() => setFilterType('rx')}
           >
-            <span>📋 Requiere Receta</span>
+            <span>Requiere receta</span>
             <span className="filter-pill-count">{rxCount}</span>
           </button>
 
@@ -1244,7 +1244,7 @@ function PublicCatalogView({
                 onQueryChange('');
               }}
             >
-              ✕ Limpiar Filtros
+              Limpiar filtros
             </button>
           )}
         </div>
@@ -1296,7 +1296,7 @@ function PublicCatalogView({
                         <path d="M10.5 20.5l10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" />
                         <path d="m8.5 8.5 7 7" />
                       </svg>
-                      <span>{product.brand || 'Derkas'}</span>
+                      <span>{product.brand || 'Farmacia FJK'}</span>
                     </div>
 
                     {/* Badges Overlaid over top of image */}
@@ -1312,11 +1312,11 @@ function PublicCatalogView({
                           }}
                           title={`Filtrar por ${productCategory.name}`}
                         >
-                          📁 {productCategory.name}
+                          {productCategory.name}
                         </span>
                       )}
                       <span className={`badge-prescription ${product.requiresPrescription ? 'rx' : 'otc'}`}>
-                        {product.requiresPrescription ? '📋 Con Receta' : '🟢 Venta Libre'}
+                        {product.requiresPrescription ? 'Con receta' : 'Venta libre'}
                       </span>
                     </div>
                   </div>
@@ -1530,7 +1530,7 @@ function CustomerOrdersPage({ customer, onUpdate, onLogout }: { customer: Custom
 }
 
 function LoginPage({ onLogin, onSuccess }: { onLogin: (token: string, profile: EmployeeProfile) => void; onSuccess: () => void }) {
-  const [email, setEmail] = useState('admin@derkas.com');
+  const [email, setEmail] = useState('admin@farmaciafjk.com');
   const [password, setPassword] = useState('Admin123*');
   const [status, setStatus] = useState('');
 
@@ -1556,7 +1556,7 @@ function LoginPage({ onLogin, onSuccess }: { onLogin: (token: string, profile: E
         </div>
         <div className="form-field">
           <label>Correo Corporativo</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@derkas.com" />
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@farmaciafjk.com" />
         </div>
         <div className="form-field">
           <label>Contraseña</label>
@@ -1677,7 +1677,7 @@ function PosPage({ token, profile, categories }: { token: string | null; profile
               />
             </div>
             <div className="form-field">
-              <label>📁 Filtrar por Categoría</label>
+              <label>Filtrar por categoría</label>
               <select
                 value={selectedCategoryId}
                 onChange={(e) => setSelectedCategoryId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
@@ -1708,7 +1708,7 @@ function PosPage({ token, profile, categories }: { token: string | null; profile
                   setSelectedCategoryId('all');
                 }}
               >
-                ✕ Limpiar búsqueda
+                Limpiar búsqueda
               </button>
             </div>
           )}
@@ -1769,7 +1769,7 @@ function PosPage({ token, profile, categories }: { token: string | null; profile
                 {selectedProd.imageUrl ? (
                   <img src={selectedProd.imageUrl} alt={selectedProd.name} />
                 ) : (
-                  <span>💊</span>
+                  <span>Medicamento</span>
                 )}
               </div>
               <div style={{ flex: 1 }}>
@@ -2035,7 +2035,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
         body: JSON.stringify(payload)
       }, token);
 
-      setStatus(`✅ ¡Medicamento "${newProd.name}" registrado exitosamente con su imagen!`);
+      setStatus(`Medicamento "${newProd.name}" registrado exitosamente con su imagen.`);
       handleClearImage();
       // Generate next random SKU
       setNewProd((prev) => ({
@@ -2060,7 +2060,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
         method: 'POST',
         body: JSON.stringify(lotForm)
       }, token);
-      setStatus('✅ Lote recibido y registrado en bodega.');
+      setStatus('Lote recibido y registrado en bodega.');
       loadAllData();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Error al registrar lote');
@@ -2135,7 +2135,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
             className={`section-tab-btn ${activeTab === 'new-product' ? 'active' : ''}`}
             onClick={() => setActiveTab('new-product')}
           >
-            <span>📦 Registrar Nuevo Medicamento con Foto</span>
+            <span>Registrar nuevo medicamento con foto</span>
           </button>
           <button
             type="button"
@@ -2149,7 +2149,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
             className={`section-tab-btn ${activeTab === 'products-list' ? 'active' : ''}`}
             onClick={() => setActiveTab('products-list')}
           >
-            <span>📋 Catálogo ({products.length} productos)</span>
+            <span>Catálogo ({products.length} productos)</span>
           </button>
         </div>
 
@@ -2184,7 +2184,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                     onClick={autoGenerateSku}
                     style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.74rem', cursor: 'pointer', fontWeight: 700 }}
                   >
-                    ⚡ Generar
+                    Generar SKU
                   </button>
                 </div>
                 <input
@@ -2305,7 +2305,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                   checked={newProd.requiresPrescription}
                   onChange={(e) => setNewProd({ ...newProd, requiresPrescription: e.target.checked })}
                 />
-                <span>📋 Requiere Receta Médica Retenida (Control Sanitario MSPAS)</span>
+                <span>Requiere receta médica retenida (Control Sanitario MSPAS)</span>
               </label>
             </div>
 
@@ -2400,14 +2400,14 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                 className={`delivery-toggle-btn ${imageMode === 'file' ? 'active' : ''}`}
                 onClick={() => setImageMode('file')}
               >
-                📁 Subir Archivo desde PC
+                Subir archivo desde PC
               </button>
               <button
                 type="button"
                 className={`delivery-toggle-btn ${imageMode === 'url' ? 'active' : ''}`}
                 onClick={() => setImageMode('url')}
               >
-                🔗 Enlace / URL Web
+                Enlace / URL web
               </button>
             </div>
 
@@ -2460,7 +2460,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                       src={imagePreview || newProd.imageUrl}
                       alt="Vista previa medicamento"
                       className="image-preview-img"
-                      onError={() => setStatus('⚠️ No se pudo cargar la imagen desde la URL especificada.')}
+                      onError={() => setStatus('No se pudo cargar la imagen desde la URL especificada.')}
                     />
                     <button
                       type="button"
@@ -2468,12 +2468,12 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                       onClick={handleClearImage}
                       title="Quitar imagen"
                     >
-                      ✕
+                      Quitar imagen
                     </button>
                   </>
                 ) : (
                   <div style={{ textAlign: 'center', color: 'var(--text-light)' }}>
-                    <p style={{ fontSize: '1.8rem', marginBottom: '0.25rem' }}>📷</p>
+                    <p style={{ fontSize: '1.8rem', marginBottom: '0.25rem' }}>Sin imagen</p>
                     <span style={{ fontSize: '0.84rem' }}>Sin imagen seleccionada (se usará diseño estándar)</span>
                   </div>
                 )}
@@ -2495,13 +2495,13 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                         />
                       ) : (
                         <div className="product-img-fallback">
-                          <span>💊 Derkas</span>
+                          <span>Farmacia FJK</span>
                         </div>
                       )}
                       <div className="product-card-badges-overlay">
                         <span className="badge-sku">{newProd.sku || 'SKU-000'}</span>
                         <span className={`badge-prescription ${newProd.requiresPrescription ? 'rx' : 'otc'}`}>
-                          {newProd.requiresPrescription ? '📋 Con Receta' : '🟢 Venta Libre'}
+                          {newProd.requiresPrescription ? 'Con receta' : 'Venta libre'}
                         </span>
                       </div>
                     </div>
@@ -2529,7 +2529,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
               onClick={handleCreateProduct}
               style={{ width: '100%', padding: '0.95rem', fontSize: '1.02rem', marginTop: '0.5rem' }}
             >
-              {isSubmitting ? 'Guardando...' : '✨ Guardar y Publicar Medicamento con Foto'}
+              {isSubmitting ? 'Guardando...' : 'Guardar y publicar medicamento con foto'}
             </button>
           </div>
         </div>
@@ -2556,7 +2556,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                 />
               </div>
               <div className="form-field">
-                <label>📁 Filtrar por Categoría</label>
+                <label>Filtrar por categoría</label>
                 <select
                   value={lotProductCategoryId}
                   onChange={(e) => setLotProductCategoryId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
@@ -2605,7 +2605,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                   {selectedProduct.imageUrl ? (
                     <img src={selectedProduct.imageUrl} alt={selectedProduct.name} />
                   ) : (
-                    <span>💊</span>
+                    <span>Medicamento</span>
                   )}
                 </div>
                 <div>
@@ -2733,7 +2733,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                         {prod?.imageUrl ? (
                           <img src={prod.imageUrl} alt={prod.name} />
                         ) : (
-                          <span>💊</span>
+                          <span>Medicamento</span>
                         )}
                       </div>
                       <div>
@@ -2796,7 +2796,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                     fontSize: '0.9rem'
                   }}
                 >
-                  <option value="all">📁 Todas las Categorías ({products.length})</option>
+                  <option value="all">Todas las categorías ({products.length})</option>
                   {categories.map((cat) => {
                     const allowedIds = getCategoryHierarchyIds(cat.id, categories);
                     const count = products.filter((p) => p.categoryId && allowedIds.includes(p.categoryId)).length;
@@ -2852,14 +2852,14 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                 className={`filter-pill-btn ${listPrescriptionFilter === 'otc' ? 'active' : ''}`}
                 onClick={() => setListPrescriptionFilter('otc')}
               >
-                <span>🟢 Venta Libre</span>
+                <span>Venta libre</span>
               </button>
               <button
                 type="button"
                 className={`filter-pill-btn ${listPrescriptionFilter === 'rx' ? 'active' : ''}`}
                 onClick={() => setListPrescriptionFilter('rx')}
               >
-                <span>📋 Con Receta</span>
+                <span>Con receta</span>
               </button>
 
               <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
@@ -2877,7 +2877,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                     setListPrescriptionFilter('all');
                   }}
                 >
-                  ✕ Limpiar Filtros
+                  Limpiar filtros
                 </button>
               )}
             </div>
@@ -2917,7 +2917,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                         <img src={p.imageUrl} alt={p.name} className="product-card-img" />
                       ) : (
                         <div className="product-img-fallback">
-                          <span>💊 {p.brand}</span>
+                          <span>{p.brand}</span>
                         </div>
                       )}
                       <div className="product-card-badges-overlay">
@@ -2932,11 +2932,11 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                             }}
                             title={`Filtrar por ${cat.name}`}
                           >
-                            📁 {cat.name}
+                            {cat.name}
                           </span>
                         )}
                         <span className={`badge-prescription ${p.requiresPrescription ? 'rx' : 'otc'}`}>
-                          {p.requiresPrescription ? '📋 Con Receta' : '🟢 Venta Libre'}
+                          {p.requiresPrescription ? 'Con receta' : 'Venta libre'}
                         </span>
                       </div>
                     </div>
@@ -2972,7 +2972,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
           {editingProduct && (
             <div className="modal-backdrop" onClick={() => setEditingProduct(null)}>
               <div className="product-detail-modal" onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="modal-close-btn" onClick={() => setEditingProduct(null)} title="Cerrar">✕</button>
+                <button type="button" className="modal-close-btn" onClick={() => setEditingProduct(null)} title="Cerrar">Cerrar</button>
                 <h2 className="modal-title">Editar medicamento</h2>
                 <div className="form-grid-2">
                   {([
@@ -3220,7 +3220,7 @@ function DeliveryPage({ token }: { token: string | null }) {
           <div className="form-field">
             <label>Foto de la Receta Firmada</label>
             <label className="prescription-dropzone">
-              <span>📷</span>
+              <span>Imagen</span>
               <span>{recipe ? recipe.name : 'Tomar foto o elegir imagen...'}</span>
               <input type="file" accept="image/*" onChange={(e) => setRecipe(e.target.files?.[0] ?? null)} />
             </label>
@@ -3239,7 +3239,7 @@ function AdminPage({ token }: { token: string | null }) {
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [reports, setReports] = useState<any>(null);
   const [status, setStatus] = useState('');
-  const [employee, setEmployee] = useState({ fullName: 'Nuevo Usuario', email: 'nuevo@derkas.com', password: 'Clave123*', role: 'Cajero', branchId: 1, supervisorId: null as number | null });
+  const [employee, setEmployee] = useState({ fullName: 'Nuevo Usuario', email: 'nuevo@farmaciafjk.com', password: 'Clave123*', role: 'Cajero', branchId: 1, supervisorId: null as number | null });
   const [crosscheckOrderId, setCrosscheckOrderId] = useState('1');
   const [categories, setCategories] = useState<Category[]>([]);
   const [newCategory, setNewCategory] = useState({ name: '', parentId: null as number | null });
@@ -3420,10 +3420,10 @@ export default function App() {
   const [profile, setProfile] = useState<EmployeeProfile | null>(() => readProfile());
   const [customer, setCustomer] = useState<CustomerAccount | null>(() => {
     if (readToken()) {
-      localStorage.removeItem('derkas.customer');
+      localStorage.removeItem('farmacia-fjk.customer');
       return null;
     }
-    const raw = localStorage.getItem('derkas.customer');
+    const raw = localStorage.getItem('farmacia-fjk.customer');
     return raw ? JSON.parse(raw) as CustomerAccount : null;
   });
 
@@ -3601,7 +3601,7 @@ export default function App() {
   }
 
   function handleLogin(nextToken: string, nextProfile: EmployeeProfile) {
-    localStorage.removeItem('derkas.customer');
+    localStorage.removeItem('farmacia-fjk.customer');
     setCustomer(null);
     saveSession(nextToken, nextProfile);
     setToken(nextToken);
@@ -3619,7 +3619,7 @@ export default function App() {
     clearSession();
     setToken(null);
     setProfile(null);
-    localStorage.setItem('derkas.customer', JSON.stringify(nextCustomer));
+    localStorage.setItem('farmacia-fjk.customer', JSON.stringify(nextCustomer));
     setCustomer(nextCustomer);
     setCheckout((previous) => ({
       ...previous,
@@ -3633,13 +3633,13 @@ export default function App() {
   }
 
   function handleCustomerLogout() {
-    localStorage.removeItem('derkas.customer');
+    localStorage.removeItem('farmacia-fjk.customer');
     setCustomer(null);
     setActivePortal('public');
   }
 
   function handleCustomerUpdate(nextCustomer: CustomerAccount) {
-    localStorage.setItem('derkas.customer', JSON.stringify(nextCustomer));
+    localStorage.setItem('farmacia-fjk.customer', JSON.stringify(nextCustomer));
     setCustomer(nextCustomer);
     setCheckout((previous) => ({
       ...previous,
