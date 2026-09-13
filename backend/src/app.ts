@@ -5,11 +5,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { adminRouter } from './routes/admin.routes.js';
-import { authRouter } from './routes/auth.routes.js';
-import { posRouter } from './routes/pos.routes.js';
-import { publicRouter } from './routes/public.routes.js';
-import { warehouseRouter } from './routes/warehouse.routes.js';
+import { rutasAdministracion, rutasAutenticacion, rutasBodega, rutasPublicas, rutasVentas } from './rutas/index.js';
 import { errorHandler, notFound } from './middleware/error.js';
 import { getUploadsDir } from './utils.js';
 import { databaseHealth } from './db.js';
@@ -45,11 +41,11 @@ app.get('/health', async (_req, res, next) => {
   }
 });
 
-app.use('/api/auth', authRouter);
-app.use('/api/public', publicRouter);
-app.use('/api/pos', posRouter);
-app.use('/api/warehouse', warehouseRouter);
-app.use('/api/admin', adminRouter);
+app.use('/api/auth', rutasAutenticacion);
+app.use('/api/public', rutasPublicas);
+app.use('/api/pos', rutasVentas);
+app.use('/api/warehouse', rutasBodega);
+app.use('/api/admin', rutasAdministracion);
 
 app.use(notFound);
 app.use(errorHandler);

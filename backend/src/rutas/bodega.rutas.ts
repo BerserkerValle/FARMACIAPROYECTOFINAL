@@ -1,0 +1,1 @@
+export { warehouseRouter as rutasBodega } from '../routes/warehouse.routes.js';

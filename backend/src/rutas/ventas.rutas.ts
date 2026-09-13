@@ -1,0 +1,1 @@
+export { posRouter as rutasVentas } from '../routes/pos.routes.js';

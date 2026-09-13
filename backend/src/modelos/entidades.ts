@@ -1,0 +1,4 @@
+/** Entidades del dominio de farmacia, agrupadas en un único punto para facilitar su explicación. */
+export type { Role as Rol, Branch as Sucursal, Category as Categoria, Supplier as Proveedor, Product as Producto, Lot as Lote, Customer as Cliente, Employee as Empleado, Order as Pedido, OrderItem as DetallePedido, Payment as Pago, Invoice as Factura, ReturnRecord as Devolucion, CrosscheckRecord as Validacion, DashboardMetrics as MetricasPanel, DataSnapshot as EstadoAplicacion, PublicCheckoutInput as DatosCheckout, PosSaleInput as DatosVentaPOS, ReceiveGoodsInput as DatosRecepcion } from '../domain.js';
+
+export type { CreateProductInput as DatosCrearProducto, CrosscheckInput as DatosValidacion } from '../domain.js';
