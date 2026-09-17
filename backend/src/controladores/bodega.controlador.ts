@@ -1,1 +1,0 @@
-export { lots as lotes, receive as recibirLote, listProducts as listarProductos, createProduct as crearProducto, updateProduct as actualizarProducto, deleteProduct as eliminarProducto, categories as categoriasBodega, suppliers as proveedoresBodega, uploadProductImage as subirImagenProducto } from '../controllers/warehouse.controller.js';

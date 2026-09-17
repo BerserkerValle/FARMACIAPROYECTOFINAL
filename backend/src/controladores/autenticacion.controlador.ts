@@ -1,1 +1,0 @@
-export { login as iniciarSesion, me as usuarioActual } from '../controllers/auth.controller.js';

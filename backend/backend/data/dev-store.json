@@ -210,6 +210,15 @@
       "phone": "55551111",
       "address": "Zona 10",
       "active": false
+    },
+    {
+      "id": 5,
+      "name": "laboratorio CASTO",
+      "nit": "1111111-1",
+      "email": "castro@prueba.com",
+      "phone": "56250594",
+      "address": "Jocotenango",
+      "active": true
     }
   ],
   "lots": [

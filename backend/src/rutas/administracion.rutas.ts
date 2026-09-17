@@ -1,1 +1,1 @@
-export { adminRouter as rutasAdministracion } from '../routes/admin.routes.js';
+export { adminRouter as rutasAdministracion } from '../routes/admin/index.routes.js';
