@@ -1,27 +1,3 @@
-/**
- * ============================================================================
- * PROYECTO FARMACIA - CONTROLADOR DEL MÓDULO ADMINISTRATIVO Y GERENCIAL
- * ============================================================================
- * Este controlador expone las operaciones exclusivas de Administradores y Gerentes:
- * 1. Métricas y KPIs:
- *    - Panel principal de control (Dashboard).
- *    - Reportes consolidados de ventas y rendimiento.
- * 2. Catálogos Maestros (CRUDs):
- *    - Sucursales físicas de la farmacia.
- *    - Categorías de productos (soporte para jerarquías padre-hijo).
- *    - Proveedores y laboratorios farmacéuticos.
- *    - Personal y empleados (con control de acceso y encriptación).
- * 3. Auditoría y Control de Calidad:
- *    - Doble chequeo / verificación cruzada (crosscheck) de pedidos despachados.
- *    - Gestión y registro de devoluciones con destino a reintegración o destrucción.
- *
- * MÉTODOS Y LIBRERÍAS:
- * - Zod: Validación de esquemas y DTOs entrantes.
- * - Soporte dual transparente: Persistencia en PostgreSQL (`db.ts`) con fallback a `store.ts`.
- * - Seguridad: Exclusión deliberada de contraseñas (`safeEmployee`) en respuestas JSON.
- * ============================================================================
- */
-
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { 
