@@ -53,7 +53,6 @@ export async function dashboard(_req: Request, res: Response) {
 export function reports(_req: Request, res: Response) {
   return res.json({ success: true, data: store.getReports() });
 }
-
 export async function employees(_req: Request, res: Response) {
   const data = databaseEnabled ? await listDatabaseEmployees() : store.getEmployees();
   return res.json({ success: true, data: data ?? [] });

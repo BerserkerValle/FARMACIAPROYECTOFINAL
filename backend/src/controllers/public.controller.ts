@@ -120,6 +120,7 @@ export async function checkout(req: Request, res: Response) {
     const appUrl = process.env.APP_BASE_URL?.trim() || 'http://localhost:5173';
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
+      ui_mode: 'embedded',
       customer_email: created.customer.email,
       metadata: {
         orderId: String(created.order.id),
@@ -136,8 +137,7 @@ export async function checkout(req: Request, res: Response) {
           }
         }
       })),
-      success_url: `${appUrl}/?payment=success&order=${created.order.code}`,
-      cancel_url: `${appUrl}/?payment=cancelled&order=${created.order.code}`
+      return_url: `${appUrl}/?payment=success&order=${created.order.code}&session_id={CHECKOUT_SESSION_ID}`
     });
 
     return res.json({
@@ -145,7 +145,7 @@ export async function checkout(req: Request, res: Response) {
       data: {
         order: created.order,
         customer: created.customer,
-        paymentUrl: session.url,
+        clientSecret: session.client_secret,
         mode: 'stripe'
       }
     });

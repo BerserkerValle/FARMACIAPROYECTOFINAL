@@ -5,6 +5,7 @@ export function notFound(req: Request, res: Response) {
 }
 
 export function errorHandler(error: unknown, _req: Request, res: Response, _next: NextFunction) {
-  const message = error instanceof Error ? error.message : 'Error interno';
-  res.status(400).json({ success: false, message });
+  const message = error instanceof Error ? error.message : 'Error interno del servidor';
+  console.error(error);
+  res.status(500).json({ success: false, message });
 }

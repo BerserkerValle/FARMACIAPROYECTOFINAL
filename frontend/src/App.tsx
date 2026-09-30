@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRef } from 'react';
+import { loadStripe } from '@stripe/stripe-js';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { apiRequest, uploadTemporaryPrescription, uploadPrescription, uploadProductImage } from './api';
@@ -91,6 +92,45 @@ const moneyFormatter = new Intl.NumberFormat('es-GT', { style: 'currency', curre
 
 function money(value: number) {
   return moneyFormatter.format(value);
+}
+
+const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
+  ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
+  : null;
+
+function EmbeddedStripeCheckout({ clientSecret }: { clientSecret: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let embeddedCheckout: { unmount: () => void } | null = null;
+
+    async function mountCheckout() {
+      const stripe = await stripePromise;
+      if (!stripe || cancelled || !containerRef.current) return;
+      const checkout = await stripe.initEmbeddedCheckout({
+        fetchClientSecret: async () => clientSecret
+      });
+      if (cancelled || !containerRef.current) {
+        checkout.unmount();
+        return;
+      }
+      checkout.mount(containerRef.current);
+      embeddedCheckout = checkout;
+    }
+
+    void mountCheckout();
+    return () => {
+      cancelled = true;
+      embeddedCheckout?.unmount();
+    };
+  }, [clientSecret]);
+
+  if (!stripePromise) {
+    return <div className="checkout-status-msg">Falta configurar VITE_STRIPE_PUBLISHABLE_KEY.</div>;
+  }
+
+  return <div className="embedded-stripe-checkout" ref={containerRef} />;
 }
 
 function readToken() {
@@ -283,7 +323,7 @@ function TopPaymentBar({
   onSubmitPayment,
   isSubmitting,
   status,
-  paymentUrl
+  paymentClientSecret
 }: {
   cart: Array<{ productId: number; quantity: number }>;
   products: ProductCard[];
@@ -309,7 +349,7 @@ function TopPaymentBar({
   onSubmitPayment: () => void;
   isSubmitting: boolean;
   status: string;
-  paymentUrl: string;
+  paymentClientSecret: string;
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -635,17 +675,7 @@ function TopPaymentBar({
                 {/* Feedback Message */}
                 {status && <div className="checkout-status-msg">{status}</div>}
 
-                {/* Direct Stripe / Gateway Link */}
-                {paymentUrl && (
-                  <a className="payment-gateway-link" href={paymentUrl} target="_blank" rel="noreferrer">
-                    <span>Ir a Pasarela de Pago Seguro / Stripe</span>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                      <polyline points="15 3 21 3 21 9" />
-                      <line x1="10" y1="14" x2="21" y2="3" />
-                    </svg>
-                  </a>
-                )}
+                {paymentClientSecret && <EmbeddedStripeCheckout clientSecret={paymentClientSecret} />}
               </div>
             </div>
           </div>
@@ -3272,7 +3302,7 @@ export default function App() {
   const [selectedProductForGlobalModal, setSelectedProductForGlobalModal] = useState<ProductCard | null>(null);
   const [recipeFile, setRecipeFile] = useState<File | null>(null);
   const [status, setStatus] = useState('');
-  const [paymentUrl, setPaymentUrl] = useState('');
+  const [paymentClientSecret, setPaymentClientSecret] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -3395,7 +3425,7 @@ export default function App() {
         prescriptionWebUrl = uploaded.url;
       }
 
-      const result = await apiRequest<{ paymentUrl: string | null; mode: string; order: { code: string; total: number } }>(
+      const result = await apiRequest<{ clientSecret?: string | null; mode: string; order: { code: string; total: number } }>(
         '/api/public/checkout',
         {
           method: 'POST',
@@ -3419,11 +3449,12 @@ export default function App() {
         }
       );
 
-      setPaymentUrl(result.paymentUrl ?? '');
-      if (result.mode === 'stripe' && result.paymentUrl) {
-        window.location.assign(result.paymentUrl);
+      if (result.mode === 'stripe' && result.clientSecret) {
+        setPaymentClientSecret(result.clientSecret);
+        setStatus('Completa el pago en el formulario seguro de Stripe.');
         return;
       }
+      setPaymentClientSecret('');
       setStatus(result.mode === 'cash'
         ? `¡Pedido ${result.order.code} recibido! ${checkout.deliveryMode === 'DELIVERY' ? 'Pagarás en efectivo al recibirlo.' : 'Pagarás en efectivo al recogerlo.'}`
         : `¡Orden ${result.order.code} generada exitosamente!`);
@@ -3533,7 +3564,7 @@ export default function App() {
           onSubmitPayment={handleCheckoutCart}
           isSubmitting={isSubmitting}
           status={status}
-          paymentUrl={paymentUrl}
+          paymentClientSecret={paymentClientSecret}
         />
       )}
 

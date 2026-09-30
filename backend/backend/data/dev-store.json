@@ -219,7 +219,7 @@
       "productionDate": "2026-02-01",
       "costPrice": 18,
       "salePrice": 30,
-      "quantityAvailable": 57
+      "quantityAvailable": 13
     },
     {
       "id": 3,
@@ -231,7 +231,7 @@
       "productionDate": "2026-01-12",
       "costPrice": 12,
       "salePrice": 28,
-      "quantityAvailable": 23
+      "quantityAvailable": 21
     },
     {
       "id": 4,
@@ -365,6 +365,24 @@
       "address": "3a Calle 2-45, Zona 1, Ciudad Vieja, Sacatepéquez.",
       "deliveryLatitude": 14.558248359475586,
       "deliveryLongitude": -90.73154916121055
+    },
+    {
+      "id": 5,
+      "name": "Juan Perez",
+      "nit": "CF123",
+      "email": "juan@example.com",
+      "phone": "55551234",
+      "createdAt": "2026-09-18T00:59:00.186Z",
+      "updatedAt": "2026-09-18T01:04:03.300Z"
+    },
+    {
+      "id": 6,
+      "name": "Jonathan",
+      "nit": "Orozco",
+      "email": "jonymartinezor@gmail.com",
+      "phone": "31043531",
+      "createdAt": "2026-09-18T01:11:34.187Z",
+      "updatedAt": "2026-09-18T01:15:24.720Z"
     }
   ],
   "employees": [
@@ -771,6 +789,160 @@
       "createdAt": "2026-09-06T06:51:37.107Z",
       "paidAt": null,
       "releasedAt": null
+    },
+    {
+      "id": 19,
+      "code": "DK-00019",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 5,
+      "customerEmail": "juan@example.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "AWAITING_PAYMENT",
+      "paymentStatus": "PENDING",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 30,
+      "createdAt": "2026-09-18T00:59:00.188Z",
+      "paidAt": null,
+      "releasedAt": null
+    },
+    {
+      "id": 20,
+      "code": "DK-00020",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 5,
+      "customerEmail": "juan@example.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "AWAITING_PAYMENT",
+      "paymentStatus": "PENDING",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 30,
+      "createdAt": "2026-09-18T01:04:03.301Z",
+      "paidAt": null,
+      "releasedAt": null
+    },
+    {
+      "id": 21,
+      "code": "DK-00021",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 6,
+      "customerEmail": "jonymartinezor@gmail.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "READY_FOR_PICKUP",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 30,
+      "createdAt": "2026-09-18T01:11:34.188Z",
+      "paidAt": "2026-09-18T01:11:34.188Z",
+      "releasedAt": null
+    },
+    {
+      "id": 22,
+      "code": "DK-00022",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 6,
+      "customerEmail": "jonymartinezor@gmail.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "READY_FOR_PICKUP",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 28,
+      "createdAt": "2026-09-18T01:11:47.401Z",
+      "paidAt": "2026-09-18T01:11:47.401Z",
+      "releasedAt": null
+    },
+    {
+      "id": 23,
+      "code": "DK-00023",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 6,
+      "customerEmail": "jonymartinezor@gmail.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "READY_FOR_PICKUP",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 1260,
+      "createdAt": "2026-09-18T01:12:20.035Z",
+      "paidAt": "2026-09-18T01:12:20.036Z",
+      "releasedAt": null
+    },
+    {
+      "id": 24,
+      "code": "DK-00024",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 6,
+      "customerEmail": "jonymartinezor@gmail.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "READY_FOR_PICKUP",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 30,
+      "createdAt": "2026-09-18T01:13:21.375Z",
+      "paidAt": "2026-09-18T01:13:21.376Z",
+      "releasedAt": null
+    },
+    {
+      "id": 25,
+      "code": "DK-00025",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 6,
+      "customerEmail": "jonymartinezor@gmail.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "READY_FOR_PICKUP",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 28,
+      "createdAt": "2026-09-18T01:15:24.721Z",
+      "paidAt": "2026-09-18T01:15:24.721Z",
+      "releasedAt": null
     }
   ],
   "orderItems": [
@@ -968,6 +1140,79 @@
       "unitPrice": 48,
       "subtotal": 48,
       "assignedLotIds": []
+    },
+    {
+      "id": 20,
+      "orderId": 19,
+      "productId": 2,
+      "quantity": 1,
+      "unitPrice": 30,
+      "subtotal": 30,
+      "assignedLotIds": []
+    },
+    {
+      "id": 21,
+      "orderId": 20,
+      "productId": 2,
+      "quantity": 1,
+      "unitPrice": 30,
+      "subtotal": 30,
+      "assignedLotIds": []
+    },
+    {
+      "id": 22,
+      "orderId": 21,
+      "productId": 2,
+      "quantity": 1,
+      "unitPrice": 30,
+      "subtotal": 30,
+      "assignedLotIds": [
+        2
+      ]
+    },
+    {
+      "id": 23,
+      "orderId": 22,
+      "productId": 3,
+      "quantity": 1,
+      "unitPrice": 28,
+      "subtotal": 28,
+      "assignedLotIds": [
+        3
+      ]
+    },
+    {
+      "id": 24,
+      "orderId": 23,
+      "productId": 2,
+      "quantity": 42,
+      "unitPrice": 30,
+      "subtotal": 1260,
+      "assignedLotIds": [
+        2
+      ]
+    },
+    {
+      "id": 25,
+      "orderId": 24,
+      "productId": 2,
+      "quantity": 1,
+      "unitPrice": 30,
+      "subtotal": 30,
+      "assignedLotIds": [
+        2
+      ]
+    },
+    {
+      "id": 26,
+      "orderId": 25,
+      "productId": 3,
+      "quantity": 1,
+      "unitPrice": 28,
+      "subtotal": 28,
+      "assignedLotIds": [
+        3
+      ]
     }
   ],
   "payments": [
@@ -1078,6 +1323,51 @@
       "amount": 30,
       "status": "PAID",
       "createdAt": "2026-09-06T06:00:20.917Z"
+    },
+    {
+      "id": 13,
+      "orderId": 21,
+      "provider": "demo",
+      "transactionId": "demo-21",
+      "amount": 30,
+      "status": "PAID",
+      "createdAt": "2026-09-18T01:11:34.188Z"
+    },
+    {
+      "id": 14,
+      "orderId": 22,
+      "provider": "demo",
+      "transactionId": "demo-22",
+      "amount": 28,
+      "status": "PAID",
+      "createdAt": "2026-09-18T01:11:47.401Z"
+    },
+    {
+      "id": 15,
+      "orderId": 23,
+      "provider": "demo",
+      "transactionId": "demo-23",
+      "amount": 1260,
+      "status": "PAID",
+      "createdAt": "2026-09-18T01:12:20.036Z"
+    },
+    {
+      "id": 16,
+      "orderId": 24,
+      "provider": "demo",
+      "transactionId": "demo-24",
+      "amount": 30,
+      "status": "PAID",
+      "createdAt": "2026-09-18T01:13:21.376Z"
+    },
+    {
+      "id": 17,
+      "orderId": 25,
+      "provider": "demo",
+      "transactionId": "demo-25",
+      "amount": 28,
+      "status": "PAID",
+      "createdAt": "2026-09-18T01:15:24.721Z"
     }
   ],
   "invoices": [
@@ -1176,6 +1466,46 @@
       "satCorrelative": "SAT-00000012",
       "issuedAt": "2026-09-06T06:00:20.917Z",
       "total": 30
+    },
+    {
+      "id": 13,
+      "orderId": 21,
+      "invoiceNumber": "FAC-000021",
+      "satCorrelative": "SAT-00000021",
+      "issuedAt": "2026-09-18T01:11:34.188Z",
+      "total": 30
+    },
+    {
+      "id": 14,
+      "orderId": 22,
+      "invoiceNumber": "FAC-000022",
+      "satCorrelative": "SAT-00000022",
+      "issuedAt": "2026-09-18T01:11:47.401Z",
+      "total": 28
+    },
+    {
+      "id": 15,
+      "orderId": 23,
+      "invoiceNumber": "FAC-000023",
+      "satCorrelative": "SAT-00000023",
+      "issuedAt": "2026-09-18T01:12:20.036Z",
+      "total": 1260
+    },
+    {
+      "id": 16,
+      "orderId": 24,
+      "invoiceNumber": "FAC-000024",
+      "satCorrelative": "SAT-00000024",
+      "issuedAt": "2026-09-18T01:13:21.376Z",
+      "total": 30
+    },
+    {
+      "id": 17,
+      "orderId": 25,
+      "invoiceNumber": "FAC-000025",
+      "satCorrelative": "SAT-00000025",
+      "issuedAt": "2026-09-18T01:15:24.721Z",
+      "total": 28
     }
   ],
   "returns": [],
@@ -1190,12 +1520,12 @@
     }
   ],
   "counters": {
-    "customer": 4,
+    "customer": 6,
     "employee": 6,
-    "order": 18,
-    "orderItem": 19,
-    "payment": 12,
-    "invoice": 12,
+    "order": 25,
+    "orderItem": 26,
+    "payment": 17,
+    "invoice": 17,
     "return": 0,
     "crosscheck": 1,
     "lot": 10,
