@@ -61,7 +61,7 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}, tok
   const headers = new Headers(options.headers ?? {});
   
   if (token) {
-    headers.set('X-Employee-Id', token);
+    headers.set('Authorization', `Bearer ${token}`);
   }
   
   if (!(options.body instanceof FormData)) {
@@ -111,7 +111,7 @@ export async function uploadPrescription(file: File, orderId: number, kind: 'web
 
   const response = await fetch(`${API_URL}/api/public/orders/prescription`, {
     method: 'POST',
-    headers: token ? { 'X-Employee-Id': token } : undefined,
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData
   });
   const payload = await response.json();
@@ -134,7 +134,7 @@ export async function uploadTemporaryPrescription(file: File, token?: string | n
 
   const response = await fetch(`${API_URL}/api/public/prescriptions/temp`, {
     method: 'POST',
-    headers: token ? { 'X-Employee-Id': token } : undefined,
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData
   });
   const payload = await response.json();
@@ -157,7 +157,7 @@ export async function uploadProductImage(file: File, token?: string | null) {
 
   const response = await fetch(`${API_URL}/api/warehouse/products/upload-image`, {
     method: 'POST',
-    headers: token ? { 'X-Employee-Id': token } : undefined,
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData
   });
   const payload = await response.json().catch(() => ({ success: false, message: 'Respuesta inválida del servidor' }));

@@ -29,7 +29,7 @@
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
-import type { CreateProductInput, DataSnapshot, PublicCheckoutInput } from './domain.js';
+import type { CreateProductInput, DashboardMetrics, DataSnapshot, PublicCheckoutInput, Supplier } from './domain.js';
 
 dotenv.config();
 
@@ -492,6 +492,7 @@ export async function getDatabaseSuppliers() {
   const result = await pool.query(
     `SELECT id_proveedor AS id,
             nombre_proveedor AS name,
+            COALESCE(nombre_contacto, '') AS "contactName",
             nit,
             correo AS email,
             telefono AS phone,
@@ -503,28 +504,56 @@ export async function getDatabaseSuppliers() {
   return result.rows;
 }
 
-export async function createDatabaseSupplier(input: { name: string; nit: string; email: string; phone: string; address: string; active: boolean }) {
+export async function createDatabaseSupplier(input: Omit<Supplier, 'id'>) {
   const database = requirePool();
+  const duplicate = await database.query(
+    'SELECT 1 FROM Proveedores WHERE nit = $1 OR LOWER(correo) = LOWER($2) LIMIT 1',
+    [input.nit.trim(), input.email.trim()]
+  );
+  if (duplicate.rows[0]) throw new Error('Ya existe un proveedor con ese NIT o correo');
   const result = await database.query(
-    `INSERT INTO Proveedores (nombre_proveedor, nit, correo, telefono, direccion, estado)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id_proveedor AS id, nombre_proveedor AS name, nit, correo AS email, telefono AS phone, direccion AS address, LOWER(estado) = 'activo' AS active`,
-    [input.name.trim(), input.nit.trim(), input.email.trim(), input.phone.trim(), input.address.trim(), input.active ? 'Activo' : 'Inactivo']
+    `INSERT INTO Proveedores (nombre_proveedor, nombre_contacto, nit, correo, telefono, direccion, estado)
+     VALUES ($1, $2, $3, LOWER($4), $5, $6, $7)
+     RETURNING id_proveedor AS id, nombre_proveedor AS name,
+               COALESCE(nombre_contacto, '') AS "contactName", nit, correo AS email,
+               telefono AS phone, direccion AS address,
+               LOWER(COALESCE(estado, 'Activo')) = 'activo' AS active`,
+    [input.name.trim(), input.contactName?.trim() ?? '', input.nit.trim(), input.email.trim(), input.phone.trim(), input.address.trim(), input.active ? 'Activo' : 'Inactivo']
   );
   return result.rows[0];
 }
 
-export async function updateDatabaseSupplier(id: number, input: Partial<{ name: string; nit: string; email: string; phone: string; address: string; active: boolean }>) {
+export async function updateDatabaseSupplier(id: number, input: Partial<Omit<Supplier, 'id'>>) {
   const database = requirePool();
   const fields: Array<[string, unknown]> = [];
-  const mapping: Array<[keyof typeof input, string]> = [['name', 'nombre_proveedor'], ['nit', 'nit'], ['email', 'correo'], ['phone', 'telefono'], ['address', 'direccion']];
-  for (const [key, column] of mapping) if (input[key] !== undefined) fields.push([column, input[key]]);
+  const mappings: Array<[keyof Omit<Supplier, 'id'>, string]> = [
+    ['name', 'nombre_proveedor'],
+    ['contactName', 'nombre_contacto'],
+    ['nit', 'nit'],
+    ['email', 'correo'],
+    ['phone', 'telefono'],
+    ['address', 'direccion']
+  ];
+  for (const [key, column] of mappings) {
+    if (key in input && input[key] !== undefined) fields.push([column, key === 'email' ? String(input[key]).trim().toLowerCase() : String(input[key]).trim()]);
+  }
   if (input.active !== undefined) fields.push(['estado', input.active ? 'Activo' : 'Inactivo']);
-  if (!fields.length) throw new Error('No hay campos para actualizar');
+  if (fields.length === 0) throw new Error('No hay campos para actualizar');
+  if (input.nit !== undefined || input.email !== undefined) {
+    const duplicate = await database.query(
+      `SELECT 1 FROM Proveedores WHERE id_proveedor <> $1 AND (nit = COALESCE($2, nit) OR LOWER(correo) = LOWER(COALESCE($3, correo))) LIMIT 1`,
+      [id, input.nit?.trim() ?? null, input.email?.trim() ?? null]
+    );
+    if (duplicate.rows[0]) throw new Error('Ya existe otro proveedor con ese NIT o correo');
+  }
   const assignments = fields.map(([column], index) => `${column} = $${index + 2}`).join(', ');
   const result = await database.query(
-    `UPDATE Proveedores SET ${assignments} WHERE id_proveedor = $1
-     RETURNING id_proveedor AS id, nombre_proveedor AS name, nit, correo AS email, telefono AS phone, direccion AS address, LOWER(estado) = 'activo' AS active`,
+    `UPDATE Proveedores SET ${assignments}
+      WHERE id_proveedor = $1
+      RETURNING id_proveedor AS id, nombre_proveedor AS name,
+                COALESCE(nombre_contacto, '') AS "contactName", nit, correo AS email,
+                telefono AS phone, direccion AS address,
+                LOWER(COALESCE(estado, 'Activo')) = 'activo' AS active`,
     [id, ...fields.map(([, value]) => value)]
   );
   if (!result.rows[0]) throw new Error(`Proveedor #${id} no encontrado`);
@@ -538,6 +567,82 @@ export async function deleteDatabaseSupplier(id: number) {
   const result = await database.query('DELETE FROM Proveedores WHERE id_proveedor = $1 RETURNING id_proveedor AS id, nombre_proveedor AS name', [id]);
   if (!result.rows[0]) throw new Error(`Proveedor #${id} no encontrado`);
   return result.rows[0];
+}
+
+export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
+  const database = requirePool();
+  const result = await database.query(`
+    WITH paid_sales AS (
+      SELECT COALESCE(SUM(f.total_neto) FILTER (WHERE f.fecha_emision >= CURRENT_DATE), 0) AS total,
+             COALESCE(SUM(f.total_neto) FILTER (WHERE f.fecha_emision >= DATE_TRUNC('month', CURRENT_TIMESTAMP)), 0) AS month_total
+        FROM Facturas f
+       WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)
+    ),
+    low_stock AS (
+      SELECT COUNT(DISTINCT stock.product_id) AS total
+        FROM (
+          SELECT l.id_producto AS product_id, ss.id_sucursal
+            FROM Lotes l
+            JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+            JOIN Productos p ON p.id_producto = l.id_producto
+           WHERE COALESCE(p.activo, true) = true
+           GROUP BY l.id_producto, ss.id_sucursal
+          HAVING COALESCE(SUM(ss.cantidad_disponible), 0) <= 10
+        ) stock
+    ),
+    low_stock_products AS (
+      SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'productId', stock.product_id,
+        'name', stock.name,
+        'sku', stock.sku,
+        'branchId', stock.branch_id,
+        'branchName', stock.branch_name,
+        'stock', stock.stock,
+        'severity', CASE WHEN stock.stock <= 0 THEN 'critical' WHEN stock.stock <= 5 THEN 'urgent' ELSE 'low' END
+      ) ORDER BY stock.stock, stock.name), '[]'::jsonb) AS products
+      FROM (
+        SELECT p.id_producto AS product_id,
+               p.nombre_producto AS name,
+               p.sku_codigo AS sku,
+               ss.id_sucursal AS branch_id,
+               COALESCE(s.nombre_sucursal, CONCAT('Sucursal #', ss.id_sucursal)) AS branch_name,
+               COALESCE(SUM(ss.cantidad_disponible), 0) AS stock
+          FROM Productos p
+          JOIN Lotes l ON l.id_producto = p.id_producto
+          JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+          LEFT JOIN Sucursales s ON s.id_sucursal = ss.id_sucursal
+         WHERE COALESCE(p.activo, true) = true
+         GROUP BY p.id_producto, p.nombre_producto, p.sku_codigo, ss.id_sucursal, s.nombre_sucursal
+        HAVING COALESCE(SUM(ss.cantidad_disponible), 0) <= 10
+      ) stock
+    ),
+    pending_orders AS (
+      SELECT COUNT(*) AS total
+        FROM Facturas f
+       WHERE NOT EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)
+          OR EXISTS (
+            SELECT 1 FROM pharmacy_delivery_tracking d
+             WHERE d.order_code = CONCAT('WEB-', LPAD(f.id_factura::text, 6, '0'))
+               AND d.status <> 'DELIVERED'
+          )
+    )
+    SELECT (SELECT total FROM paid_sales) AS "salesToday",
+           (SELECT month_total FROM paid_sales) AS "salesMonth",
+           (SELECT total FROM low_stock) AS "lowStockCount",
+           (SELECT total FROM pending_orders) AS "pendingOrders",
+           (SELECT COUNT(*) FROM Proveedores) AS "suppliersCount",
+           (SELECT products FROM low_stock_products) AS "lowStockProducts"
+  `);
+  return {
+    salesToday: Number(result.rows[0]?.salesToday ?? 0),
+    salesMonth: Number(result.rows[0]?.salesMonth ?? 0),
+    lowStockCount: Number(result.rows[0]?.lowStockCount ?? 0),
+    expiringLotsCount: 0,
+    registeredCustomers: 0,
+    pendingOrders: Number(result.rows[0]?.pendingOrders ?? 0),
+    suppliersCount: Number(result.rows[0]?.suppliersCount ?? 0),
+    lowStockProducts: result.rows[0]?.lowStockProducts ?? []
+  };
 }
 
 // ============================================================================
@@ -1085,6 +1190,7 @@ export async function initializeDatabase() {
   `);
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS imagen_url TEXT');
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true');
+  await pool.query("ALTER TABLE Proveedores ADD COLUMN IF NOT EXISTS nombre_contacto TEXT NOT NULL DEFAULT ''");
   await pool.query(`
     CREATE TABLE IF NOT EXISTS pharmacy_customer_accounts (
       id BIGSERIAL PRIMARY KEY,

@@ -16,6 +16,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { databaseEnabled, findDatabaseEmployeeById } from '../db.js';
 import { store } from '../store.js';
+import { getEmployeeIdFromToken } from '../utils/jwt.js';
 
 // ============================================================================
 // MIDDLEWARE DE AUTENTICACIÓN (IDENTIFICACIÓN DE USUARIO)
@@ -38,14 +39,13 @@ import { store } from '../store.js';
  * @param {NextFunction} next Función para transferir el control al siguiente middleware.
  */
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
-  // Extracción del ID de empleado de los encabezados HTTP soportados
-  const employeeId = Number(req.header('x-employee-id') ?? req.header('x-empleado-id') ?? req.header('x-user-id'));
-  
-  if (!Number.isInteger(employeeId) || employeeId <= 0) {
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Falta la sesión del empleado. Agrega el header X-Employee-Id: 1 después de iniciar sesión.' 
-    });
+  const authorization = req.header('authorization');
+  const token = authorization?.startsWith('Bearer ')
+    ? authorization.slice('Bearer '.length).trim()
+    : '';
+  const employeeId = token ? getEmployeeIdFromToken(token) : null;
+  if (!employeeId) {
+    return res.status(401).json({ success: false, message: 'Token inválido o expirado' });
   }
 
   // Búsqueda del empleado en PostgreSQL o Store en memoria
