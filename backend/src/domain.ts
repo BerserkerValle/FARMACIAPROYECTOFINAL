@@ -172,6 +172,7 @@ export interface CreateProductInput {
 export interface Supplier {
   id: number;
   name: string;
+  contactName?: string;
   /** Número de Identificación Tributaria */
   nit: string;
   email: string;
@@ -365,6 +366,18 @@ export interface DashboardMetrics {
   expiringLotsCount: number;
   registeredCustomers: number;
   pendingOrders: number;
+  suppliersCount: number;
+  lowStockProducts: LowStockProduct[];
+}
+
+export interface LowStockProduct {
+  productId: number;
+  name: string;
+  sku: string;
+  branchId: number;
+  branchName: string;
+  stock: number;
+  severity: 'critical' | 'urgent' | 'low';
 }
 
 /**

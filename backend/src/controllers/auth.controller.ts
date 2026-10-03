@@ -30,6 +30,7 @@ import {
   updateDatabaseCustomerAccount 
 } from '../db.js';
 import { store } from '../store.js';
+import { createEmployeeToken } from '../utils/jwt.js';
 
 // ============================================================================
 // ESQUEMAS DE VALIDACIÓN ZOD (DTOs)
@@ -105,13 +106,15 @@ export async function login(req: Request, res: Response) {
       return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
     }
   }
+  const employeeId = 'employeeId' in employee ? employee.employeeId : employee.id;
 
   // Respuesta exitosa con la información de sesión
   return res.json({
     success: true,
     data: {
+      token: createEmployeeToken(employeeId),
       employee: {
-        employeeId: 'employeeId' in employee ? employee.employeeId : employee.id,
+        employeeId,
         fullName: employee.fullName,
         email: employee.email,
         role: employee.role,

@@ -1,23 +1,23 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { 
-  createDatabaseBranch, 
-  createDatabaseCategory, 
-  createDatabaseEmployee, 
-  createDatabaseSupplier, 
-  databaseEnabled, 
-  deleteDatabaseBranch, 
-  deleteDatabaseCategory, 
-  deleteDatabaseSupplier, 
-  deactivateDatabaseEmployee, 
-  getDatabaseBranches, 
-  getDatabaseCategories, 
-  getDatabaseSuppliers, 
-  listDatabaseEmployees, 
-  updateDatabaseBranch, 
-  updateDatabaseCategory, 
-  updateDatabaseEmployee, 
-  updateDatabaseSupplier 
+import {
+  createDatabaseBranch,
+  createDatabaseCategory,
+  createDatabaseEmployee,
+  createDatabaseSupplier,
+  databaseEnabled,
+  deleteDatabaseBranch,
+  deleteDatabaseCategory,
+  deactivateDatabaseEmployee,
+  getDatabaseBranches,
+  getDatabaseCategories,
+  getDatabaseDashboard,
+  getDatabaseSuppliers,
+  listDatabaseEmployees,
+  updateDatabaseBranch,
+  updateDatabaseCategory,
+  updateDatabaseEmployee,
+  updateDatabaseSupplier
 } from '../db.js';
 import { store } from '../store.js';
 
@@ -64,23 +64,33 @@ const categorySchema = z.object({
 
 /** Validación para proveedores y laboratorios */
 const supplierSchema = z.object({
-  name: z.string().min(2, 'Nombre de proveedor requerido'),
-  nit: z.string().min(3, 'NIT requerido'),
+  name: z.string().trim().min(2, 'Nombre de proveedor requerido'),
+  contactName: z.string().trim().min(2, 'Nombre de contacto requerido'),
+  nit: z.string().trim().min(3, 'NIT requerido'),
   email: z.string().email('Correo de contacto inválido'),
   phone: z.string().min(6, 'Teléfono requerido'),
   address: z.string().min(3, 'Dirección requerida'),
   active: z.boolean().default(true)
 });
 
+<<<<<<< HEAD
+=======
+function assertLocalSupplierUnique(input: Partial<{ id: number; nit: string; email: string }>) {
+  const duplicate = store.getSuppliers().find((supplier) => supplier.id !== input.id && (supplier.nit.toLowerCase() === input.nit?.trim().toLowerCase() || supplier.email.toLowerCase() === input.email?.trim().toLowerCase()));
+  if (duplicate) throw new Error('Ya existe un proveedor con ese NIT o correo');
+}
+
+// ============================================================================
+>>>>>>> 49ebb099edb8a3cad8ddec8b6885e11c122b883b
 // SECCIÓN 1: MÉTRICAS, ESTADÍSTICAS Y REPORTES
 
-/**
- * Retorna las métricas consolidadas del Dashboard gerencial.
- * GET /api/admin/dashboard
- * Incluye: ventas del día, ventas del mes, alertas de stock bajo, lotes próximos a vencer.
- */
-export function dashboard(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getDashboard() });
+export async function dashboard(_req: Request, res: Response) {
+  try {
+    const data = databaseEnabled ? await getDatabaseDashboard() : store.getDashboard();
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo cargar el dashboard' });
+  }
 }
 
 /**
@@ -90,12 +100,6 @@ export function dashboard(_req: Request, res: Response) {
 export function reports(_req: Request, res: Response) {
   return res.json({ success: true, data: store.getReports() });
 }
-
-// ============================================================================
-// SECCIÓN 2: GESTIÓN DE SUCURSALES (CRUD)
-// ============================================================================
-
-/** Obtiene la lista de todas las sucursales registradas */
 export async function branches(_req: Request, res: Response) {
   const data = databaseEnabled ? await getDatabaseBranches() : store.getBranches();
   return res.json({ success: true, data: data ?? [] });
@@ -178,45 +182,47 @@ export async function deleteCategory(req: Request, res: Response) {
   }
 }
 
-// ============================================================================
-// SECCIÓN 4: GESTIÓN DE PROVEEDORES (CRUD)
-// ============================================================================
-
-/** Obtiene la lista completa de laboratorios y proveedores */
-export async function suppliers(_req: Request, res: Response) {
-  const data = databaseEnabled ? await getDatabaseSuppliers() : store.getSuppliers();
-  return res.json({ success: true, data: data ?? [] });
+export async function suppliers(req: Request, res: Response) {
+  try {
+    const search = String(req.query.search ?? '').trim().toLowerCase();
+    const data = databaseEnabled ? await getDatabaseSuppliers() : store.getSuppliers();
+    const filtered = (data ?? []).filter((supplier) => !search || [supplier.name, supplier.contactName, supplier.nit, supplier.email, supplier.phone].some((value) => String(value ?? '').toLowerCase().includes(search)));
+    return res.json({ success: true, data: filtered });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'No se pudieron cargar los proveedores' });
+  }
 }
 
-/** Registra un nuevo proveedor de medicamentos e insumos */
 export async function createSupplier(req: Request, res: Response) {
-  try { 
-    const payload = supplierSchema.parse(req.body); 
-    const data = databaseEnabled ? await createDatabaseSupplier(payload) : store.addSupplier(payload); 
-    return res.status(201).json({ success: true, data }); 
-  } catch (error) { 
-    return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo crear el proveedor' }); 
+  try {
+    const payload = supplierSchema.parse(req.body);
+    if (!databaseEnabled) assertLocalSupplierUnique(payload);
+    const data = databaseEnabled ? await createDatabaseSupplier(payload) : store.addSupplier(payload);
+    return res.status(201).json({ success: true, data });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo crear el proveedor' });
   }
 }
 
-/** Actualiza la información fiscal o de contacto de un proveedor */
 export async function updateSupplier(req: Request, res: Response) {
-  try { 
-    const payload = supplierSchema.partial().parse(req.body); 
-    const data = databaseEnabled ? await updateDatabaseSupplier(Number(req.params.id), payload) : store.updateSupplier(Number(req.params.id), payload); 
-    return res.json({ success: true, data }); 
-  } catch (error) { 
-    return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo actualizar el proveedor' }); 
+  try {
+    const payload = supplierSchema.partial().parse(req.body);
+    if (!databaseEnabled && (payload.nit !== undefined || payload.email !== undefined)) {
+      assertLocalSupplierUnique({ id: Number(req.params.id), nit: payload.nit, email: payload.email });
+    }
+    const data = databaseEnabled ? await updateDatabaseSupplier(Number(req.params.id), payload) : store.updateSupplier(Number(req.params.id), payload);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo actualizar el proveedor' });
   }
 }
 
-/** Desactiva o elimina un proveedor por ID */
 export async function deleteSupplier(req: Request, res: Response) {
-  try { 
-    const data = databaseEnabled ? await deleteDatabaseSupplier(Number(req.params.id)) : store.deleteSupplier(Number(req.params.id)); 
-    return res.json({ success: true, data }); 
-  } catch (error) { 
-    return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo eliminar el proveedor' }); 
+  try {
+    const data = databaseEnabled ? await updateDatabaseSupplier(Number(req.params.id), { active: false }) : store.deleteSupplier(Number(req.params.id));
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo desactivar el proveedor' });
   }
 }
 

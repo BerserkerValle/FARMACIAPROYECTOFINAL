@@ -261,7 +261,7 @@
       "productionDate": "2026-02-01",
       "costPrice": 18,
       "salePrice": 30,
-      "quantityAvailable": 57
+      "quantityAvailable": 13
     },
     {
       "id": 3,
@@ -273,7 +273,7 @@
       "productionDate": "2026-01-12",
       "costPrice": 12,
       "salePrice": 28,
-      "quantityAvailable": 23
+      "quantityAvailable": 21
     },
     {
       "id": 5,
@@ -356,9 +356,9 @@
       "email": "kevincay590@gmail.com",
       "phone": "48938771",
       "createdAt": "2026-08-18T17:07:17.450Z",
-      "updatedAt": "2026-09-06T06:39:57.837Z",
-      "deliveryLatitude": 14.580457036051394,
-      "deliveryLongitude": -90.7281535581773
+      "updatedAt": "2026-09-07T20:20:11.761Z",
+      "deliveryLatitude": 14.558248359475586,
+      "deliveryLongitude": -90.73154916121055
     },
     {
       "id": 2,
@@ -368,9 +368,9 @@
       "phone": "03124578",
       "passwordHash": "$2b$12$CqSwtWmzUzJLB5lMQ5E8a.w.37cbULHE4Q2BjbpRQUw9m8jp58cj.",
       "createdAt": "2026-09-06T05:54:41.507Z",
-      "updatedAt": "2026-09-06T06:51:37.107Z",
-      "deliveryLatitude": 14.579869572301874,
-      "deliveryLongitude": -90.72809817578504
+      "updatedAt": "2026-09-07T20:20:10.531Z",
+      "deliveryLatitude": 14.558248359475586,
+      "deliveryLongitude": -90.73154916121055
     },
     {
       "id": 3,
@@ -611,7 +611,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "3a Calle Oriente No. 15, Antigua Guatemala",
-      "status": "PACKING",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -630,7 +630,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "Calle Real de Jocotenango Sacatepequez, Casa #1-C",
-      "status": "PACKING",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -649,7 +649,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "Jardines de Parramos, San Luis Pueblo Nuevo",
-      "status": "PACKING",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -668,7 +668,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "Jardines de Parramos",
-      "status": "PACKING",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -687,7 +687,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "Parque Ecoturístico Cerro Niño, Aldea, Pastores",
-      "status": "PACKING",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -706,7 +706,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
-      "status": "IN_ROUTE",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -725,7 +725,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
-      "status": "IN_ROUTE",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -744,7 +744,7 @@
       "employeeId": null,
       "deliveryMode": "DELIVERY",
       "address": "3ra Calle, Colonia Los Llanos Jocotenango Sacatepequez",
-      "status": "IN_ROUTE",
+      "status": "DELIVERED",
       "paymentStatus": "PENDING",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -854,7 +854,11 @@
       "code": "DK-00019",
       "source": "WEB",
       "branchId": 1,
+<<<<<<< HEAD
       "customerId": 6,
+=======
+      "customerId": 5,
+>>>>>>> 49ebb099edb8a3cad8ddec8b6885e11c122b883b
       "customerEmail": "juan@example.com",
       "employeeId": null,
       "deliveryMode": "PICKUP",
@@ -867,9 +871,147 @@
       "prescriptionWebUrl": null,
       "prescriptionDeliveryUrl": null,
       "total": 30,
+<<<<<<< HEAD
       "createdAt": "2026-09-18T03:15:13.922Z",
       "paidAt": null,
       "releasedAt": null
+=======
+      "createdAt": "2026-09-18T00:59:00.188Z",
+      "paidAt": null,
+      "releasedAt": null
+    },
+    {
+      "id": 20,
+      "code": "DK-00020",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 5,
+      "customerEmail": "juan@example.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "AWAITING_PAYMENT",
+      "paymentStatus": "PENDING",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 30,
+      "createdAt": "2026-09-18T01:04:03.301Z",
+      "paidAt": null,
+      "releasedAt": null
+    },
+    {
+      "id": 21,
+      "code": "DK-00021",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 6,
+      "customerEmail": "jonymartinezor@gmail.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "READY_FOR_PICKUP",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 30,
+      "createdAt": "2026-09-18T01:11:34.188Z",
+      "paidAt": "2026-09-18T01:11:34.188Z",
+      "releasedAt": null
+    },
+    {
+      "id": 22,
+      "code": "DK-00022",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 6,
+      "customerEmail": "jonymartinezor@gmail.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "READY_FOR_PICKUP",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 28,
+      "createdAt": "2026-09-18T01:11:47.401Z",
+      "paidAt": "2026-09-18T01:11:47.401Z",
+      "releasedAt": null
+    },
+    {
+      "id": 23,
+      "code": "DK-00023",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 6,
+      "customerEmail": "jonymartinezor@gmail.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "READY_FOR_PICKUP",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 1260,
+      "createdAt": "2026-09-18T01:12:20.035Z",
+      "paidAt": "2026-09-18T01:12:20.036Z",
+      "releasedAt": null
+    },
+    {
+      "id": 24,
+      "code": "DK-00024",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 6,
+      "customerEmail": "jonymartinezor@gmail.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "READY_FOR_PICKUP",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 30,
+      "createdAt": "2026-09-18T01:13:21.375Z",
+      "paidAt": "2026-09-18T01:13:21.376Z",
+      "releasedAt": null
+    },
+    {
+      "id": 25,
+      "code": "DK-00025",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 6,
+      "customerEmail": "jonymartinezor@gmail.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "READY_FOR_PICKUP",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 28,
+      "createdAt": "2026-09-18T01:15:24.721Z",
+      "paidAt": "2026-09-18T01:15:24.721Z",
+      "releasedAt": null
+>>>>>>> 49ebb099edb8a3cad8ddec8b6885e11c122b883b
     }
   ],
   "orderItems": [
@@ -1076,6 +1218,73 @@
       "unitPrice": 30,
       "subtotal": 30,
       "assignedLotIds": []
+<<<<<<< HEAD
+=======
+    },
+    {
+      "id": 21,
+      "orderId": 20,
+      "productId": 2,
+      "quantity": 1,
+      "unitPrice": 30,
+      "subtotal": 30,
+      "assignedLotIds": []
+    },
+    {
+      "id": 22,
+      "orderId": 21,
+      "productId": 2,
+      "quantity": 1,
+      "unitPrice": 30,
+      "subtotal": 30,
+      "assignedLotIds": [
+        2
+      ]
+    },
+    {
+      "id": 23,
+      "orderId": 22,
+      "productId": 3,
+      "quantity": 1,
+      "unitPrice": 28,
+      "subtotal": 28,
+      "assignedLotIds": [
+        3
+      ]
+    },
+    {
+      "id": 24,
+      "orderId": 23,
+      "productId": 2,
+      "quantity": 42,
+      "unitPrice": 30,
+      "subtotal": 1260,
+      "assignedLotIds": [
+        2
+      ]
+    },
+    {
+      "id": 25,
+      "orderId": 24,
+      "productId": 2,
+      "quantity": 1,
+      "unitPrice": 30,
+      "subtotal": 30,
+      "assignedLotIds": [
+        2
+      ]
+    },
+    {
+      "id": 26,
+      "orderId": 25,
+      "productId": 3,
+      "quantity": 1,
+      "unitPrice": 28,
+      "subtotal": 28,
+      "assignedLotIds": [
+        3
+      ]
+>>>>>>> 49ebb099edb8a3cad8ddec8b6885e11c122b883b
     }
   ],
   "payments": [
@@ -1186,6 +1395,51 @@
       "amount": 30,
       "status": "PAID",
       "createdAt": "2026-09-06T06:00:20.917Z"
+    },
+    {
+      "id": 13,
+      "orderId": 21,
+      "provider": "demo",
+      "transactionId": "demo-21",
+      "amount": 30,
+      "status": "PAID",
+      "createdAt": "2026-09-18T01:11:34.188Z"
+    },
+    {
+      "id": 14,
+      "orderId": 22,
+      "provider": "demo",
+      "transactionId": "demo-22",
+      "amount": 28,
+      "status": "PAID",
+      "createdAt": "2026-09-18T01:11:47.401Z"
+    },
+    {
+      "id": 15,
+      "orderId": 23,
+      "provider": "demo",
+      "transactionId": "demo-23",
+      "amount": 1260,
+      "status": "PAID",
+      "createdAt": "2026-09-18T01:12:20.036Z"
+    },
+    {
+      "id": 16,
+      "orderId": 24,
+      "provider": "demo",
+      "transactionId": "demo-24",
+      "amount": 30,
+      "status": "PAID",
+      "createdAt": "2026-09-18T01:13:21.376Z"
+    },
+    {
+      "id": 17,
+      "orderId": 25,
+      "provider": "demo",
+      "transactionId": "demo-25",
+      "amount": 28,
+      "status": "PAID",
+      "createdAt": "2026-09-18T01:15:24.721Z"
     }
   ],
   "invoices": [
@@ -1284,6 +1538,46 @@
       "satCorrelative": "SAT-00000012",
       "issuedAt": "2026-09-06T06:00:20.917Z",
       "total": 30
+    },
+    {
+      "id": 13,
+      "orderId": 21,
+      "invoiceNumber": "FAC-000021",
+      "satCorrelative": "SAT-00000021",
+      "issuedAt": "2026-09-18T01:11:34.188Z",
+      "total": 30
+    },
+    {
+      "id": 14,
+      "orderId": 22,
+      "invoiceNumber": "FAC-000022",
+      "satCorrelative": "SAT-00000022",
+      "issuedAt": "2026-09-18T01:11:47.401Z",
+      "total": 28
+    },
+    {
+      "id": 15,
+      "orderId": 23,
+      "invoiceNumber": "FAC-000023",
+      "satCorrelative": "SAT-00000023",
+      "issuedAt": "2026-09-18T01:12:20.036Z",
+      "total": 1260
+    },
+    {
+      "id": 16,
+      "orderId": 24,
+      "invoiceNumber": "FAC-000024",
+      "satCorrelative": "SAT-00000024",
+      "issuedAt": "2026-09-18T01:13:21.376Z",
+      "total": 30
+    },
+    {
+      "id": 17,
+      "orderId": 25,
+      "invoiceNumber": "FAC-000025",
+      "satCorrelative": "SAT-00000025",
+      "issuedAt": "2026-09-18T01:15:24.721Z",
+      "total": 28
     }
   ],
   "returns": [],

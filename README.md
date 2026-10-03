@@ -25,6 +25,8 @@ Proyecto fullstack para farmacia con backend en Express/TypeScript y frontend en
 - `STRIPE_WEBHOOK_SECRET=...`
 - `APP_BASE_URL=http://localhost:5173`
 - `API_BASE_URL=http://localhost:4000`
+- `JWT_SECRET=...` (obligatoria en producción)
+- `JWT_EXPIRES_IN=8h` (opcional)
 
 ## Variables de entorno frontend
 - `VITE_API_URL=http://localhost:4000`
@@ -72,4 +74,4 @@ Todas las respuestas usan `{ success, data }`. Las rutas internas requieren `Aut
 | Bodega | `/api/warehouse/lots`, `/products`, `/categories`, `/suppliers` | `/receive`, `/products`, `/products/upload-image` | `/products/:id` | `/products/:id` |
 | Administración | `/api/admin/dashboard`, `/reports`, `/employees`, `/branches`, `/categories`, `/suppliers`, `/products` | CRUD de empleados, sucursales, categorías, proveedores y productos; `/orders/:id/crosscheck`, `/orders/:id/returns` | CRUD de empleados, sucursales, categorías, proveedores y productos | CRUD de empleados, sucursales, categorías, proveedores y productos |
 
-El acceso interno no usa JWT: el backend valida `correo_corporativo` y `contrasena` en `Empleados`, y las rutas internas reciben `X-Employee-Id` después del login. La persistencia de Render usa las tablas reales del esquema para autenticación.
+El acceso interno valida `correo_corporativo` y `contrasena` en `Empleados`. Después del login, el backend devuelve un JWT firmado con `JWT_SECRET`; las rutas internas lo reciben como `Authorization: Bearer <JWT>` y vuelven a consultar el empleado para validar que exista y esté activo. La persistencia de Render usa las tablas reales del esquema para autenticación.
