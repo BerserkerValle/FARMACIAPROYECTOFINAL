@@ -210,27 +210,16 @@ export async function checkout(req: Request, res: Response) {
     }
 
     // Opción C: Generación de Checkout Session con Stripe
-    const appUrl = process.env.APP_BASE_URL?.trim() || 'http://localhost:5173';
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      ui_mode: 'embedded',
-      customer_email: created.customer.email,
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(created.order.total * 100),
+      currency: process.env.STRIPE_CURRENCY?.trim().toLowerCase() || 'gtq',
+      automatic_payment_methods: { enabled: true },
+      receipt_email: created.customer.email,
+      description: `Orden ${created.order.code}`,
       metadata: {
         orderId: String(created.order.id),
         orderCode: created.order.code
-      },
-      line_items: created.items.map((item) => ({
-        quantity: item.quantity,
-        price_data: {
-          currency: process.env.STRIPE_CURRENCY?.trim().toLowerCase() || 'gtq',
-          unit_amount: Math.round(item.product.price * 100),
-          product_data: {
-            name: item.product.name,
-            description: item.product.description
-          }
-        }
-      })),
-      return_url: `${appUrl}/?payment=success&order=${created.order.code}&session_id={CHECKOUT_SESSION_ID}`
+      }
     });
 
     return res.json({
@@ -238,7 +227,7 @@ export async function checkout(req: Request, res: Response) {
       data: {
         order: created.order,
         customer: created.customer,
-        clientSecret: session.client_secret,
+        clientSecret: paymentIntent.client_secret,
         mode: 'stripe'
       }
     });
@@ -259,7 +248,7 @@ export async function checkout(req: Request, res: Response) {
  * ¿CÓMO FUNCIONA?
  * 1. Requiere el cuerpo de la petición sin procesar (`express.raw({ type: 'application/json' })`).
  * 2. Verifica la autenticidad con `stripe.webhooks.constructEvent` y el secreto de webhook.
- * 3. Al recibir el evento `checkout.session.completed`, actualiza la orden a 'PAID'
+ * 3. Al recibir `payment_intent.succeeded` (o sesiones antiguas), registra el pago
  *    y descuenta el inventario definitivo si no se había hecho previamente.
  */
 export async function stripeWebhook(req: Request, res: Response) {
@@ -275,14 +264,22 @@ export async function stripeWebhook(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: 'Firma de Stripe ausente' });
     }
     const event = stripe.webhooks.constructEvent(req.body, signature, webhookSecret);
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const orderId = Number(session.metadata?.orderId);
+    if (event.type === 'checkout.session.completed' || event.type === 'payment_intent.succeeded') {
+      const payment = event.data.object as Stripe.Checkout.Session | Stripe.PaymentIntent;
+      const orderId = Number(payment.metadata?.orderId);
       if (Number.isInteger(orderId) && orderId > 0) {
         if (databaseEnabled) {
-          await registerDatabasePayment(orderId, session.payment_intent ? String(session.payment_intent) : session.id, Number(session.amount_total ?? 0) / 100);
+          const transactionId = event.type === 'payment_intent.succeeded'
+            ? payment.id
+            : (payment as Stripe.Checkout.Session).payment_intent
+              ? String((payment as Stripe.Checkout.Session).payment_intent)
+              : payment.id;
+          const amount = event.type === 'payment_intent.succeeded'
+            ? Number((payment as Stripe.PaymentIntent).amount_received ?? (payment as Stripe.PaymentIntent).amount) / 100
+            : Number((payment as Stripe.Checkout.Session).amount_total ?? 0) / 100;
+          await registerDatabasePayment(orderId, transactionId, amount);
         } else {
-          store.registerPayment(orderId, 'stripe', session.payment_intent ? String(session.payment_intent) : session.id);
+          store.registerPayment(orderId, 'stripe', payment.id);
         }
       }
     }

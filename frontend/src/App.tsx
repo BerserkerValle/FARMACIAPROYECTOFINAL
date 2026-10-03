@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRef } from 'react';
+import type { FormEvent } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -98,31 +99,41 @@ const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
   ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
   : null;
 
-function EmbeddedStripeCheckout({ clientSecret }: { clientSecret: string }) {
+function StripePaymentForm({ clientSecret }: { clientSecret: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const stripeRef = useRef<any>(null);
+  const elementsRef = useRef<any>(null);
+  const [status, setStatus] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    let embeddedCheckout: { unmount: () => void } | null = null;
+    let paymentElement: { unmount: () => void } | null = null;
 
-    async function mountCheckout() {
+    async function mountPaymentElement() {
       const stripe = await stripePromise;
       if (!stripe || cancelled || !containerRef.current) return;
-      const checkout = await stripe.initEmbeddedCheckout({
-        fetchClientSecret: async () => clientSecret
+      const elements = stripe.elements({
+        clientSecret,
+        appearance: { theme: 'stripe' }
       });
+      const element = elements.create('payment');
       if (cancelled || !containerRef.current) {
-        checkout.unmount();
+        element.unmount();
         return;
       }
-      checkout.mount(containerRef.current);
-      embeddedCheckout = checkout;
+      element.mount(containerRef.current);
+      stripeRef.current = stripe;
+      elementsRef.current = elements;
+      paymentElement = element;
     }
 
-    void mountCheckout();
+    void mountPaymentElement();
     return () => {
       cancelled = true;
-      embeddedCheckout?.unmount();
+      paymentElement?.unmount();
+      stripeRef.current = null;
+      elementsRef.current = null;
     };
   }, [clientSecret]);
 
@@ -130,7 +141,38 @@ function EmbeddedStripeCheckout({ clientSecret }: { clientSecret: string }) {
     return <div className="checkout-status-msg">Falta configurar VITE_STRIPE_PUBLISHABLE_KEY.</div>;
   }
 
-  return <div className="embedded-stripe-checkout" ref={containerRef} />;
+  async function submitPayment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!stripeRef.current || !elementsRef.current) return;
+    setIsSubmitting(true);
+    setStatus('Confirmando pago...');
+    const { error, paymentIntent } = await stripeRef.current.confirmPayment({
+      elements: elementsRef.current,
+      confirmParams: { return_url: window.location.href },
+      redirect: 'if_required'
+    });
+    if (error) {
+      setStatus(error.message ?? 'No se pudo confirmar el pago.');
+    } else if (paymentIntent?.status === 'succeeded' || paymentIntent?.status === 'processing') {
+      setStatus(paymentIntent.status === 'succeeded' ? 'Pago confirmado correctamente.' : 'Pago en procesamiento.');
+    } else {
+      setStatus('El pago requiere una validación adicional.');
+    }
+    setIsSubmitting(false);
+  }
+
+  return (
+    <form className="custom-stripe-form" onSubmit={submitPayment}>
+      <div className="form-field">
+        <label>Datos de pago</label>
+        <div ref={containerRef} />
+      </div>
+      <button type="submit" className="btn-primary" disabled={isSubmitting}>
+        {isSubmitting ? 'Confirmando pago...' : 'Confirmar pago'}
+      </button>
+      {status && <div className="checkout-status-msg">{status}</div>}
+    </form>
+  );
 }
 
 function readToken() {
@@ -695,7 +737,7 @@ function TopPaymentBar({
                 {/* Feedback Message */}
                 {status && <div className="checkout-status-msg">{status}</div>}
 
-                {paymentClientSecret && <EmbeddedStripeCheckout clientSecret={paymentClientSecret} />}
+                {paymentClientSecret && <StripePaymentForm clientSecret={paymentClientSecret} />}
               </div>
             </div>
           </div>
