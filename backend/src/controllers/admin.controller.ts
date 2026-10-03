@@ -21,9 +21,9 @@ import {
 } from '../db.js';
 import { store } from '../store.js';
 
-// ============================================================================
-// ESQUEMAS DE VALIDACIÓN ZOD (DTOs)
-// ============================================================================
+
+// ESQUEMAS DE VALIDACION
+
 
 /** Validación para creación y actualización de empleados */
 const employeeSchema = z.object({
@@ -72,9 +72,7 @@ const supplierSchema = z.object({
   active: z.boolean().default(true)
 });
 
-// ============================================================================
 // SECCIÓN 1: MÉTRICAS, ESTADÍSTICAS Y REPORTES
-// ============================================================================
 
 /**
  * Retorna las métricas consolidadas del Dashboard gerencial.

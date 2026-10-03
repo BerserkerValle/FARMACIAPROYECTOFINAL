@@ -158,7 +158,7 @@ function TopHeader({
             </button>
           )}
           <div className="brand-info">
-            <h1>Farmacia FJK</h1>
+            <h1>Gestión de Farmacia</h1>
             <p>Farmacia Digital</p>
           </div>
         </div>
