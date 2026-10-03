@@ -673,6 +673,51 @@ button, input, select, textarea {
   border-left: 4px solid var(--primary);
 }
 
+.custom-stripe-form {
+  margin-top: 1rem;
+  padding: 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+}
+
+.custom-stripe-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1rem;
+  color: var(--text-main);
+}
+
+.custom-stripe-heading strong,
+.custom-stripe-heading span {
+  display: block;
+}
+
+.custom-stripe-heading span {
+  margin-top: 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.custom-stripe-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--brand-gradient);
+  color: #ffffff;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.custom-stripe-form .btn-primary {
+  width: 100%;
+  margin-top: 0.85rem;
+}
+
 .payment-gateway-link {
   display: flex;
   align-items: center;

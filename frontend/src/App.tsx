@@ -115,7 +115,32 @@ function StripePaymentForm({ clientSecret }: { clientSecret: string }) {
       if (!stripe || cancelled || !containerRef.current) return;
       const elements = stripe.elements({
         clientSecret,
-        appearance: { theme: 'stripe' }
+        appearance: {
+          theme: 'stripe',
+          variables: {
+            colorPrimary: '#0d9488',
+            colorBackground: '#ffffff',
+            colorText: '#0f172a',
+            colorTextSecondary: '#475569',
+            colorDanger: '#dc2626',
+            fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+            borderRadius: '10px',
+            spacingUnit: '4px'
+          },
+          rules: {
+            '.Input': {
+              border: '1px solid #cbd5e1',
+              boxShadow: 'none'
+            },
+            '.Input:focus': {
+              border: '1px solid #0d9488',
+              boxShadow: '0 0 0 3px rgba(13, 148, 136, 0.14)'
+            },
+            '.Label': {
+              fontWeight: '600'
+            }
+          }
+        }
       });
       const element = elements.create('payment');
       if (cancelled || !containerRef.current) {
@@ -163,6 +188,13 @@ function StripePaymentForm({ clientSecret }: { clientSecret: string }) {
 
   return (
     <form className="custom-stripe-form" onSubmit={submitPayment}>
+      <div className="custom-stripe-heading">
+        <div className="custom-stripe-icon">+</div>
+        <div>
+          <strong>Pago seguro</strong>
+          <span>Procesado de forma segura por Stripe</span>
+        </div>
+      </div>
       <div className="form-field">
         <label>Datos de pago</label>
         <div ref={containerRef} />
