@@ -30,7 +30,7 @@ import {
   updateDatabaseCustomerAccount 
 } from '../db.js';
 import { store } from '../store.js';
-import { createEmployeeToken } from '../utils/jwt.js';
+import { createCustomerToken, createEmployeeToken } from '../utils/jwt.js';
 
 // ============================================================================
 // ESQUEMAS DE VALIDACIÓN ZOD (DTOs)
@@ -154,7 +154,10 @@ export async function registerCustomer(req: Request, res: Response) {
           };
         })();
 
-    return res.status(201).json({ success: true, data: { customer } });
+    return res.status(201).json({
+      success: true,
+      data: { token: createCustomerToken(customer.customerId), customer }
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'No se pudo crear la cuenta';
     return res.status(400).json({ 
@@ -189,7 +192,10 @@ export async function loginCustomer(req: Request, res: Response) {
       return res.status(401).json({ success: false, message: 'Correo o contraseña inválidos' });
     }
 
-    return res.json({ success: true, data: { customer } });
+    return res.json({
+      success: true,
+      data: { token: createCustomerToken(customer.customerId), customer }
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'No se pudo iniciar sesión';
     return res.status(400).json({ success: false, message });
@@ -202,7 +208,10 @@ export async function loginCustomer(req: Request, res: Response) {
  */
 export async function updateCustomer(req: Request, res: Response) {
   try {
-    const customerId = Number(req.header('x-customer-id'));
+    const customerId = Number(res.locals.customerId);
+    if (!Number.isInteger(customerId) || customerId <= 0) {
+      return res.status(401).json({ success: false, message: 'Inicia sesión como cliente' });
+    }
     const payload = customerRegistrationSchema.omit({ email: true, password: true }).extend({ address: z.string().optional() }).parse(req.body);
 
     const customer = databaseEnabled

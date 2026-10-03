@@ -148,6 +148,10 @@ function readProfile() {
   return raw ? (JSON.parse(raw) as EmployeeProfile) : null;
 }
 
+function readCustomerToken() {
+  return localStorage.getItem('farmacia-fjk.customer-token');
+}
+
 function saveSession(token: string, profile: EmployeeProfile) {
   localStorage.setItem('farmacia-fjk.token', token);
   localStorage.removeItem('derkas.token');
@@ -1453,7 +1457,7 @@ function PublicCatalogView({
    INTERNAL PORTALS: LOGIN, POS, WAREHOUSE, DELIVERY, ADMIN
    ========================================================================= */
 
-function CustomerAuthPage({ onLogin }: { onLogin: (customer: CustomerAccount) => void }) {
+function CustomerAuthPage({ onLogin }: { onLogin: (token: string, customer: CustomerAccount) => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [form, setForm] = useState({ fullName: '', email: '', password: '', phone: '', nit: '' });
   const [status, setStatus] = useState('');
@@ -1461,13 +1465,13 @@ function CustomerAuthPage({ onLogin }: { onLogin: (customer: CustomerAccount) =>
   async function submit() {
     try {
       const path = mode === 'login' ? '/api/auth/customers/login' : '/api/auth/customers/register';
-      const result = await apiRequest<{ customer: CustomerAccount }>(path, {
+      const result = await apiRequest<{ token: string; customer: CustomerAccount }>(path, {
         method: 'POST',
         body: JSON.stringify(mode === 'login'
           ? { email: form.email, password: form.password }
           : form)
       });
-      onLogin(result.customer);
+      onLogin(result.token, result.customer);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'No se pudo completar la operación');
     }
@@ -1513,7 +1517,7 @@ function CustomerLiveMap({ latitude, longitude }: { latitude: number; longitude:
   return <div ref={mapElement} style={{ width: '100%', height: '260px', borderRadius: '8px', overflow: 'hidden', marginTop: '0.75rem' }} />;
 }
 
-function CustomerOrdersPage({ customer, onUpdate, onLogout }: { customer: CustomerAccount; onUpdate: (customer: CustomerAccount) => void; onLogout: () => void }) {
+function CustomerOrdersPage({ customer, customerToken, onUpdate, onLogout }: { customer: CustomerAccount; customerToken: string; onUpdate: (customer: CustomerAccount) => void; onLogout: () => void }) {
   const [orders, setOrders] = useState<any[]>([]);
   const [status, setStatus] = useState('Cargando pedidos...');
   const [form, setForm] = useState(customer);
@@ -1521,7 +1525,7 @@ function CustomerOrdersPage({ customer, onUpdate, onLogout }: { customer: Custom
 
   async function loadOrders() {
     try {
-      const data = await apiRequest<any[]>('/api/public/customer/orders', { headers: { 'X-Customer-Id': String(customer.customerId) } });
+      const data = await apiRequest<any[]>('/api/public/customer/orders', {}, customerToken);
       setOrders(data);
       setStatus(data.length ? '' : 'Aún no tienes pedidos de domicilio');
     } catch (error) {
@@ -1533,15 +1537,14 @@ function CustomerOrdersPage({ customer, onUpdate, onLogout }: { customer: Custom
     loadOrders();
     const timer = window.setInterval(loadOrders, 15000);
     return () => window.clearInterval(timer);
-  }, [customer.customerId]);
+  }, [customer.customerId, customerToken]);
 
   async function saveProfile() {
     try {
       const result = await apiRequest<{ customer: CustomerAccount }>('/api/auth/customers/me', {
         method: 'PUT',
-        headers: { 'X-Customer-Id': String(customer.customerId) },
         body: JSON.stringify({ fullName: form.fullName, phone: form.phone, nit: form.nit, address: form.address })
-      });
+      }, customerToken);
       onUpdate(result.customer);
       setForm(result.customer);
       setEditing(false);
@@ -1584,7 +1587,7 @@ function CustomerOrdersPage({ customer, onUpdate, onLogout }: { customer: Custom
 }
 
 function LoginPage({ onLogin, onSuccess }: { onLogin: (token: string, profile: EmployeeProfile) => void; onSuccess: () => void }) {
-  const [email, setEmail] = useState('admin@farmaciafjk.com');
+  const [email, setEmail] = useState('admin@derkas.com');
   const [password, setPassword] = useState('Admin123*');
   const [status, setStatus] = useState('');
 
@@ -3697,11 +3700,14 @@ export default function App() {
   const [activePortal, setActivePortal] = useState<Portal>('public');
   const [token, setToken] = useState<string | null>(() => readToken());
   const [profile, setProfile] = useState<EmployeeProfile | null>(() => readProfile());
+  const [customerToken, setCustomerToken] = useState<string | null>(() => readCustomerToken());
   const [customer, setCustomer] = useState<CustomerAccount | null>(() => {
     if (readToken()) {
       localStorage.removeItem('farmacia-fjk.customer');
+      localStorage.removeItem('farmacia-fjk.customer-token');
       return null;
     }
+    if (!readCustomerToken()) return null;
     const raw = localStorage.getItem('farmacia-fjk.customer');
     return raw ? JSON.parse(raw) as CustomerAccount : null;
   });
@@ -3843,7 +3849,6 @@ export default function App() {
         '/api/public/checkout',
         {
           method: 'POST',
-          headers: customer ? { 'X-Customer-Id': String(customer.customerId) } : undefined,
           body: JSON.stringify({
             branchId,
             deliveryMode: checkout.deliveryMode,
@@ -3860,7 +3865,7 @@ export default function App() {
             items: cart,
             prescriptionWebUrl
           })
-        }
+        }, customerToken
       );
 
       if (result.mode === 'stripe' && result.clientSecret) {
@@ -3882,7 +3887,9 @@ export default function App() {
 
   function handleLogin(nextToken: string, nextProfile: EmployeeProfile) {
     localStorage.removeItem('farmacia-fjk.customer');
+    localStorage.removeItem('farmacia-fjk.customer-token');
     setCustomer(null);
+    setCustomerToken(null);
     saveSession(nextToken, nextProfile);
     setToken(nextToken);
     setProfile(nextProfile);
@@ -3895,11 +3902,13 @@ export default function App() {
     setActivePortal('public');
   }
 
-  function handleCustomerLogin(nextCustomer: CustomerAccount) {
+  function handleCustomerLogin(nextCustomerToken: string, nextCustomer: CustomerAccount) {
     clearSession();
     setToken(null);
     setProfile(null);
+    localStorage.setItem('farmacia-fjk.customer-token', nextCustomerToken);
     localStorage.setItem('farmacia-fjk.customer', JSON.stringify(nextCustomer));
+    setCustomerToken(nextCustomerToken);
     setCustomer(nextCustomer);
     setCheckout((previous) => ({
       ...previous,
@@ -3914,7 +3923,9 @@ export default function App() {
 
   function handleCustomerLogout() {
     localStorage.removeItem('farmacia-fjk.customer');
+    localStorage.removeItem('farmacia-fjk.customer-token');
     setCustomer(null);
+    setCustomerToken(null);
     setActivePortal('public');
   }
 
@@ -4015,7 +4026,7 @@ export default function App() {
         <LoginPage onLogin={handleLogin} onSuccess={() => setActivePortal('admin')} />
       )}
       {activePortal === 'customer' && !customer && <CustomerAuthPage onLogin={handleCustomerLogin} />}
-      {customer && activePortal === 'customer' && <CustomerOrdersPage customer={customer} onUpdate={handleCustomerUpdate} onLogout={handleCustomerLogout} />}
+      {customer && customerToken && activePortal === 'customer' && <CustomerOrdersPage customer={customer} customerToken={customerToken} onUpdate={handleCustomerUpdate} onLogout={handleCustomerLogout} />}
 
       {activePortal === 'pos' && <PosPage token={token} profile={profile} categories={categories} />}
       {activePortal === 'warehouse' && <WarehousePage token={token} categories={categories} />}

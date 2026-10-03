@@ -159,7 +159,7 @@ export async function checkout(req: Request, res: Response) {
   try {
     const payload = checkoutSchema.parse(req.body);
     const created = databaseEnabled ? await createDatabaseCheckout(payload) : store.createWebCheckout(payload);
-    const customerAccountId = Number(req.header('x-customer-id'));
+    const customerAccountId = Number(res.locals.customerId);
     
     // Si la entrega es a domicilio, registra el seguimiento inicial para el mapa de repartidor
     if (databaseEnabled && payload.deliveryMode === 'DELIVERY') {
@@ -355,7 +355,7 @@ export function trackOrder(req: Request, res: Response) {
  * GET /api/public/customers/orders
  */
 export async function customerOrders(req: Request, res: Response) {
-  const customerId = Number(req.header('x-customer-id'));
+  const customerId = Number(res.locals.customerId);
   if (!Number.isInteger(customerId) || customerId <= 0) {
     return res.status(401).json({ success: false, message: 'Inicia sesión como cliente para ver tus pedidos' });
   }

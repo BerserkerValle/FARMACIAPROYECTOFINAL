@@ -14,6 +14,7 @@ import {
   uploadTemporaryPrescription
 } from '../controllers/public.controller.js';
 import { getUploadsDir } from '../utils.js';
+import { authenticateCustomer, optionalAuthenticateCustomer } from '../middleware/auth.js';
 
  
 // CONFIGURACIÓN DE MULTER PARA CARGA DE RECETAS MÉDICAS
@@ -43,8 +44,8 @@ publicRouter.get('/catalog', catalog);
  
 // CHECKOUT Y SEGUIMIENTO DE COMPRAS
  
-publicRouter.post('/checkout', checkout);
-publicRouter.get('/customer/orders', customerOrders);
+publicRouter.post('/checkout', optionalAuthenticateCustomer, checkout);
+publicRouter.get('/customer/orders', authenticateCustomer, customerOrders);
 publicRouter.get('/orders/:id', getOrder);
 publicRouter.get('/orders/code/:code', trackOrder);
 

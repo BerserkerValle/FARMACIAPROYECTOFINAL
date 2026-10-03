@@ -1,7 +1,7 @@
 
 
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, authenticateCustomer } from '../middleware/auth.js';
 import { 
   login, 
   loginCustomer, 
@@ -22,4 +22,4 @@ authRouter.get('/me', authenticate, me);
 
 authRouter.post('/customers/register', registerCustomer);
 authRouter.post('/customers/login', loginCustomer);
-authRouter.put('/customers/me', updateCustomer);
+authRouter.put('/customers/me', authenticateCustomer, updateCustomer);

@@ -19,5 +19,5 @@
 - Stripe webhooks must reach `/api/webhooks/stripe` with the raw request body; do not move that route after JSON body parsing.
 
 ## Deployment
-- Render’s backend build/start commands are `npm install && npm run build --workspace backend` and `npm run start --workspace backend`.
-- Render’s frontend build publishes `frontend/dist` using `npm install && npm run build --workspace frontend`; `VITE_API_URL` must point to the deployed API.
+- Render's backend build/start commands are `npm install && npm run build --workspace backend` and `npm run start --workspace backend`.
+- Render's frontend build publishes `frontend/dist` using `npm install && npm run build --workspace frontend`; `VITE_API_URL` must point to the deployed API.

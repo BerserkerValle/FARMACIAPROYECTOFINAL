@@ -73,15 +73,12 @@ const supplierSchema = z.object({
   active: z.boolean().default(true)
 });
 
-<<<<<<< HEAD
-=======
 function assertLocalSupplierUnique(input: Partial<{ id: number; nit: string; email: string }>) {
   const duplicate = store.getSuppliers().find((supplier) => supplier.id !== input.id && (supplier.nit.toLowerCase() === input.nit?.trim().toLowerCase() || supplier.email.toLowerCase() === input.email?.trim().toLowerCase()));
   if (duplicate) throw new Error('Ya existe un proveedor con ese NIT o correo');
 }
 
 // ============================================================================
->>>>>>> 49ebb099edb8a3cad8ddec8b6885e11c122b883b
 // SECCIÓN 1: MÉTRICAS, ESTADÍSTICAS Y REPORTES
 
 export async function dashboard(_req: Request, res: Response) {

@@ -14,9 +14,9 @@
  */
 
 import type { NextFunction, Request, Response } from 'express';
-import { databaseEnabled, findDatabaseEmployeeById } from '../db.js';
+import { databaseEnabled, findDatabaseCustomerAccountById, findDatabaseEmployeeById } from '../db.js';
 import { store } from '../store.js';
-import { getEmployeeIdFromToken } from '../utils/jwt.js';
+import { getCustomerIdFromToken, getEmployeeIdFromToken } from '../utils/jwt.js';
 
 // ============================================================================
 // MIDDLEWARE DE AUTENTICACIÓN (IDENTIFICACIÓN DE USUARIO)
@@ -99,4 +99,39 @@ export function authorize(...roles: string[]) {
     }
     return next();
   };
+}
+
+function customerIdFromRequest(req: Request) {
+  const authorization = req.header('authorization');
+  const token = authorization?.startsWith('Bearer ')
+    ? authorization.slice('Bearer '.length).trim()
+    : '';
+  return token ? getCustomerIdFromToken(token) : null;
+}
+
+export async function authenticateCustomer(req: Request, res: Response, next: NextFunction) {
+  const customerId = customerIdFromRequest(req);
+  if (!customerId) {
+    return res.status(401).json({ success: false, message: 'Sesión de cliente inválida o expirada' });
+  }
+
+  const customer = databaseEnabled
+    ? await findDatabaseCustomerAccountById(customerId)
+    : store.getCustomerById(customerId);
+  if (!customer) {
+    return res.status(401).json({ success: false, message: 'Cuenta de cliente no encontrada' });
+  }
+
+  res.locals.customerId = customerId;
+  return next();
+}
+
+export function optionalAuthenticateCustomer(req: Request, res: Response, next: NextFunction) {
+  const authorization = req.header('authorization');
+  const customerId = customerIdFromRequest(req);
+  if (authorization && !customerId) {
+    return res.status(401).json({ success: false, message: 'Sesión de cliente inválida o expirada' });
+  }
+  if (customerId) res.locals.customerId = customerId;
+  return next();
 }

@@ -16,7 +16,7 @@ function getJwtExpiresIn(): jwt.SignOptions['expiresIn'] {
 }
 
 export function createEmployeeToken(employeeId: number) {
-  return jwt.sign({}, getJwtSecret(), {
+  return jwt.sign({ tokenType: 'employee' }, getJwtSecret(), {
     subject: String(employeeId),
     issuer: JWT_ISSUER,
     expiresIn: getJwtExpiresIn()
@@ -26,9 +26,28 @@ export function createEmployeeToken(employeeId: number) {
 export function getEmployeeIdFromToken(token: string) {
   try {
     const payload = jwt.verify(token, getJwtSecret(), { issuer: JWT_ISSUER });
-    if (typeof payload === 'string' || !payload.sub) return null;
+    if (typeof payload === 'string' || (payload.tokenType && payload.tokenType !== 'employee') || !payload.sub) return null;
     const employeeId = Number(payload.sub);
     return Number.isInteger(employeeId) && employeeId > 0 ? employeeId : null;
+  } catch {
+    return null;
+  }
+}
+
+export function createCustomerToken(customerId: number) {
+  return jwt.sign({ tokenType: 'customer' }, getJwtSecret(), {
+    subject: String(customerId),
+    issuer: JWT_ISSUER,
+    expiresIn: getJwtExpiresIn()
+  });
+}
+
+export function getCustomerIdFromToken(token: string) {
+  try {
+    const payload = jwt.verify(token, getJwtSecret(), { issuer: JWT_ISSUER });
+    if (typeof payload === 'string' || payload.tokenType !== 'customer' || !payload.sub) return null;
+    const customerId = Number(payload.sub);
+    return Number.isInteger(customerId) && customerId > 0 ? customerId : null;
   } catch {
     return null;
   }
