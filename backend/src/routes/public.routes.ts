@@ -8,6 +8,7 @@ import {
   checkout,
   customerOrders,
   getOrder,
+  getPosPayment,
   suppliers,
   trackOrder,
   uploadPrescription,
@@ -47,6 +48,7 @@ publicRouter.get('/catalog', catalog);
 publicRouter.post('/checkout', optionalAuthenticateCustomer, checkout);
 publicRouter.get('/customer/orders', authenticateCustomer, customerOrders);
 publicRouter.get('/orders/:id', getOrder);
+publicRouter.get('/pos-payment/:paymentIntentId', getPosPayment);
 publicRouter.get('/orders/code/:code', trackOrder);
 
  

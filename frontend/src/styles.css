@@ -718,6 +718,114 @@ button, input, select, textarea {
   margin-top: 0.85rem;
 }
 
+.billing-type-options {
+  display: flex;
+  gap: 0.55rem;
+  margin-bottom: 0.55rem;
+}
+
+.billing-type-option {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.billing-type-option input {
+  accent-color: var(--primary);
+}
+
+.billing-type-option.active {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  font-weight: 700;
+}
+
+.pos-cash-summary {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0.75rem 0;
+  padding: 0.85rem;
+  border: 1px solid var(--primary-soft);
+  border-radius: var(--radius-sm);
+  background: var(--primary-light);
+}
+
+.pos-cash-summary > div:first-child,
+.pos-change-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.pos-cash-summary > div:first-child span,
+.pos-change-row span {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
+.pos-cash-summary > div:first-child strong,
+.pos-change-row strong {
+  color: var(--primary-dark);
+  font-size: 1.1rem;
+}
+
+.pos-qr-button {
+  width: 100%;
+  margin-top: 0.65rem;
+}
+
+.pos-qr-card {
+  display: grid;
+  justify-items: center;
+  gap: 0.45rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px dashed var(--primary);
+  border-radius: var(--radius-md);
+  background: var(--primary-light);
+  text-align: center;
+}
+
+.pos-qr-card p {
+  max-width: 280px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.pos-qr-card img {
+  width: 220px;
+  max-width: 100%;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+
+.pos-qr-card a {
+  color: var(--primary-dark);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.pos-cash-summary .form-field {
+  margin: 0;
+}
+
+.pos-change-row {
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--primary-soft);
+}
+
 .payment-gateway-link {
   display: flex;
   align-items: center;

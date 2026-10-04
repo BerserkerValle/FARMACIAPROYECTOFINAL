@@ -3,6 +3,7 @@ import { useRef } from 'react';
 import type { FormEvent } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import L from 'leaflet';
+import QRCode from 'qrcode';
 import 'leaflet/dist/leaflet.css';
 import { apiRequest, uploadTemporaryPrescription, uploadPrescription, uploadProductImage } from './api';
 
@@ -460,6 +461,7 @@ function TopPaymentBar({
   const total = cartItemsWithDetails.reduce((sum, item) => sum + item.subtotal, 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const hasPrescriptionItems = cartItemsWithDetails.some((item) => item.product?.requiresPrescription);
+  const billingAsCf = checkout.nit === 'CF';
 
   return (
     <section className="top-payment-section">
@@ -629,13 +631,36 @@ function TopPaymentBar({
                     />
                   </div>
                   <div className="form-field">
-                    <label>NIT o C/F</label>
-                    <input
-                      type="text"
-                      value={checkout.nit}
-                      onChange={(e) => onUpdateCheckout({ nit: e.target.value })}
-                      placeholder="CF o 1234567-8"
-                    />
+                    <label>Tipo de facturación</label>
+                    <div className="billing-type-options" role="group" aria-label="Tipo de facturación">
+                      <label className={`billing-type-option ${!billingAsCf ? 'active' : ''}`}>
+                        <input
+                          type="radio"
+                          name="billing-type"
+                          checked={!billingAsCf}
+                          onChange={() => onUpdateCheckout({ nit: checkout.nit === 'CF' ? '' : checkout.nit })}
+                        />
+                        <span>NIT</span>
+                      </label>
+                      <label className={`billing-type-option ${billingAsCf ? 'active' : ''}`}>
+                        <input
+                          type="radio"
+                          name="billing-type"
+                          checked={billingAsCf}
+                          onChange={() => onUpdateCheckout({ nit: 'CF' })}
+                        />
+                        <span>C/F</span>
+                      </label>
+                    </div>
+                    {!billingAsCf && (
+                      <input
+                        type="text"
+                        value={checkout.nit}
+                        onChange={(e) => onUpdateCheckout({ nit: e.target.value })}
+                        placeholder="Ej. 1234567-8"
+                        aria-label="Número de NIT"
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -1709,8 +1734,9 @@ function PosPage({ token, profile, categories }: { token: string | null; profile
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | 'all'>('all');
   const [status, setStatus] = useState('');
   const [branchId] = useState(profile?.branchId ?? 1);
-  const [sale, setSale] = useState({ name: 'Cliente de mostrador', nit: 'CF', email: 'mostrador@demo.com', phone: '0000-0000', productId: 1, quantity: 1 });
+  const [sale, setSale] = useState({ name: 'Cliente de mostrador', nit: 'CF', email: 'mostrador@demo.com', phone: '0000-0000', productId: 1, quantity: 1, cashReceived: '' });
   const [selectedProductForModal, setSelectedProductForModal] = useState<ProductCard | null>(null);
+  const [qrPayment, setQrPayment] = useState<{ orderCode: string; paymentUrl: string; imageUrl: string } | null>(null);
 
   async function loadData() {
     if (!token) return;
@@ -1747,6 +1773,12 @@ function PosPage({ token, profile, categories }: { token: string | null; profile
 
   async function processSale() {
     try {
+      const total = (selectedProd?.price ?? 0) * sale.quantity;
+      const cashReceived = Number(sale.cashReceived);
+      if (!selectedProd || total <= 0) throw new Error('Selecciona un medicamento válido.');
+      if (!Number.isFinite(cashReceived) || cashReceived < total) {
+        throw new Error(`El pago es insuficiente. Debe recibir al menos ${money(total)}.`);
+      }
       const result = await apiRequest('/api/pos/sales', {
         method: 'POST',
         body: JSON.stringify({
@@ -1755,10 +1787,30 @@ function PosPage({ token, profile, categories }: { token: string | null; profile
           items: [{ productId: sale.productId, quantity: sale.quantity }]
         })
       }, token);
-      setStatus(`Venta procesada exitosamente: ${(result as any).order.code}`);
+      setStatus(`Venta procesada exitosamente: ${(result as any).order.code}. Vuelto: ${money(cashReceived - total)}`);
+      setSale((previous) => ({ ...previous, cashReceived: '' }));
       loadData();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Error al procesar venta');
+    }
+  }
+
+  async function createQrPayment() {
+    try {
+      if (!selectedProd) throw new Error('Selecciona un medicamento válido.');
+      const result = await apiRequest<{ order: { code: string }; paymentUrl: string }>('/api/pos/qr-payment', {
+        method: 'POST',
+        body: JSON.stringify({
+          branchId,
+          customer: { name: sale.name, nit: sale.nit, email: sale.email, phone: sale.phone },
+          items: [{ productId: sale.productId, quantity: sale.quantity }]
+        })
+      }, token);
+      const imageUrl = await QRCode.toDataURL(result.paymentUrl, { width: 280, margin: 2, color: { dark: '#0f172a', light: '#ffffff' } });
+      setQrPayment({ orderCode: result.order.code, paymentUrl: result.paymentUrl, imageUrl });
+      setStatus(`QR generado para la orden ${result.order.code}. Esperando pago del cliente.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo generar el QR de pago');
     }
   }
 
@@ -1924,9 +1976,41 @@ function PosPage({ token, profile, categories }: { token: string | null; profile
             <input type="number" min="1" value={sale.quantity} onChange={(e) => setSale({ ...sale, quantity: Number(e.target.value) })} />
           </div>
 
+          {selectedProd && (
+            <div className="pos-cash-summary">
+              <div><span>Total a cobrar</span><strong>{money(selectedProd.price * sale.quantity)}</strong></div>
+              <div className="form-field">
+                <label>Pago recibido (Q)</label>
+                <input
+                  type="number"
+                  min={selectedProd.price * sale.quantity}
+                  step="0.01"
+                  value={sale.cashReceived}
+                  onChange={(e) => setSale({ ...sale, cashReceived: e.target.value })}
+                  placeholder="Ej. 100"
+                />
+              </div>
+              <div className="pos-change-row">
+                <span>Vuelto</span>
+                <strong>{money(Math.max(0, Number(sale.cashReceived || 0) - selectedProd.price * sale.quantity))}</strong>
+              </div>
+            </div>
+          )}
+
           <button type="button" className="btn-primary" onClick={processSale}>
             Cobrar Venta Físico {selectedProd ? `(${money(selectedProd.price * sale.quantity)})` : ''}
           </button>
+          <button type="button" className="btn-secondary pos-qr-button" onClick={createQrPayment}>
+            Generar QR para pago con tarjeta {selectedProd ? `(${money(selectedProd.price * sale.quantity)})` : ''}
+          </button>
+          {qrPayment && (
+            <div className="pos-qr-card">
+              <strong>Orden {qrPayment.orderCode}</strong>
+              <p>El cliente debe escanear el código y completar el pago con tarjeta.</p>
+              <img src={qrPayment.imageUrl} alt={`QR de pago para ${qrPayment.orderCode}`} />
+              <a href={qrPayment.paymentUrl} target="_blank" rel="noreferrer">Abrir pantalla de pago</a>
+            </div>
+          )}
         </div>
 
         <div className="panel-card">
@@ -3802,7 +3886,7 @@ export default function App() {
 
   const [checkout, setCheckout] = useState({
     name: '',
-    nit: '',
+    nit: 'CF',
     email: '',
     phone: '',
     deliveryMode: 'DELIVERY' as 'DELIVERY' | 'PICKUP',
@@ -3823,6 +3907,18 @@ export default function App() {
         setProfile(null);
       });
   }, [token, profile]);
+
+  useEffect(() => {
+    const paymentIntentId = new URLSearchParams(window.location.search).get('posPayment');
+    if (!paymentIntentId) return;
+    setActivePortal('public');
+    apiRequest<{ clientSecret: string; amount: number }>(`/api/public/pos-payment/${encodeURIComponent(paymentIntentId)}`)
+      .then(({ clientSecret }) => {
+        setPaymentClientSecret(clientSecret);
+        setStatus('Completa el pago de la venta del mostrador.');
+      })
+      .catch((error) => setStatus(error instanceof Error ? error.message : 'No se pudo cargar el pago'));
+  }, []);
 
   // Load branches & categories
   useEffect(() => {

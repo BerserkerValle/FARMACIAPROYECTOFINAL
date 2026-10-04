@@ -207,7 +207,7 @@
       "productionDate": "2026-01-12",
       "costPrice": 12,
       "salePrice": 28,
-      "quantityAvailable": 29
+      "quantityAvailable": 28
     },
     {
       "id": 4,
@@ -288,6 +288,15 @@
       "phone": "46932765",
       "createdAt": "2026-10-03T22:07:56.622Z",
       "updatedAt": "2026-10-03T22:07:56.622Z"
+    },
+    {
+      "id": 3,
+      "name": "Francisco",
+      "nit": "1234567-8",
+      "email": "mostrador@demo.com",
+      "phone": "0000-0000",
+      "createdAt": "2026-10-03T23:56:27.641Z",
+      "updatedAt": "2026-10-03T23:56:27.641Z"
     }
   ],
   "employees": [
@@ -360,12 +369,12 @@
       "branchId": 1,
       "customerId": 2,
       "customerEmail": "samayoapaco2004@gmail.com",
-      "employeeId": null,
+      "employeeId": 1,
       "deliveryMode": "PICKUP",
       "address": null,
       "deliveryLatitude": null,
       "deliveryLongitude": null,
-      "status": "READY_FOR_PICKUP",
+      "status": "DELIVERED",
       "paymentStatus": "PAID",
       "requiresPrescription": false,
       "prescriptionWebUrl": null,
@@ -373,13 +382,43 @@
       "total": 28,
       "createdAt": "2026-10-03T22:07:56.623Z",
       "paidAt": "2026-10-03T22:07:56.624Z",
-      "releasedAt": null
+      "releasedAt": "2026-10-03T23:51:00.415Z"
+    },
+    {
+      "id": 2,
+      "code": "POS-00002",
+      "source": "POS",
+      "branchId": 1,
+      "customerId": 3,
+      "employeeId": 1,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "status": "DELIVERED",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "total": 28,
+      "createdAt": "2026-10-03T23:56:27.642Z",
+      "paidAt": "2026-10-03T23:56:27.642Z",
+      "releasedAt": "2026-10-03T23:56:35.689Z"
     }
   ],
   "orderItems": [
     {
       "id": 1,
       "orderId": 1,
+      "productId": 3,
+      "quantity": 1,
+      "unitPrice": 28,
+      "subtotal": 28,
+      "assignedLotIds": [
+        3
+      ]
+    },
+    {
+      "id": 2,
+      "orderId": 2,
       "productId": 3,
       "quantity": 1,
       "unitPrice": 28,
@@ -398,6 +437,15 @@
       "amount": 28,
       "status": "PAID",
       "createdAt": "2026-10-03T22:07:56.624Z"
+    },
+    {
+      "id": 2,
+      "orderId": 2,
+      "provider": "cash",
+      "transactionId": "cash-2",
+      "amount": 28,
+      "status": "PAID",
+      "createdAt": "2026-10-03T23:56:27.642Z"
     }
   ],
   "invoices": [
@@ -408,17 +456,25 @@
       "satCorrelative": "SAT-00000001",
       "issuedAt": "2026-10-03T22:07:56.624Z",
       "total": 28
+    },
+    {
+      "id": 2,
+      "orderId": 2,
+      "invoiceNumber": "FAC-000002",
+      "satCorrelative": "SAT-00000002",
+      "issuedAt": "2026-10-03T23:56:27.642Z",
+      "total": 28
     }
   ],
   "returns": [],
   "crosschecks": [],
   "counters": {
-    "customer": 2,
+    "customer": 3,
     "employee": 6,
-    "order": 1,
-    "orderItem": 1,
-    "payment": 1,
-    "invoice": 1,
+    "order": 2,
+    "orderItem": 2,
+    "payment": 2,
+    "invoice": 2,
     "return": 0,
     "crosscheck": 0,
     "lot": 8,

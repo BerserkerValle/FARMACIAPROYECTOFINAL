@@ -23,7 +23,8 @@
 
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { databaseEnabled, listDatabaseDeliveries, updateDatabaseDeliveryTracking } from '../db.js';
+import { createDatabaseCheckout, databaseEnabled, listDatabaseDeliveries, updateDatabaseDeliveryTracking } from '../db.js';
+import { stripeClient } from './public.controller.js';
 import { store } from '../store.js';
 
 // ============================================================================
@@ -101,6 +102,51 @@ export function createSale(req: Request, res: Response) {
   const payload = saleSchema.parse(req.body);
   const sale = store.createPosSale(payload, req.user.employeeId);
   return res.json({ success: true, data: sale });
+}
+
+export async function createQrPayment(req: Request, res: Response) {
+  try {
+    const stripe = stripeClient();
+    if (!stripe) return res.status(503).json({ success: false, message: 'Stripe no está configurado' });
+    const payload = saleSchema.parse(req.body);
+    const checkout = {
+      branchId: payload.branchId,
+      deliveryMode: 'PICKUP' as const,
+      paymentMethod: 'STRIPE' as const,
+      address: null,
+      deliveryLatitude: null,
+      deliveryLongitude: null,
+      customer: payload.customer,
+      items: payload.items,
+      prescriptionWebUrl: null
+    };
+    const created = databaseEnabled
+      ? await createDatabaseCheckout(checkout)
+      : store.createWebCheckout(checkout);
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(created.order.total * 100),
+      currency: process.env.STRIPE_CURRENCY?.trim().toLowerCase() || 'gtq',
+      automatic_payment_methods: { enabled: true },
+      receipt_email: created.customer.email,
+      description: `Venta POS ${created.order.code}`,
+      metadata: {
+        orderId: String(created.order.id),
+        orderCode: created.order.code,
+        posPayment: 'true'
+      }
+    });
+    const appUrl = process.env.APP_BASE_URL?.trim() || 'http://localhost:5173';
+    return res.status(201).json({
+      success: true,
+      data: {
+        order: created.order,
+        paymentIntentId: paymentIntent.id,
+        paymentUrl: `${appUrl}/?posPayment=${encodeURIComponent(paymentIntent.id)}`
+      }
+    });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo crear el pago QR' });
+  }
 }
 
 /**

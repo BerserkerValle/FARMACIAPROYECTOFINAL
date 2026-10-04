@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { 
   createSale, 
+  createQrPayment,
   deliveries, 
   pickupOrders, 
   releasePickup, 
@@ -20,6 +21,7 @@ posRouter.use(authenticate, authorize('Administrador', 'Gerente', 'Cajero', 'Rep
 // RETIROS EN TIENDA (PICKUP) Y VENTAS EN MOSTRADOR
 posRouter.get('/pickup-orders', pickupOrders);
 posRouter.post('/sales', createSale);
+posRouter.post('/qr-payment', createQrPayment);
 posRouter.post('/orders/:id/release', releasePickup);
 
 // GESTIÓN Y RASTREO DE ENVÍOS A DOMICILIO (DELIVERY)

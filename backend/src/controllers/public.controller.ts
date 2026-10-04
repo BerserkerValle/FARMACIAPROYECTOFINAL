@@ -88,7 +88,7 @@ function apiBaseUrl(req: Request): string {
  * Instancia el cliente del SDK oficial de Stripe con su API key secreta.
  * Retorna null si la variable no está configurada, permitiendo modo demo.
  */
-function stripeClient(): Stripe | null {
+export function stripeClient(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY?.trim();
   if (!key) {
     return null;
@@ -96,6 +96,31 @@ function stripeClient(): Stripe | null {
   return new Stripe(key, {
     apiVersion: '2025-02-24.acacia'
   });
+}
+
+export async function getPosPayment(req: Request, res: Response) {
+  const stripe = stripeClient();
+  const paymentIntentId = String(req.params.paymentIntentId ?? '').trim();
+  if (!stripe || !/^pi_[A-Za-z0-9]+$/.test(paymentIntentId)) {
+    return res.status(404).json({ success: false, message: 'Pago no encontrado' });
+  }
+
+  try {
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (!paymentIntent.metadata.posPayment) {
+      return res.status(404).json({ success: false, message: 'Pago no encontrado' });
+    }
+    return res.json({
+      success: true,
+      data: {
+        clientSecret: paymentIntent.client_secret,
+        amount: paymentIntent.amount,
+        status: paymentIntent.status
+      }
+    });
+  } catch {
+    return res.status(404).json({ success: false, message: 'Pago no encontrado o expirado' });
+  }
 }
 
 // ============================================================================
