@@ -39,6 +39,29 @@ import {
   searchDatabaseCatalog 
 } from '../db.js';
 import { store } from '../store.js';
+import { FORBIDDEN_MESSAGE } from '../utils/permissions.js';
+
+async function resolveAuthenticatedCustomer(customerId: number) {
+  if (databaseEnabled) {
+    const account = await findDatabaseCustomerAccountById(customerId);
+    if (!account) return null;
+    return { name: account.fullName, email: account.email, phone: account.phone, nit: account.nit };
+  }
+  const account = store.getCustomerById(customerId);
+  if (!account) return null;
+  return { name: account.name, email: account.email, phone: account.phone, nit: account.nit };
+}
+
+function authenticatedCustomerId(res: Response): number | null {
+  const raw = Number(res.locals.customerId);
+  return Number.isInteger(raw) && raw > 0 ? raw : null;
+}
+
+function forbidUnlessOwner(res: Response, isStaff: boolean, owns: boolean): boolean {
+  if (isStaff || owns) return false;
+  res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+  return true;
+}
 
 // ============================================================================
 // ESQUEMAS DE VALIDACIÓN ZOD (DTOs)
@@ -183,12 +206,21 @@ export async function catalog(req: Request, res: Response) {
 export async function checkout(req: Request, res: Response) {
   try {
     const payload = checkoutSchema.parse(req.body);
+    const customerAccountId = authenticatedCustomerId(res);
+
+    // Si la sesión es de cliente autenticado, su identidad se toma del token y nunca del body,
+    // para que no pueda sobrescribir los datos de otra cuenta enviando su NIT o correo.
+    if (customerAccountId) {
+      const account = await resolveAuthenticatedCustomer(customerAccountId);
+      if (!account) throw new Error('Cuenta de cliente no encontrada');
+      payload.customer = account;
+    }
+
     const created = databaseEnabled ? await createDatabaseCheckout(payload) : store.createWebCheckout(payload);
-    const customerAccountId = Number(res.locals.customerId);
     
     // Si la entrega es a domicilio, registra el seguimiento inicial para el mapa de repartidor
     if (databaseEnabled && payload.deliveryMode === 'DELIVERY') {
-      const account = Number.isInteger(customerAccountId) && customerAccountId > 0
+      const account = customerAccountId
         ? await findDatabaseCustomerAccountById(customerAccountId)
         : await findDatabaseCustomerAccount(payload.customer.email);
       if (!account) throw new Error('No se encontró la cuenta de cliente para registrar el seguimiento');
@@ -322,11 +354,23 @@ export async function stripeWebhook(req: Request, res: Response) {
 /**
  * Vincula una receta médica a una orden existente.
  * POST /api/public/orders/prescription
+ * Solo el cliente propietario de la orden o el personal autorizado puede adjuntarla.
  */
 export function uploadPrescription(req: Request, res: Response) {
   const parsed = uploadSchema.parse(req.body);
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'Debe adjuntar un archivo de receta' });
+  }
+  const orderId = Number(parsed.orderId);
+  const rawOrder = store.getOrderById(orderId);
+  if (!rawOrder) {
+    return res.status(404).json({ success: false, message: 'Orden no encontrada' });
+  }
+  if (!req.user) {
+    const customerId = authenticatedCustomerId(res);
+    if (!customerId || !store.customerOwnsOrder(customerId, rawOrder)) {
+      return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
   }
   const url = `${apiBaseUrl(req)}/uploads/${req.file.filename}`;
   const order = store.attachPrescription(parsed.orderId, parsed.kind, url);
@@ -349,11 +393,20 @@ export function uploadTemporaryPrescription(req: Request, res: Response) {
 // SECCIÓN 5: CONSULTA Y RASTREO DE ÓRDENES
 // ============================================================================
 
-/** Obtiene una orden por su identificador numérico */
+/**
+ * Obtiene una orden por su identificador numérico.
+ * Solo el cliente propietario de la orden o el personal autorizado puede verla.
+ */
 export function getOrder(req: Request, res: Response) {
   const orderId = Number(req.params.id);
-  const order = store.getOrderById(orderId);
+  const customerId = authenticatedCustomerId(res);
+  const order = req.user
+    ? store.getOrderById(orderId)
+    : customerId
+      ? store.getOrderByIdForCustomer(customerId, orderId)
+      : null;
   if (!order) {
+    if (customerId) return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
     return res.status(404).json({ success: false, message: 'Orden no encontrada' });
   }
   return res.json({ success: true, data: order });
@@ -362,11 +415,18 @@ export function getOrder(req: Request, res: Response) {
 /**
  * Consulta el estado y telemetría de una orden mediante su código público (ej: 'ORD-00004').
  * GET /api/public/orders/track/:code
+ * Solo el cliente propietario de la orden o el personal autorizado puede rastrearla.
  */
 export function trackOrder(req: Request, res: Response) {
   const code = String(req.params.code || '').trim();
-  const order = store.findOrderByCode(code);
+  const customerId = authenticatedCustomerId(res);
+  const order = req.user
+    ? store.findOrderByCode(code)
+    : customerId
+      ? store.findOrderByCodeForCustomer(customerId, code)
+      : null;
   if (!order) {
+    if (customerId) return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
     return res.status(404).json({ success: false, message: 'Orden no encontrada' });
   }
   return res.json({ success: true, data: order });

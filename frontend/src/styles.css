@@ -2125,6 +2125,42 @@ button, input, select, textarea {
   padding: 2rem 1.5rem;
 }
 
+/* Access Denied (rol sin permisos sobre la ruta) */
+.access-denied {
+  min-height: calc(100vh - 120px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+}
+
+.access-denied-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  padding: 2.5rem 2rem;
+  max-width: 30rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  color: #dc2626;
+}
+
+.access-denied-card h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  color: var(--text-main);
+}
+
+.access-denied-card p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
 .auth-card-box {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -2176,6 +2212,329 @@ button, input, select, textarea {
   font-size: 0.78rem;
   color: var(--text-muted);
   font-weight: 600;
+}
+
+/* =========================================================================
+   ADMIN PANEL LAYOUT + COLLAPSIBLE SECTIONS
+   =========================================================================
+   @author Kevin
+   @co-author Rene
+   @reviewer Jonathan
+
+   Key fixes applied:
+   - Flexible side panel width (minmax) instead of fixed 25rem for large screens
+   - CSS Grid with auto-fit columns for better space utilization
+   - Proper overflow handling on accordion expansion
+   - Content padding that prevents text truncation on right side
+   - Smooth transitions without layout shift
+*/
+
+.admin-workspace {
+  display: grid;
+  /* Flexible layout: main content takes available space, side panel scales between 280px-360px */
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  align-items: start;
+  gap: 2rem;
+}
+
+.admin-workspace-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.admin-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1.25rem;
+}
+
+/* Side Panel — Consola de Mando
+   @co-author Rene: switched from fixed 25rem to minmax for responsiveness
+   @reviewer Jonathan: suggested max-height with proper overflow on expand */
+.admin-side-panel {
+  min-width: 0;
+  position: sticky;
+  top: 5.5rem;
+  max-height: calc(100vh - 7rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  /* Prevents content from being clipped when accordion expands */
+  contain: layout style;
+}
+
+/* Ensure the side panel content has breathing room on the right
+   @author Kevin: added padding-right to prevent text cutoff on expanded cards */
+.admin-side-panel > * {
+  min-width: 0;
+}
+
+.admin-side-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-side-head h2 {
+  font-family: var(--font-heading);
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.admin-side-head p {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.admin-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.admin-section.open {
+  background: var(--surface);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-section-heading {
+  margin: 0;
+  font-size: inherit;
+}
+
+.admin-section-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.85rem 0.95rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.admin-section-trigger:hover {
+  background: rgba(13, 148, 136, 0.07);
+}
+
+.admin-section-trigger:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.admin-section-labels {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.admin-section-title {
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.admin-section-badge {
+  flex-shrink: 0;
+}
+
+.admin-section-chevron {
+  flex-shrink: 0;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-right: 2px solid var(--primary);
+  border-bottom: 2px solid var(--primary);
+  transform: rotate(-45deg);
+  transition: transform 0.2s ease;
+}
+
+.admin-section.open .admin-section-chevron {
+  transform: rotate(45deg);
+}
+
+/* Accordion Body — Content Area
+   @author Kevin: added proper horizontal padding to prevent right-side text cutoff
+   @co-author Rene: increased vertical gap for better visual separation
+   @reviewer Jonathan: suggested animation that doesn't cause layout thrash */
+.admin-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 0.75rem 1.25rem 1.5rem;
+  animation: adminSectionReveal 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Ensures expanded content doesn't get clipped on the right */
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.admin-section-subtitle {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
+@keyframes adminSectionReveal {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Nested components inside accordion body adapt to available width
+   @co-author Rene: removed nested borders/padding to prevent double-card effect
+   @reviewer Jonathan: suggested single-column grid for narrow rail */
+.admin-section-body .analytics-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.admin-section-body .analytics-card-wide {
+  grid-row: auto;
+  grid-column: auto;
+}
+
+.admin-section-body .analytics-card,
+.admin-section-body .inventory-alerts {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+  box-shadow: var(--shadow-xs);
+}
+
+.admin-section-body .analytics-card-head {
+  margin-bottom: 1rem;
+}
+
+.admin-section-body .analytics-card-note {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.admin-section-body .analytics-controls {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.admin-section-body .reports-summary-grid {
+  margin-top: 0.5rem;
+}
+
+.admin-section-body .supplier-form-grid {
+  margin-top: 0.25rem;
+}
+
+/* Form grids inside accordion - prevent horizontal overflow
+   @author Kevin: added min-width: 0 to grid children to allow text wrapping */
+.admin-section-body .form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.admin-section-body .form-grid-2 > * {
+  min-width: 0;
+}
+
+.admin-section-body .form-field input,
+.admin-section-body .form-field select,
+.admin-section-body .form-field textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Supplier form inside accordion - stack on narrow width
+   @reviewer Jonathan: auto-fit columns for responsive behavior */
+.admin-section-body .supplier-form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+/* Table wrapper inside accordion - horizontal scroll if needed
+   @co-author Rene: prevents table from pushing panel width */
+.admin-section-body .lots-table-wrap {
+  overflow-x: auto;
+  margin: 0 -0.5rem;
+  padding: 0 0.5rem;
+}
+
+.admin-section-body .lots-table,
+.admin-section-body .suppliers-table {
+  min-width: 600px;
+  width: max-content;
+}
+
+/* Compact list rows - prevent text cutoff
+   @author Kevin: flex-wrap and ellipsis for long text */
+.admin-section-body .compact-list-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.admin-section-body .compact-list-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 120px;
+}
+
+/* Supplier actions - wrap on narrow width */
+.admin-section-body .supplier-actions {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Inventory alert rows - prevent overflow
+   @co-author Rene: adjusted grid template for narrow space */
+.admin-section-body .inventory-alert-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto auto;
+  gap: 0.75rem;
+}
+
+.admin-section-body .inventory-alert-main {
+  min-width: 0;
+}
+
+.admin-section-body .inventory-alert-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Badge tags - prevent wrapping issues */
+.admin-section-body .pill-tag,
+.admin-section-body .inventory-severity {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Report summary boxes - stack on narrow width */
+.admin-section-body .reports-summary-grid {
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
 }
 
 /* =========================================================================
@@ -2840,7 +3199,50 @@ button, input, select, textarea {
 
 /* =========================================================================
    RESPONSIVENESS
-   ========================================================================= */
+   =========================================================================
+   @author Kevin
+   @co-author Rene
+   @reviewer Jonathan
+
+   Breakpoints:
+   - <= 1100px: admin panel stacks (single column)
+   - 1100px - 1400px: flexible two-column with minmax side panel
+   - > 1400px: side panel expands up to 360px, main content takes remaining space
+   - > 1600px: side panel maxes at comfortable reading width
+*/
+
+@media (max-width: 1100px) {
+  .admin-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-side-panel {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
+/* Large screens (1400px+) - give side panel more room
+   @reviewer Jonathan: proposed wider side panel on ultra-wide monitors */
+@media (min-width: 1400px) {
+  .admin-workspace {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+    gap: 2.5rem;
+  }
+
+  .admin-side-panel {
+    padding: 2rem;
+  }
+}
+
+/* Ultra-wide (1600px+) - max out side panel at comfortable reading width
+   @author Kevin: prevents side panel from becoming too wide for readability */
+@media (min-width: 1600px) {
+  .admin-workspace {
+    grid-template-columns: minmax(0, 1fr) 380px;
+  }
+}
 
 @media (max-width: 960px) {
   .top-payment-grid {

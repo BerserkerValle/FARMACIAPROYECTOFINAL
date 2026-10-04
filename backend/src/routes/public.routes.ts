@@ -15,7 +15,8 @@ import {
   uploadTemporaryPrescription
 } from '../controllers/public.controller.js';
 import { getUploadsDir } from '../utils.js';
-import { authenticateCustomer, optionalAuthenticateCustomer } from '../middleware/auth.js';
+import { authenticate, authenticateCustomer, authorize, authorizeStaffOrCustomer, optionalAuthenticateCustomer } from '../middleware/auth.js';
+import { ORDER_READ_ROLES, WAREHOUSE_ROLES } from '../utils/permissions.js';
 
  
 // CONFIGURACIÓN DE MULTER PARA CARGA DE RECETAS MÉDICAS
@@ -39,7 +40,7 @@ export const publicRouter = Router();
  
 publicRouter.get('/branches', branches);
 publicRouter.get('/categories', categories);
-publicRouter.get('/suppliers', suppliers);
+publicRouter.get('/suppliers', authenticate, authorize(...WAREHOUSE_ROLES), suppliers);
 publicRouter.get('/catalog', catalog);
 
  
@@ -47,12 +48,12 @@ publicRouter.get('/catalog', catalog);
  
 publicRouter.post('/checkout', optionalAuthenticateCustomer, checkout);
 publicRouter.get('/customer/orders', authenticateCustomer, customerOrders);
-publicRouter.get('/orders/:id', getOrder);
+publicRouter.get('/orders/:id', authorizeStaffOrCustomer(...ORDER_READ_ROLES), getOrder);
 publicRouter.get('/pos-payment/:paymentIntentId', getPosPayment);
-publicRouter.get('/orders/code/:code', trackOrder);
+publicRouter.get('/orders/code/:code', authorizeStaffOrCustomer(...ORDER_READ_ROLES), trackOrder);
 
  
 // SUBIDA DE RECETAS MÉDICAS
 
 publicRouter.post('/prescriptions/temp', upload.single('recipe'), uploadTemporaryPrescription);
-publicRouter.post('/orders/prescription', upload.single('recipe'), uploadPrescription);
+publicRouter.post('/orders/prescription', upload.single('recipe'), authorizeStaffOrCustomer(...ORDER_READ_ROLES), uploadPrescription);

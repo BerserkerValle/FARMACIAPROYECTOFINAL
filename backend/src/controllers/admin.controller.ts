@@ -1,5 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import type { Role } from '../domain.js';
+import { FORBIDDEN_MESSAGE, canGrantRole, canManageEmployee } from '../utils/permissions.js';
 import {
   createDatabaseBranch,
   createDatabaseCategory,
@@ -227,6 +229,14 @@ export async function deleteSupplier(req: Request, res: Response) {
 // SECCIÓN 5: GESTIÓN DE EMPLEADOS Y COLABORADORES (CRUD)
 // ============================================================================
 
+async function findEmployeeRecord(id: number) {
+  if (databaseEnabled) {
+    const list = await listDatabaseEmployees();
+    return list?.find((item) => item.id === id) ?? null;
+  }
+  return store.getEmployees().find((item) => item.id === id) ?? null;
+}
+
 /** Lista todos los colaboradores del sistema */
 export async function employees(_req: Request, res: Response) {
   const data = databaseEnabled ? await listDatabaseEmployees() : store.getEmployees();
@@ -236,10 +246,17 @@ export async function employees(_req: Request, res: Response) {
 /** 
  * Da de alta un nuevo empleado en el sistema.
  * Aplica encriptación a la contraseña y la excluye de la respuesta devuelta al cliente.
+ * Un Gerente no puede crear administradores ni usuarios con más permisos que él.
  */
 export async function createEmployee(req: Request, res: Response) {
   try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'No autenticado' });
+    }
     const payload = employeeSchema.parse(req.body);
+    if (!canGrantRole(req.user.role, payload.role)) {
+      return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
     const employee = databaseEnabled ? await createDatabaseEmployee(payload) : store.addEmployee(payload);
     const { password: _password, ...safeEmployee } = employee as typeof employee & { password?: string };
     return res.status(201).json({ success: true, data: safeEmployee });
@@ -249,13 +266,36 @@ export async function createEmployee(req: Request, res: Response) {
   }
 }
 
-/** Actualiza roles, asignación de sucursales o datos del empleado */
+/**
+ * Actualiza roles, asignación de sucursales o datos del empleado.
+ * Impide la escalada de privilegios: nadie puede otorgar un rol que no sea
+ * inferior al suyo, autoasignarse permisos, ni modificar a otro administrador.
+ */
 export async function updateEmployee(req: Request, res: Response) {
   try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'No autenticado' });
+    }
+    const targetId = Number(req.params.id);
     const payload = employeeSchema.partial().parse(req.body);
+    const current = await findEmployeeRecord(targetId);
+
+    if (!current) {
+      return res.status(404).json({ success: false, message: 'Empleado no encontrado' });
+    }
+    if (!canManageEmployee(req.user.role, current.role as Role)) {
+      return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
+    if (targetId === req.user.employeeId && payload.role !== undefined) {
+      return res.status(403).json({ success: false, message: 'No puedes cambiar tu propio rol' });
+    }
+    if (payload.role !== undefined && !canGrantRole(req.user.role, payload.role)) {
+      return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
+
     const employee = databaseEnabled
-      ? await updateDatabaseEmployee(Number(req.params.id), payload)
-      : store.updateEmployee(Number(req.params.id), payload);
+      ? await updateDatabaseEmployee(targetId, payload)
+      : store.updateEmployee(targetId, payload);
     const { password: _password, ...safeEmployee } = employee as typeof employee & { password?: string };
     return res.json({ success: true, data: safeEmployee });
   } catch (error) {
@@ -264,12 +304,29 @@ export async function updateEmployee(req: Request, res: Response) {
   }
 }
 
-/** Desactiva un empleado en el sistema (baja lógica) */
+/**
+ * Desactiva un empleado en el sistema (baja lógica).
+ * Nadie puede desactivarse a sí mismo ni desactivar a un administrador.
+ */
 export async function deleteEmployee(req: Request, res: Response) {
   try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'No autenticado' });
+    }
+    const targetId = Number(req.params.id);
+    if (targetId === req.user.employeeId) {
+      return res.status(403).json({ success: false, message: 'No puedes desactivar tu propia cuenta' });
+    }
+    const current = await findEmployeeRecord(targetId);
+    if (!current) {
+      return res.status(404).json({ success: false, message: 'Empleado no encontrado' });
+    }
+    if (!canManageEmployee(req.user.role, current.role as Role)) {
+      return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
     const data = databaseEnabled
-      ? await deactivateDatabaseEmployee(Number(req.params.id))
-      : store.deleteEmployee(Number(req.params.id));
+      ? await deactivateDatabaseEmployee(targetId)
+      : store.deleteEmployee(targetId);
     return res.json({ success: true, data });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'No se pudo desactivar el empleado';
@@ -284,12 +341,15 @@ export async function deleteEmployee(req: Request, res: Response) {
 /**
  * Realiza la verificación cruzada (doble chequeo) de una orden.
  * POST /api/admin/orders/:id/crosscheck
- * Un supervisor confirma que los medicamentos empacados coinciden con la receta y factura.
+ * El revisor se toma siempre de la sesión, nunca del cuerpo de la petición.
  */
 export function crosscheck(req: Request, res: Response) {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'No autenticado' });
+  }
   const orderId = Number(req.params.id);
   const payload = crosscheckSchema.parse(req.body);
-  const record = store.crosscheckOrder(orderId, payload);
+  const record = store.crosscheckOrder(orderId, { ...payload, reviewerEmployeeId: req.user.employeeId });
   return res.status(201).json({ success: true, data: record });
 }
 
@@ -297,10 +357,14 @@ export function crosscheck(req: Request, res: Response) {
  * Registra la devolución de una orden con su justificación y destino.
  * POST /api/admin/orders/:id/returns
  * Destino: 'REINTEGRATION' (vuelve a stock) o 'DISPOSAL' (destrucción por deterioro).
+ * El empleado responsable se toma siempre de la sesión, nunca del cuerpo de la petición.
  */
 export function returns(req: Request, res: Response) {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'No autenticado' });
+  }
   const orderId = Number(req.params.id);
   const payload = returnSchema.parse(req.body);
-  const record = store.createReturn(orderId, payload.employeeId, payload.reason, payload.destiny);
+  const record = store.createReturn(orderId, req.user.employeeId, payload.reason, payload.destiny);
   return res.status(201).json({ success: true, data: record });
 }

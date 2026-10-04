@@ -8,7 +8,7 @@
  *    - Fallback a localhost (puerto 4000) en entorno de desarrollo.
  *    - Fallback a la URL pública de producción en Render.
  * 2. Cliente genérico tipado `apiRequest<T>`:
- *    - Inyección automática del header de autenticación `X-Employee-Id`.
+ *    - Inyección automática del header `Authorization: Bearer <jwt>` cuando se pasa un token.
  *    - Asignación de cabecera `Content-Type: application/json` cuando no es FormData.
  *    - Desactivación de caché del navegador (`cache: 'no-store'`) para datos en tiempo real.
  *    - Transformación y control de excepciones JSON.
@@ -36,6 +36,38 @@ function normalizeApiUrl(value: string | undefined): string {
 export const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL) ||
   (import.meta.env.DEV ? 'http://localhost:4000' : 'https://farmaciaproyectofinalweb.onrender.com');
 
+/**
+ * Error de la API que conserva el código HTTP, para poder distinguir entre
+ * sesión expirada (401), permisos insuficientes (403) y fallos de la operación.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+/**
+ * Callback global para manejar 401 No Autorizado.
+ * Se registra desde App.tsx para limpiar sesión y redirigir a login.
+ */
+type UnauthorizedHandler = () => void;
+
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  unauthorizedHandler = handler;
+}
+
+function triggerUnauthorized(): void {
+  if (unauthorizedHandler) {
+    unauthorizedHandler();
+  }
+}
+
 // ============================================================================
 // CLIENTE HTTP PRINCIPAL (FETCH API GENÉRICA)
 // ============================================================================
@@ -45,16 +77,16 @@ export const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL) ||
  * 
  * ¿CÓMO FUNCIONA?
  * 1. Clona o inicializa los encabezados (`Headers`).
- * 2. Si se proporciona `token` (ID de sesión del empleado), agrega el header `X-Employee-Id`.
+ * 2. Si se proporciona `token` (JWT de sesión), agrega el header `Authorization: Bearer`.
  * 3. Si el cuerpo de la petición no es un `FormData`, define `Content-Type: application/json`.
  * 4. Ejecuta `fetch` con la opción `cache: 'no-store'` para evitar respuestas desactualizadas.
- * 5. Parsea la respuesta JSON y evalúa `payload.success`. Si es false, arroja un `Error`.
+ * 5. Parsea la respuesta JSON y evalúa `payload.success`. Si es false, arroja un `ApiError`.
  * 6. Retorna la propiedad `payload.data` fuertemente tipada como `T`.
  *
  * @template T Tipo de retorno esperado en `payload.data`.
  * @param {string} path Ruta relativa del endpoint (ej: '/api/public/catalog').
  * @param {RequestInit} [options={}] Opciones estándar de la Fetch API (método, body, etc.).
- * @param {string | null} [token] Token de sesión del empleado (ID numérico).
+ * @param {string | null} [token] Token JWT de sesión (empleado o cliente).
  * @returns {Promise<T>} Promesa con los datos devueltos por el backend.
  */
 export async function apiRequest<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
@@ -85,7 +117,10 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}, tok
 
   const payload = await response.json().catch(() => ({ success: false, message: 'Respuesta inválida' }));
   if (!response.ok || payload.success === false) {
-    throw new Error(payload.message || 'No se pudo completar la operación');
+    if (response.status === 401) {
+      triggerUnauthorized();
+    }
+    throw new ApiError(payload.message || 'No se pudo completar la operación', response.status);
   }
   return payload.data as T;
 }
@@ -116,7 +151,8 @@ export async function uploadPrescription(file: File, orderId: number, kind: 'web
   });
   const payload = await response.json();
   if (!response.ok || payload.success === false) {
-    throw new Error(payload.message || 'No se pudo subir la receta');
+    if (response.status === 401) triggerUnauthorized();
+    throw new ApiError(payload.message || 'No se pudo subir la receta', response.status);
   }
   return payload.data as { url: string; order: { id: number; code: string } };
 }
@@ -139,7 +175,8 @@ export async function uploadTemporaryPrescription(file: File, token?: string | n
   });
   const payload = await response.json();
   if (!response.ok || payload.success === false) {
-    throw new Error(payload.message || 'No se pudo subir la receta');
+    if (response.status === 401) triggerUnauthorized();
+    throw new ApiError(payload.message || 'No se pudo subir la receta', response.status);
   }
   return payload.data as { url: string };
 }
@@ -162,7 +199,8 @@ export async function uploadProductImage(file: File, token?: string | null) {
   });
   const payload = await response.json().catch(() => ({ success: false, message: 'Respuesta inválida del servidor' }));
   if (!response.ok || payload.success === false) {
-    throw new Error(payload.message || 'No se pudo subir la imagen del medicamento');
+    if (response.status === 401) triggerUnauthorized();
+    throw new ApiError(payload.message || 'No se pudo subir la imagen del medicamento', response.status);
   }
   return payload.data as { url: string; filename: string };
 }

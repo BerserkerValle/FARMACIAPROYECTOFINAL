@@ -23,9 +23,35 @@
 
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { createDatabaseCheckout, databaseEnabled, listDatabaseDeliveries, updateDatabaseDeliveryTracking } from '../db.js';
+import {
+  claimDatabaseDelivery,
+  createDatabaseCheckout,
+  databaseEnabled,
+  findDatabaseDeliveryOwnership,
+  listDatabaseDeliveries,
+  updateDatabaseDeliveryTracking
+} from '../db.js';
 import { stripeClient } from './public.controller.js';
 import { store } from '../store.js';
+import {
+  FORBIDDEN_MESSAGE,
+  canClaimDelivery,
+  canReadDelivery,
+  canUpdateDelivery,
+  isSupervisorRole,
+  resolveBranchScope
+} from '../utils/permissions.js';
+
+function branchScope(req: Request, requested?: unknown): number | null {
+  const fromQuery = requested === undefined || requested === null || requested === ''
+    ? null
+    : Number(requested);
+  return resolveBranchScope(req.user?.branchId ?? null, Number.isInteger(fromQuery) && fromQuery! > 0 ? fromQuery : null);
+}
+
+function forbidden(res: Response) {
+  return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+}
 
 // ============================================================================
 // ESQUEMAS DE VALIDACIÓN ZOD (DTOs)
@@ -78,7 +104,7 @@ const trackingSchema = z.object({
  * GET /api/pos/orders
  */
 export function pickupOrders(req: Request, res: Response) {
-  const branchId = req.user?.branchId ?? (req.query.branchId ? Number(req.query.branchId) : undefined);
+  const branchId = branchScope(req, req.query.branchId);
   if (!branchId) {
     return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
   }
@@ -100,7 +126,11 @@ export function createSale(req: Request, res: Response) {
     return res.status(401).json({ success: false, message: 'No autenticado' });
   }
   const payload = saleSchema.parse(req.body);
-  const sale = store.createPosSale(payload, req.user.employeeId);
+  const branchId = resolveBranchScope(req.user.branchId, payload.branchId);
+  if (!branchId) {
+    return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
+  }
+  const sale = store.createPosSale({ ...payload, branchId }, req.user.employeeId);
   return res.json({ success: true, data: sale });
 }
 
@@ -109,8 +139,12 @@ export async function createQrPayment(req: Request, res: Response) {
     const stripe = stripeClient();
     if (!stripe) return res.status(503).json({ success: false, message: 'Stripe no está configurado' });
     const payload = saleSchema.parse(req.body);
+    const branchId = resolveBranchScope(req.user?.branchId ?? null, payload.branchId);
+    if (!branchId) {
+      return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
+    }
     const checkout = {
-      branchId: payload.branchId,
+      branchId,
       deliveryMode: 'PICKUP' as const,
       paymentMethod: 'STRIPE' as const,
       address: null,
@@ -173,13 +207,30 @@ export function releasePickup(req: Request, res: Response) {
  * GET /api/pos/deliveries
  */
 export async function deliveries(req: Request, res: Response) {
-  const branchId = req.user?.branchId ?? (req.query.branchId ? Number(req.query.branchId) : undefined);
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'No autenticado' });
+  }
+  const actor = { employeeId: req.user.employeeId, role: req.user.role, branchId: req.user.branchId };
+  const branchId = branchScope(req, req.query.branchId);
   if (!branchId) {
     return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
   }
-  const data = databaseEnabled 
-    ? await listDatabaseDeliveries(branchId) 
-    : store.listPendingOrders(branchId).filter((order) => order.deliveryMode === 'DELIVERY');
+
+  if (databaseEnabled) {
+    const rows = await listDatabaseDeliveries(branchId, {
+      employeeId: actor.employeeId,
+      restrictToAssignee: !isSupervisorRole(actor.role)
+    });
+    const data = rows.filter((row) => canReadDelivery(actor, {
+      branchId: Number(row.branchId),
+      assignedEmployeeId: row.assignedEmployeeId == null ? null : Number(row.assignedEmployeeId)
+    }));
+    return res.json({ success: true, data });
+  }
+
+  const data = store
+    .listDeliveries(branchId, actor)
+    .filter((order) => canReadDelivery(actor, { branchId: order.branchId, assignedEmployeeId: order.assignedEmployeeId ?? null }));
   return res.json({ success: true, data });
 }
 
@@ -191,12 +242,35 @@ export async function deliveries(req: Request, res: Response) {
  */
 export async function updateDelivery(req: Request, res: Response) {
   try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'No autenticado' });
+    }
     const payload = trackingSchema.parse(req.body);
+    const deliveryId = Number(req.params.id);
+    const actor = { employeeId: req.user.employeeId, role: req.user.role, branchId: req.user.branchId };
+
     if (databaseEnabled) {
-      const data = await updateDatabaseDeliveryTracking(Number(req.params.id), payload);
+      const ownership = await findDatabaseDeliveryOwnership(deliveryId);
+      if (!ownership) {
+        return res.status(404).json({ success: false, message: 'Seguimiento no encontrado' });
+      }
+      if (!canUpdateDelivery(actor, ownership)) return forbidden(res);
+      if (canClaimDelivery(actor, ownership)) {
+        await claimDatabaseDelivery(deliveryId, actor.employeeId);
+      }
+      const data = await updateDatabaseDeliveryTracking(deliveryId, payload);
       return res.json({ success: true, data });
     }
-    const data = store.updateDelivery(Number(req.params.id), payload);
+
+    const ownership = store.getDeliveryOwnership(deliveryId);
+    if (!ownership) {
+      return res.status(404).json({ success: false, message: 'Seguimiento no encontrado' });
+    }
+    if (!canUpdateDelivery(actor, ownership)) return forbidden(res);
+    if (canClaimDelivery(actor, ownership)) {
+      store.claimDelivery(deliveryId, actor.employeeId);
+    }
+    const data = store.updateDelivery(deliveryId, payload, actor);
     return res.json({ success: true, data });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'No se pudo actualizar la entrega';

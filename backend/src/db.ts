@@ -27,11 +27,14 @@
  */
 
 import dotenv from 'dotenv';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { CreateProductInput, DashboardMetrics, DataSnapshot, PublicCheckoutInput, Supplier } from './domain.js';
 
 dotenv.config();
+dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../.env') });
 
 // ============================================================================
 // CONFIGURACIÓN DEL POOL DE CONEXIONES POSTGRESQL
@@ -188,19 +191,55 @@ export async function listDatabaseCustomerOrders(customerId: number) {
   return result.rows;
 }
 
-/** Lista los pedidos pendientes de entrega asignados a una sucursal */
-export async function listDatabaseDeliveries(branchId: number) {
+/** Lista los pedidos pendientes de entrega de una sucursal, aplicando alcance por repartidor */
+export async function listDatabaseDeliveries(branchId: number, scope?: { employeeId?: number; restrictToAssignee?: boolean }) {
   const database = requirePool();
+  const restrictToAssignee = Boolean(scope?.restrictToAssignee);
   const result = await database.query(
     `SELECT id, order_code AS code, branch_id AS "branchId", address, status,
             latitude, longitude, customer_account_id AS "customerId",
+            assigned_employee_id AS "assignedEmployeeId",
             updated_at AS "updatedAt"
        FROM pharmacy_delivery_tracking
-      WHERE branch_id = $1 AND status <> 'DELIVERED'
+      WHERE branch_id = $1
+        AND status <> 'DELIVERED'
+        AND ($2::boolean = false OR assigned_employee_id IS NULL OR assigned_employee_id = $3)
       ORDER BY created_at`,
-    [branchId]
+    [branchId, restrictToAssignee, scope?.employeeId ?? null]
   );
   return result.rows;
+}
+
+/** Recupera la sucursal y el repartidor asignado de una entrega para validar propiedad */
+export async function findDatabaseDeliveryOwnership(id: number) {
+  const database = requirePool();
+  const result = await database.query(
+    `SELECT branch_id AS "branchId", assigned_employee_id AS "assignedEmployeeId"
+       FROM pharmacy_delivery_tracking
+      WHERE id = $1
+      LIMIT 1`,
+    [id]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    branchId: Number(row.branchId),
+    assignedEmployeeId: row.assignedEmployeeId == null ? null : Number(row.assignedEmployeeId)
+  };
+}
+
+/** Reclama una entrega sin asignar para el repartidor indicado (idempotente) */
+export async function claimDatabaseDelivery(id: number, employeeId: number) {
+  const database = requirePool();
+  const result = await database.query(
+    `UPDATE pharmacy_delivery_tracking
+        SET assigned_employee_id = $2, updated_at = NOW()
+      WHERE id = $1
+        AND assigned_employee_id IS NULL
+      RETURNING id, assigned_employee_id AS "assignedEmployeeId"`,
+    [id, employeeId]
+  );
+  return result.rows[0] ?? null;
 }
 
 /** Actualiza el estado y las coordenadas GPS en tiempo real de una entrega */
@@ -215,7 +254,7 @@ export async function updateDatabaseDeliveryTracking(id: number, input: { status
   const result = await database.query(
     `UPDATE pharmacy_delivery_tracking SET ${assignments}, updated_at = NOW()
       WHERE id = $1
-      RETURNING id, order_code AS code, branch_id AS "branchId", address, status, latitude, longitude, updated_at AS "updatedAt"`,
+      RETURNING id, order_code AS code, branch_id AS "branchId", address, status, latitude, longitude, assigned_employee_id AS "assignedEmployeeId", updated_at AS "updatedAt"`,
     [id, ...fields.map(([, value]) => value)]
   );
   if (!result.rows[0]) throw new Error('Seguimiento no encontrado');
@@ -1206,6 +1245,7 @@ export async function initializeDatabase() {
       order_code TEXT NOT NULL UNIQUE,
       customer_account_id BIGINT REFERENCES pharmacy_customer_accounts(id),
       branch_id INTEGER NOT NULL,
+      assigned_employee_id INTEGER,
       address TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'CREATED',
       latitude NUMERIC,
@@ -1217,6 +1257,8 @@ export async function initializeDatabase() {
   await pool.query('ALTER TABLE pharmacy_customer_accounts ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT \'\'');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS latitude NUMERIC');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS longitude NUMERIC');
+  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS assigned_employee_id INTEGER');
+  await pool.query('CREATE INDEX IF NOT EXISTS pharmacy_delivery_tracking_assignee_idx ON pharmacy_delivery_tracking (branch_id, assigned_employee_id)');
 }
 
 /** Carga el snapshot de estado en formato JSONB de la base de datos */

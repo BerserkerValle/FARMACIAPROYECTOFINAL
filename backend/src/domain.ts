@@ -279,6 +279,11 @@ export interface Order {
   employeeId: number | null;
   deliveryMode: 'DELIVERY' | 'PICKUP';
   address: string | null;
+  /**
+   * Repartidor que tomó el pedido a su cargo. `null` significa que la entrega
+   * sigue sin asignar y puede ser reclamada por cualquier repartidor de la sucursal.
+   */
+  assignedEmployeeId?: number | null;
   deliveryLatitude?: number | null;
   deliveryLongitude?: number | null;
   status: OrderStatus;

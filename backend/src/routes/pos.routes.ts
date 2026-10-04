@@ -1,6 +1,7 @@
 
 import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth.js';
+import { DELIVERY_ROLES, POS_ROLES } from '../utils/permissions.js';
 import { 
   createSale, 
   createQrPayment,
@@ -13,18 +14,14 @@ import {
 export const posRouter = Router();
 
 
-// RESTRICCIÓN DE ACCESO OPERATIVO
+posRouter.use(authenticate);
 
-posRouter.use(authenticate, authorize('Administrador', 'Gerente', 'Cajero', 'Repartidor'));
+// RETIROS EN TIENDA (PICKUP) Y VENTAS EN MOSTRADOR — solo personal de caja
+posRouter.get('/pickup-orders', authorize(...POS_ROLES), pickupOrders);
+posRouter.post('/sales', authorize(...POS_ROLES), createSale);
+posRouter.post('/qr-payment', authorize(...POS_ROLES), createQrPayment);
+posRouter.post('/orders/:id/release', authorize(...POS_ROLES), releasePickup);
 
-
-// RETIROS EN TIENDA (PICKUP) Y VENTAS EN MOSTRADOR
-posRouter.get('/pickup-orders', pickupOrders);
-posRouter.post('/sales', createSale);
-posRouter.post('/qr-payment', createQrPayment);
-posRouter.post('/orders/:id/release', releasePickup);
-
-// GESTIÓN Y RASTREO DE ENVÍOS A DOMICILIO (DELIVERY)
-
-posRouter.get('/deliveries', deliveries);
-posRouter.patch('/deliveries/:id', updateDelivery);
+// GESTIÓN Y RASTREO DE ENVÍOS A DOMICILIO (DELIVERY) — repartidores y supervisores
+posRouter.get('/deliveries', authorize(...DELIVERY_ROLES), deliveries);
+posRouter.patch('/deliveries/:id', authorize(...DELIVERY_ROLES), updateDelivery);

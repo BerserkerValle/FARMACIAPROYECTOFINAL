@@ -599,11 +599,14 @@ export class PharmacyStore {
       });
   }
 
-  updateDelivery(orderId: number, input: { status?: string; latitude?: number; longitude?: number }) {
+  updateDelivery(orderId: number, input: { status?: string; latitude?: number; longitude?: number }, actor?: { employeeId: number; role: Role }) {
     this.assertReady();
     const order = this.snapshot.orders.find((candidate) => candidate.id === orderId);
     if (!order) throw new Error('Entrega no encontrada');
     if (input.status) order.status = input.status as Order['status'];
+    if (actor?.role === 'Repartidor' && order.assignedEmployeeId == null) {
+      order.assignedEmployeeId = actor.employeeId;
+    }
     const orderCustomer = this.snapshot.customers.find((candidate) => candidate.id === order.customerId);
     const matchingCustomers = orderCustomer
       ? this.snapshot.customers.filter((candidate) => candidate.email.toLowerCase() === orderCustomer.email.toLowerCase())
@@ -1050,7 +1053,34 @@ export class PharmacyStore {
       }));
     const customer = this.snapshot.customers.find((candidate) => candidate.id === order.customerId) ?? null;
     const branch = this.snapshot.branches.find((candidate) => candidate.id === order.branchId) ?? null;
-    return { ...clone(order), items, customer, branch };
+    const { passwordHash: _passwordHash, ...safeCustomer } = customer ?? { passwordHash: undefined };
+    return { ...clone(order), items, customer: customer ? safeCustomer : null, branch };
+  }
+
+  customerOwnsOrder(customerId: number, order: Order) {
+    this.assertReady();
+    const account = this.snapshot.customers.find((candidate) => candidate.id === customerId);
+    if (!account) return false;
+    const ownedIds = this.snapshot.customers
+      .filter((candidate) => candidate.email.toLowerCase() === account.email.toLowerCase())
+      .map((candidate) => candidate.id);
+    if (!ownedIds.includes(order.customerId)) return false;
+    if (order.customerEmail) return order.customerEmail.toLowerCase() === account.email.toLowerCase();
+    return Boolean(account.address && order.address?.trim().toLowerCase() === account.address.trim().toLowerCase());
+  }
+
+  getOrderByIdForCustomer(customerId: number, orderId: number) {
+    this.assertReady();
+    const order = this.snapshot.orders.find((candidate) => candidate.id === orderId);
+    if (!order || !this.customerOwnsOrder(customerId, order)) return null;
+    return this.enrichOrder(order);
+  }
+
+  findOrderByCodeForCustomer(customerId: number, codeValue: string) {
+    this.assertReady();
+    const order = this.snapshot.orders.find((candidate) => candidate.code === codeValue);
+    if (!order || !this.customerOwnsOrder(customerId, order)) return null;
+    return this.enrichOrder(order);
   }
 
   getOrderById(orderId: number) {
@@ -1086,6 +1116,38 @@ export class PharmacyStore {
       .filter((order) => order.paymentStatus === 'PENDING' || order.status === 'AWAITING_PAYMENT' || order.status === 'PAID' || order.status === 'PACKING' || order.status === 'READY_FOR_PICKUP' || order.status === 'IN_ROUTE')
       .filter((order) => (branchId ? order.branchId === branchId : true))
       .map((order) => this.enrichOrder(order));
+  }
+
+  listDeliveries(branchId: number, assignee: { employeeId: number; role: Role } | null) {
+    this.assertReady();
+    return this.snapshot.orders
+      .filter((order) => order.deliveryMode === 'DELIVERY')
+      .filter((order) => order.status !== 'DELIVERED' && order.status !== 'CANCELLED')
+      .filter((order) => (branchId ? order.branchId === branchId : true))
+      .filter((order) => {
+        if (!assignee || assignee.role === 'Administrador' || assignee.role === 'Gerente') return true;
+        if (order.assignedEmployeeId != null) return order.assignedEmployeeId === assignee.employeeId;
+        return true;
+      })
+      .map((order) => this.enrichOrder(order));
+  }
+
+  getDeliveryOwnership(orderId: number) {
+    this.assertReady();
+    const order = this.snapshot.orders.find((candidate) => candidate.id === orderId);
+    if (!order || order.deliveryMode !== 'DELIVERY') return null;
+    return { branchId: order.branchId, assignedEmployeeId: order.assignedEmployeeId ?? null };
+  }
+
+  claimDelivery(orderId: number, employeeId: number) {
+    this.assertReady();
+    const order = this.snapshot.orders.find((candidate) => candidate.id === orderId);
+    if (!order) throw new Error('Entrega no encontrada');
+    if (order.assignedEmployeeId == null) {
+      order.assignedEmployeeId = employeeId;
+      this.touch();
+    }
+    return clone(this.enrichOrder(order));
   }
 
   // ============================================================================
@@ -1199,13 +1261,18 @@ export class PharmacyStore {
 
   getEmployeeById(id: number) {
     this.assertReady();
-    return this.snapshot.employees.find((employee) => employee.id === id) ?? null;
+    const employee = this.snapshot.employees.find((item) => item.id === id);
+    return employee && employee.active ? employee : null;
   }
 
   findEmployeeByCredentials(email: string, password: string) {
     this.assertReady();
     const employee = this.snapshot.employees.find((item) => item.email.toLowerCase() === email.toLowerCase() && item.active);
-    if (!employee || !bcrypt.compareSync(password, employee.password)) return null;
+    if (!employee) return null;
+    const valid = employee.password.startsWith('$2')
+      ? bcrypt.compareSync(password, employee.password)
+      : password === employee.password;
+    if (!valid) return null;
     return clone(employee);
   }
 }

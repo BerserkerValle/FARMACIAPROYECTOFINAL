@@ -16,6 +16,7 @@ import {
   uploadProductImage
 } from '../controllers/warehouse.controller.js';
 import { getUploadsDir } from '../utils.js';
+import { WAREHOUSE_ROLES } from '../utils/permissions.js';
 
 
 // CONFIGURACIÓN DE ALMACENAMIENTO DE IMÁGENES 
@@ -37,7 +38,7 @@ export const warehouseRouter = Router();
 
 // RESTRICCIÓN DE ACCESO PARA PERSONAL DE BODEGA Y ADMINISTRACIÓN
 
-warehouseRouter.use(authenticate, authorize('Administrador', 'Gerente', 'Bodeguero'));
+warehouseRouter.use(authenticate, authorize(...WAREHOUSE_ROLES));
 
 
 // GESTIÓN DE LOTES Y RECEPCIÓN DE MERCADERÍA

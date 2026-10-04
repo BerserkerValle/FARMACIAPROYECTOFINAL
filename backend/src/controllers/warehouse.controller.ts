@@ -36,6 +36,7 @@ import {
   updateDatabaseProduct 
 } from '../db.js';
 import { store } from '../store.js';
+import { resolveBranchScope } from '../utils/permissions.js';
 
 // ============================================================================
 // ESQUEMAS DE VALIDACIÓN ZOD (DTOs)
@@ -116,7 +117,8 @@ function apiBaseUrl(req: Request): string {
  * GET /api/warehouse/lots?branchId=1&productId=5
  */
 export async function lots(req: Request, res: Response) {
-  const branchId = req.user?.branchId ?? (req.query.branchId ? Number(req.query.branchId) : undefined);
+  const requested = req.query.branchId ? Number(req.query.branchId) : undefined;
+  const branchId = resolveBranchScope(req.user?.branchId ?? null, requested ?? null) ?? undefined;
   const productId = req.query.productId ? Number(req.query.productId) : undefined;
   const data = databaseEnabled ? await listDatabaseLots(branchId, productId) : store.getLots(productId, branchId);
   return res.json({ success: true, data: data ?? [] });
@@ -132,10 +134,14 @@ export async function receive(req: Request, res: Response) {
     return res.status(401).json({ success: false, message: 'No autenticado' });
   }
   const payload = receiveSchema.parse(req.body);
+  const branchId = resolveBranchScope(req.user.branchId, payload.branchId);
+  if (!branchId) {
+    return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
+  }
   try {
     const lot = databaseEnabled
-      ? await receiveDatabaseLot({ ...payload, employeeId: req.user.employeeId })
-      : store.receiveGoods({ ...payload, employeeId: req.user.employeeId });
+      ? await receiveDatabaseLot({ ...payload, branchId, employeeId: req.user.employeeId })
+      : store.receiveGoods({ ...payload, branchId, employeeId: req.user.employeeId });
     return res.status(201).json({ success: true, data: lot });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'No se pudo recibir el lote';
