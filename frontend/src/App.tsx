@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRef } from 'react';
 import type { FormEvent } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import L from 'leaflet';
 import QRCode from 'qrcode';
 import 'leaflet/dist/leaflet.css';
-import { apiRequest, uploadTemporaryPrescription, uploadPrescription, uploadProductImage } from './api';
+import { apiRequest, uploadTemporaryPrescription, uploadPrescription, uploadProductImage, type ApiRequestOptions } from './api';
+import { PasswordInputComponent } from './components/PasswordInput';
+import { validatePassword, FARMACIA_FJK_PASSWORD_MESSAGE, validateEmail } from './lib/validation';
+import { useToast } from './components/ToastProvider';
 
 type Portal = 'public' | 'login' | 'customer' | 'pos' | 'warehouse' | 'delivery' | 'admin';
 
@@ -249,7 +252,7 @@ function getCategoryHierarchyIds(categoryId: number, allCategories: Category[]):
 }
 
 /* =========================================================================
-   TOP HEADER
+   TOP HEADER - Rediseño FARMACIA FJK
    ========================================================================= */
 
 function TopHeader({
@@ -264,7 +267,15 @@ function TopHeader({
   profile,
   onLogout,
   customer,
-  onCustomerLogout
+  onCustomerLogout,
+  categories,
+  onCategorySelect,
+  onQueryChange,
+  minPrice,
+  maxPrice,
+  onMinPriceChange,
+  onMaxPriceChange,
+  onToggleCheckout
 }: {
   branches: Branch[];
   branchId: number;
@@ -278,129 +289,675 @@ function TopHeader({
   onLogout: () => void;
   customer: CustomerAccount | null;
   onCustomerLogout: () => void;
+  categories: Category[];
+  onCategorySelect: (categoryId: number | 'all') => void;
+  onQueryChange: (query: string) => void;
+  minPrice: number | '';
+  maxPrice: number | '';
+  onMinPriceChange: (value: number | '') => void;
+  onMaxPriceChange: (value: number | '') => void;
+  onToggleCheckout: () => void;
 }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [showPriceFilterDropdown, setShowPriceFilterDropdown] = useState(false);
+  const [showBranchDropdown, setShowBranchDropdown] = useState(false);
+
+  // Solo mostrar elementos de cliente (Categorías, Descuentos, Precio) en portal público y POS
+  const isClientPortal = activePortal === 'public' || activePortal === 'pos';
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      onQueryChange(searchQuery);
+      onNavigatePortal('public');
+    }
+  };
+
   return (
     <header className="top-header">
-      <div className="header-inner">
-        {/* Brand */}
-        <div className="brand-link" onClick={() => onNavigatePortal('public')}>
-          <button
-            type="button"
-            className="brand-icon brand-access-trigger"
-            onClick={(event) => {
-              event.stopPropagation();
-              if (activePortal === 'login') {
-                onNavigatePortal('public');
-              } else {
-                onNavigatePortal(token && profile ? 'admin' : 'login');
-              }
-            }}
-            title={token && profile ? 'Abrir panel administrativo' : 'Acceso Personal'}
-            aria-label={token && profile ? 'Abrir panel administrativo' : 'Abrir login administrativo'}
-          >
-            <span>+</span>
-          </button>
-          <div className="brand-info">
-            <h1>Gestión de Farmacia</h1>
-            <p>Farmacia Digital</p>
+      {/* Barra Principal: Logo | Búsqueda | Carrito/Usuario */}
+      <div className="header-main">
+        <div className="header-main-inner">
+          {/* Logo - Lado Izquierdo: Icono Cruz Verde (easter egg login) | Texto -> Home */}
+          <div className="header-brand">
+            <div
+              className="brand-icon"
+              onClick={() => onNavigatePortal('login')}
+              title="Acceso Empleados"
+              aria-label="Acceso empleados"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigatePortal('login'); } }}
+            >
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M12 7v10M7 12h10" />
+              </svg>
+            </div>
+            <div className="brand-text" onClick={() => onNavigatePortal('public')}>
+              <h1>FARMACIA FJK</h1>
+              <span>Tu farmacia de confianza</span>
+            </div>
+          </div>
+
+          {/* Barra de Búsqueda Central - Estilo FARMACIA FJK */}
+          <div className="header-search">
+            <form onSubmit={handleSearchSubmit} className="search-form">
+              <svg className="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="search"
+                className="search-input"
+                placeholder="Buscar medicamentos, marcas, principios activos..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                autoComplete="off"
+              />
+              <button type="submit" className="search-btn" aria-label="Buscar">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </button>
+            </form>
+          </div>
+
+          {/* Acciones Derecha: Carrito + Usuario */}
+          <div className="header-actions">
+            {/* Navegación portales internos */}
+            {token && profile && (
+              <nav className="portal-nav-pills" aria-label="Portales internos">
+                <button
+                  type="button"
+                  className={`portal-nav-pill ${activePortal === 'public' ? 'active' : ''}`}
+                  onClick={() => onNavigatePortal('public')}
+                >
+                  Catálogo
+                </button>
+                <button
+                  type="button"
+                  className={`portal-nav-pill ${activePortal === 'pos' ? 'active' : ''}`}
+                  onClick={() => onNavigatePortal('pos')}
+                >
+                  POS
+                </button>
+                <button
+                  type="button"
+                  className={`portal-nav-pill ${activePortal === 'warehouse' ? 'active' : ''}`}
+                  onClick={() => onNavigatePortal('warehouse')}
+                >
+                  Bodega
+                </button>
+                <button
+                  type="button"
+                  className={`portal-nav-pill ${activePortal === 'delivery' ? 'active' : ''}`}
+                  onClick={() => onNavigatePortal('delivery')}
+                >
+                  Reparto
+                </button>
+                <button
+                  type="button"
+                  className={`portal-nav-pill ${activePortal === 'admin' ? 'active' : ''}`}
+                  onClick={() => onNavigatePortal('admin')}
+                >
+                  Admin
+                </button>
+              </nav>
+            )}
+
+            {/* Carrito de Compras */}
+            {activePortal === 'public' && (
+              <button
+                type="button"
+                className="cart-btn"
+                onClick={() => {
+                  onToggleCheckout();
+                  const paymentSection = document.querySelector('.top-payment-section');
+                  if (paymentSection) {
+                    paymentSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                }}
+                aria-label={`Carrito de compras: ${cartCount} items, Total ${cartTotal.toFixed(2)}`}
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="9" cy="21" r="1" />
+                  <circle cx="20" cy="21" r="1" />
+                  <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+                </svg>
+                <span className="cart-count">{cartCount}</span>
+                <div className="cart-total">
+                  <span className="cart-label">Total</span>
+                  <span className="cart-amount">Q. {cartTotal.toFixed(2)}</span>
+                </div>
+              </button>
+            )}
+
+            {/* Usuario / Login */}
+            <div className="user-menu">
+              {token && profile ? (
+                <button type="button" className="user-btn" onClick={onLogout} title="Cerrar sesión">
+                  <div className="user-avatar">
+                    {profile.fullName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="user-info">
+                    <span>{profile.fullName.split(' ')[0]}</span>
+                    <small>{profile.role}</small>
+                  </div>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                </button>
+              ) : customer ? (
+                <button type="button" className="user-btn" onClick={() => onNavigatePortal('customer')} title="Mi cuenta">
+                  <div className="user-avatar">
+                    {customer.fullName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="user-info">
+                    <span>{customer.fullName.split(' ')[0]}</span>
+                    <small>Mi cuenta</small>
+                  </div>
+                </button>
+              ) : (
+                <button type="button" className="user-btn login-btn" onClick={() => onNavigatePortal('customer')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <span>Iniciar Sesión</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
+      </div>
 
-        {/* Header Actions */}
-        <div className="header-actions">
-          {/* Branch Dropdown */}
-          {activePortal === 'public' && branches.length > 0 && (
-            <div className="branch-select-wrap">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-              <select
-                className="branch-dropdown"
-                value={branchId}
-                onChange={(e) => onSelectBranch(Number(e.target.value))}
-                title="Seleccionar sucursal de inventario"
+      {/* Sub-Menú Inferior - Estilo Batres */}
+      <nav className="header-subnav" aria-label="Navegación principal">
+        <div className="subnav-inner">
+          {/* Categorías - Dropdown */}
+          <div className="subnav-dropdown">
+            <button
+              type="button"
+              className="subnav-item"
+              onClick={(e) => {
+                e.preventDefault();
+                setShowCategoryDropdown(!showCategoryDropdown);
+              }}
+              aria-expanded={showCategoryDropdown}
+              aria-haspopup="true"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+</svg>
+            Categorías
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: '0.25rem', transition: 'transform 0.2s' }}>
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          {showCategoryDropdown && (
+            <div className="category-dropdown-menu">
+              <button
+                type="button"
+                className="category-dropdown-item"
+                onClick={() => {
+                  onCategorySelect('all');
+                  setShowCategoryDropdown(false);
+                  onNavigatePortal('public');
+                }}
               >
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name} ({branch.city})
-                  </option>
-                ))}
-              </select>
+                <span>Todas las categorías</span>
+              </button>
+              {categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  className="category-dropdown-item"
+                  onClick={() => {
+                    onCategorySelect(cat.id);
+                    setShowCategoryDropdown(false);
+                    onNavigatePortal('public');
+                  }}
+                >
+                  <span>{cat.name}</span>
+                </button>
+              ))}
             </div>
           )}
+        </div>
 
-          {/* Internal Portal Navigation when logged in */}
-          {token && profile && (
-            <nav className="portal-nav-pills">
-              <button
-                type="button"
-                className={`portal-nav-pill ${activePortal === 'public' ? 'active' : ''}`}
-                onClick={() => onNavigatePortal('public')}
-              >
-                Catálogo
-              </button>
-              <button
-                type="button"
-                className={`portal-nav-pill ${activePortal === 'pos' ? 'active' : ''}`}
-                onClick={() => onNavigatePortal('pos')}
-              >
-                POS
-              </button>
-              <button
-                type="button"
-                className={`portal-nav-pill ${activePortal === 'warehouse' ? 'active' : ''}`}
-                onClick={() => onNavigatePortal('warehouse')}
-              >
-                Bodega
-              </button>
-              <button
-                type="button"
-                className={`portal-nav-pill ${activePortal === 'delivery' ? 'active' : ''}`}
-                onClick={() => onNavigatePortal('delivery')}
-              >
-                Reparto
-              </button>
-              <button
-                type="button"
-                className={`portal-nav-pill ${activePortal === 'admin' ? 'active' : ''}`}
-                onClick={() => onNavigatePortal('admin')}
-              >
-                Admin
-              </button>
-            </nav>
-          )}
+        {/* Descuentos - Solo en portales de cliente (público y POS) */}
+        {isClientPortal && (
+          <button
+            type="button"
+            className="subnav-item batres-accent"
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigatePortal('public');
+              // TODO: Add discount filter when backend supports it
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+              <path d="M12 6v6l4 2" />
+            </svg>
+            <span>Descuentos</span>
+            <span className="subnav-badge">¡Hasta 40%</span>
+          </button>
+        )}
 
-          {/* User Session / Login Button */}
-          {token && profile ? (
-            <button type="button" className="portal-switch-btn" onClick={onLogout} title="Cerrar sesión">
-              <span>{profile.fullName.split(' ')[0]}</span>
-              <small style={{ opacity: 0.7 }}>({profile.role})</small>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
+        {/* Contáctenos - Modal: Solo visible para clientes/no autenticados (NO empleados) */}
+        {(!token || !profile) && (
+          <button
+            type="button"
+            className="subnav-item"
+            onClick={(e) => {
+              e.preventDefault();
+              setShowContactModal(true);
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+            Contáctenos
+          </button>
+        )}
+
+        {/* Price Filter - Solo en portales de cliente (público y POS) */}
+        {isClientPortal && (
+          <div className="subnav-price-filter-desktop">
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', marginRight: '0.5rem' }}>Precio:</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Mín"
+              value={minPrice}
+              onChange={(e) => onMinPriceChange(e.target.value ? Number(e.target.value) : '')}
+              style={{ width: '70px', padding: '0.35rem 0.5rem', fontSize: '0.8rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-main)' }}
+              title="Precio mínimo"
+            />
+            <span style={{ color: 'var(--text-muted)', margin: '0 0.25rem' }}>–</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Máx"
+              value={maxPrice}
+              onChange={(e) => onMaxPriceChange(e.target.value ? Number(e.target.value) : '')}
+              style={{ width: '70px', padding: '0.35rem 0.5rem', fontSize: '0.8rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-main)' }}
+              title="Precio máximo"
+            />
+          </div>
+        )}
+
+          {/* Branch Selector - Desktop: visible en subnav | Mobile: dropdown */}
+          {activePortal === 'public' && branches.length > 0 && (
+            <>
+              <div className="subnav-branch-select-desktop">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+                <select
+                  className="subnav-branch-dropdown"
+                  value={branchId}
+                  onChange={(e) => onSelectBranch(Number(e.target.value))}
+                  title="Seleccionar sucursal"
+                  aria-label="Seleccionar sucursal"
+                >
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name} ({branch.city})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Branch Selector Mobile Dropdown */}
+              <div className="subnav-branch-select-mobile">
+                <button
+                  type="button"
+                  className="subnav-item subnav-branch-mobile-btn"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowBranchDropdown(!showBranchDropdown);
+                  }}
+                  aria-expanded={showBranchDropdown}
+                  aria-haspopup="true"
+                  aria-label="Seleccionar sucursal"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                  <span>Sucursal</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: '0.25rem', transition: 'transform 0.2s', transform: showBranchDropdown ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+                {showBranchDropdown && (
+                  <div className="branch-dropdown-menu">
+                    {branches.map((branch) => (
+                      <button
+                        key={branch.id}
+                        type="button"
+                        className="branch-dropdown-item"
+                        onClick={() => {
+                          onSelectBranch(branch.id);
+                          setShowBranchDropdown(false);
+                        }}
+                      >
+                        <span>{branch.name}</span>
+                        <small>{branch.city}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+)}
+
+        {/* Price Filter Mobile Dropdown Button - Solo en portales de cliente */}
+        {/* Temporarily disabled to fix JSX parsing */}
+        {/* {isClientPortal ? (
+          <div className="subnav-price-filter-mobile">
+            <button
+              type="button"
+              className="subnav-item"
+              onClick={(e) => {
+                e.preventDefault();
+                setShowPriceFilterDropdown(!showPriceFilterDropdown);
+              }}
+              aria-expanded={showPriceFilterDropdown}
+              aria-haspopup="true"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+              </svg>
+              Filtros
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: '0.25rem', transition: 'transform 0.2s', transform: showPriceFilterDropdown ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                <polyline points="6 9 12 15 18 9" />
               </svg>
             </button>
-          ) : null}
-          {!token || !profile ? (customer ? (
-            <button type="button" className="portal-switch-btn" onClick={() => onNavigatePortal('customer')} title="Ver mis pedidos y entregas">
-              <span>{customer.fullName.split(' ')[0]}</span>
-              <small>(Mis pedidos)</small>
-            </button>
-          ) : (
-            <button type="button" className="portal-switch-btn" onClick={() => onNavigatePortal('customer')}>
-              <span>Mi cuenta</span>
-            </button>
-          )) : null}
-        </div>
+          </div>
+        ) : null} */}
+
       </div>
+      </nav>
+
+      {/* Contact Modal */}
+      {showContactModal && (
+        <div className="modal-backdrop" onClick={() => setShowContactModal(false)}>
+          <div className="contact-modal" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="modal-close-btn" onClick={() => setShowContactModal(false)} title="Cerrar">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+            <div className="contact-modal-header">
+              <div className="contact-modal-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+              </div>
+              <h2>Contáctenos</h2>
+              <p>Estamos aquí para ayudarle</p>
+            </div>
+            <div className="contact-modal-body">
+              <div className="contact-info-grid">
+                <div className="contact-info-item">
+                  <div className="contact-info-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h4>Teléfono</h4>
+                    <a href="tel:+5022XXXYYYY">+502 2XXX XXXX</a>
+                    <small>Lun-Sáb 7:00-21:00 · Dom 8:00-14:00</small>
+                  </div>
+                </div>
+                <div className="contact-info-item">
+                  <div className="contact-info-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="16" x2="12" y2="12" />
+                      <line x1="12" y1="8" x2="12" y2="8" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h4>Correo Electrónico</h4>
+                    <a href="mailto:contacto@farmaciafjk.com">contacto@farmaciafjk.com</a>
+                    <small>Respondemos en 24-48 horas</small>
+                  </div>
+                </div>
+                <div className="contact-info-item">
+                  <div className="contact-info-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h4>Dirección</h4>
+                    <address>Ciudad de Guatemala, Guatemala</address>
+                    <small>Zona 10, Edificio FJK</small>
+                  </div>
+                </div>
+              </div>
+              <div className="contact-social">
+                <h4>Síganos</h4>
+                <div className="social-links">
+                  <a href="#" target="_blank" rel="noopener" aria-label="Facebook">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+                  </a>
+                  <a href="#" target="_blank" rel="noopener" aria-label="Instagram">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="18" cy="6" r="1"/></svg>
+                  </a>
+                  <a href="#" target="_blank" rel="noopener" aria-label="WhatsApp">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20.52 3.48A11.9 11.9 0 0112 22C6.03 22 1 16.97 1 10.5S6.03 0 12 0c2.5 0 4.84.76 6.85 2.13l3.64 3.64a1.25 1.25 0 001.67 0l1.17-1.17a1.25 1.25 0 000-1.67l-1.17-1.17a1.25 1.25 0 00-1.67 0l-3.64 3.64A11.9 11.9 0 0120.52 3.48zM12 4a8 8 0 00-8 8c0 2.05.82 3.95 2.18 5.36l-1.64 6.16 6.16-1.64A8 8 0 0012 4z"/></svg>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }
 
 /* =========================================================================
-   TOP PAYMENT SECTION ("que arriba tenga la forma de pagar")
+   HERO CAROUSEL - Banner Principal FARMACIA FJK
+   ========================================================================= */
+
+function HeroCarousel({ onNavigatePortal }: { onNavigatePortal: (portal: Portal) => void }) {
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  const slides = [
+    {
+      id: 1,
+      title: 'Bienvenido a FARMACIA FJK',
+      subtitle: 'Tu farmacia de confianza con los mejores precios',
+      cta: 'Ver Ofertas',
+      bgGradient: 'linear-gradient(135deg, var(--cv-green) 0%, #007a2e 100%)',
+      icon: (
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
+          <path d="M3 20h18" />
+          <path d="M7 20v-8" />
+          <path d="M17 20v-4" />
+        </svg>
+      )
+    },
+    {
+      id: 2,
+      title: 'Descuentos que Cuidan tu Bolsillo',
+      subtitle: 'Hasta 40% OFF en medicamentos seleccionados',
+      cta: 'Ver Descuentos',
+      bgGradient: 'linear-gradient(135deg, var(--batres-orange) 0%, var(--batres-red) 100%)',
+      icon: (
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+          <path d="M12 6v6l4 2" />
+        </svg>
+      )
+    },
+    {
+      id: 3,
+      title: 'Servicios Farmacéuticos',
+      subtitle: 'Asesoría, control y seguimiento especializado',
+      cta: 'Conocer Servicios',
+      bgGradient: 'linear-gradient(135deg, var(--cv-green) 0%, var(--batres-amber) 100%)',
+      icon: (
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+        </svg>
+      )
+    },
+    {
+      id: 4,
+      title: 'Entrega a Domicilio',
+      subtitle: 'Recibe tus medicamentos en la puerta de tu casa',
+      cta: 'Comprar Ahora',
+      bgGradient: 'linear-gradient(135deg, #007a2e 0%, var(--cv-green) 100%)',
+      icon: (
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="9" cy="21" r="1" />
+          <circle cx="20" cy="21" r="1" />
+          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+        </svg>
+      )
+    }
+  ];
+
+  // Carrusel manual: sin autoplay, solo navegación por flechas/dots
+
+  const goToSlide = (index: number) => {
+    if (isAnimating) return;
+    setIsAnimating(true);
+    setCurrentSlide(index);
+    setTimeout(() => setIsAnimating(false), 500);
+  };
+
+  return (
+    <section className="hero-carousel" aria-label="Banners promocionales">
+      <div className="carousel-container">
+        <div
+          className="carousel-track"
+          style={{
+            transform: `translateX(-${currentSlide * 100}%)`,
+            transition: 'transform 500ms cubic-bezier(0.4, 0, 0.2, 1)',
+            willChange: 'transform'
+          }}
+        >
+          {slides.map((slide, index) => (
+            <div key={slide.id} className="carousel-slide" style={{ background: slide.bgGradient }}>
+              <div className="slide-content">
+                <div className="slide-icon" aria-hidden="true">
+                  {slide.icon}
+                </div>
+                <div className="slide-text">
+                  <h2>{slide.title}</h2>
+                  <p>{slide.subtitle}</p>
+                </div>
+                <button
+                  type="button"
+                  className="slide-cta"
+                  onClick={() => onNavigatePortal('public')}
+                >
+                  {slide.cta}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                    <polyline points="12 5 19 12 12 19" />
+                  </svg>
+                </button>
+              </div>
+              <div className="slide-visual" aria-hidden="true">
+                <div className="floating-elements">
+                  <div className="float-item" style={{ top: '15%', right: '10%', animationDelay: '0s' }}>
+                    <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5">
+                      <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
+                      <path d="M3 20h18" />
+                      <path d="M7 20v-8" />
+                      <path d="M17 20v-4" />
+                    </svg>
+                  </div>
+                  <div className="float-item" style={{ top: '60%', right: '5%', animationDelay: '1s' }}>
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="16" />
+                      <line x1="8" y1="12" x2="16" y2="12" />
+                    </svg>
+                  </div>
+                  <div className="float-item" style={{ bottom: '20%', left: '10%', animationDelay: '2s' }}>
+                    <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5">
+                      <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                      <path d="M12 6v6l4 2" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Indicadores de paginación */}
+        <div className="carousel-dots" role="tablist" aria-label="Seleccionar banner">
+          {slides.map((slide, index) => (
+            <button
+              key={slide.id}
+              type="button"
+              className={`carousel-dot ${index === currentSlide ? 'active' : ''}`}
+              onClick={() => goToSlide(index)}
+              role="tab"
+              aria-selected={index === currentSlide}
+              aria-label={`Banner ${index + 1}: ${slide.title}`}
+            />
+          ))}
+        </div>
+
+        {/* Flechas de navegación */}
+        <button
+          type="button"
+          className="carousel-arrow prev"
+          onClick={() => goToSlide((currentSlide - 1 + slides.length) % slides.length)}
+          aria-label="Banner anterior"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="carousel-arrow next"
+          onClick={() => goToSlide((currentSlide + 1) % slides.length)}
+          aria-label="Banner siguiente"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/* =========================================================================
+   TOP PAYMENT SECTION - Forma de Pago FARMACIA FJK
    ========================================================================= */
 
 function TopPaymentBar({
@@ -418,7 +975,9 @@ function TopPaymentBar({
   onSubmitPayment,
   isSubmitting,
   status,
-  paymentClientSecret
+  paymentClientSecret,
+  isExpanded,
+  onToggleExpand
 }: {
   cart: Array<{ productId: number; quantity: number }>;
   products: ProductCard[];
@@ -445,9 +1004,9 @@ function TopPaymentBar({
   isSubmitting: boolean;
   status: string;
   paymentClientSecret: string;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
 }) {
-  const [isExpanded, setIsExpanded] = useState(true);
-
   const selectedBranch = branches.find((b) => b.id === branchId);
   const cartItemsWithDetails = cart.map((item) => {
     const product = products.find((p) => p.id === item.productId);
@@ -493,7 +1052,7 @@ function TopPaymentBar({
             <button
               type="button"
               className="toggle-expand-btn"
-              onClick={() => setIsExpanded(!isExpanded)}
+              onClick={onToggleExpand}
               title={isExpanded ? 'Contraer forma de pago' : 'Expandir forma de pago'}
             >
               <span>{isExpanded ? 'Ocultar detalles' : 'Ver formulario de pago'}</span>
@@ -559,7 +1118,7 @@ function TopPaymentBar({
                           <div className="top-item-info">
                             <span className="top-item-name" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                               {item.product?.name ?? `Producto #${item.productId}`}
-                              <span style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 600 }}>🔍</span>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 600 }}>Ver</span>
                             </span>
                             <span className="top-item-unit-price">
                               {money(item.product?.price ?? 0)} c/u
@@ -741,14 +1300,14 @@ function TopPaymentBar({
                       className={`delivery-toggle-btn ${checkout.paymentMethod === 'STRIPE' ? 'active' : ''}`}
                       onClick={() => onUpdateCheckout({ paymentMethod: 'STRIPE' })}
                     >
-                      💳 Pagar con Stripe
+                      Pagar con Stripe
                     </button>
                     <button
                       type="button"
                       className={`delivery-toggle-btn ${checkout.paymentMethod === 'CASH' ? 'active' : ''}`}
                       onClick={() => onUpdateCheckout({ paymentMethod: 'CASH' })}
                     >
-                      💵 {checkout.deliveryMode === 'DELIVERY' ? 'Efectivo contra entrega' : 'Efectivo en sucursal'}
+                      {checkout.deliveryMode === 'DELIVERY' ? 'Efectivo contra entrega' : 'Efectivo en sucursal'}
                     </button>
                   </div>
                 </div>
@@ -805,7 +1364,7 @@ function TopPaymentBar({
 }
 
 /* =========================================================================
-   PRODUCT DETAIL MODAL ("al darle click a un producto se abre con su descripcion y datos")
+   PRODUCT DETAIL MODAL - Detalle de Producto FARMACIA FJK
    ========================================================================= */
 
 function ProductDetailModal({
@@ -1003,7 +1562,7 @@ function ProductDetailModal({
                 className={`modal-tab-btn ${activeTab === 'desc' ? 'active' : ''}`}
                 onClick={() => setActiveTab('desc')}
               >
-                📖 Uso Terapéutico
+                Uso Terapéutico
               </button>
               <button
                 type="button"
@@ -1017,7 +1576,7 @@ function ProductDetailModal({
                 className={`modal-tab-btn ${activeTab === 'safety' ? 'active' : ''}`}
                 onClick={() => setActiveTab('safety')}
               >
-                🛡️ Normativa & Conservación
+                Normativa & Conservación
               </button>
             </div>
 
@@ -1151,7 +1710,7 @@ function ProductDetailModal({
                     </div>
                   )}
                   <div className="storage-card">
-                    <h5>🌡️ Condiciones de Almacenamiento y Conservación</h5>
+                    <h5>Condiciones de Almacenamiento y Conservación</h5>
                     <ul>
                       <li>Conservar en su empaque original a temperatura ambiente no mayor a 30°C.</li>
                       <li>Proteger de la luz solar directa, humedad y fuentes de calor.</li>
@@ -1236,7 +1795,7 @@ function ProductDetailModal({
 }
 
 /* =========================================================================
-   CLEAN MAIN CATALOG SECTION ("solo salga el catálogo")
+   CLEAN MAIN CATALOG SECTION - Catálogo FARMACIA FJK
    ========================================================================= */
 
 function PublicCatalogView({
@@ -1244,33 +1803,41 @@ function PublicCatalogView({
   branchId,
   categories,
   products,
-  query,
-  onQueryChange,
   cart,
   onAddToCart,
-  toastMessage
+  toastMessage,
+  minPrice,
+  maxPrice,
+  onMinPriceChange,
+  onMaxPriceChange,
+  selectedCategoryId,
+  onCategorySelect,
+  query,
+  onQueryChange
 }: {
   branches: Branch[];
   branchId: number;
   categories: Category[];
   products: ProductCard[];
-  query: string;
-  onQueryChange: (q: string) => void;
   cart: Array<{ productId: number; quantity: number }>;
   onAddToCart: (productId: number, quantity?: number) => void;
   toastMessage: string | null;
+  minPrice: number | '';
+  maxPrice: number | '';
+  onMinPriceChange: (value: number | '') => void;
+  onMaxPriceChange: (value: number | '') => void;
+  selectedCategoryId: number | 'all';
+  onCategorySelect: (categoryId: number | 'all') => void;
+  query: string;
+  onQueryChange: (query: string) => void;
 }) {
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | 'all'>('all');
-  const [filterType, setFilterType] = useState<'all' | 'otc' | 'rx'>('all');
   const [recentlyAddedId, setRecentlyAddedId] = useState<number | null>(null);
   const [selectedProductForModal, setSelectedProductForModal] = useState<ProductCard | null>(null);
 
   const selectedBranch = branches.find((b) => b.id === branchId);
 
-  // Filter products based on filterType and selectedCategoryId
+  // Filter products based on selectedCategoryId only (price filter handled by backend via query params)
   const filteredProducts = products.filter((product) => {
-    if (filterType === 'otc' && product.requiresPrescription) return false;
-    if (filterType === 'rx' && !product.requiresPrescription) return false;
     if (selectedCategoryId !== 'all') {
       const allowedCategoryIds = getCategoryHierarchyIds(selectedCategoryId, categories);
       if (!product.categoryId || !allowedCategoryIds.includes(product.categoryId)) {
@@ -1279,9 +1846,6 @@ function PublicCatalogView({
     }
     return true;
   });
-
-  const otcCount = products.filter((p) => !p.requiresPrescription).length;
-  const rxCount = products.filter((p) => p.requiresPrescription).length;
 
   const handleAdd = (e: React.MouseEvent, productId: number) => {
     e.stopPropagation();
@@ -1298,7 +1862,7 @@ function PublicCatalogView({
 
   return (
     <main className="catalog-layout">
-      {/* Control Bar: Search & Title */}
+      {/* Control Bar: Title & Filters */}
       <div className="catalog-control-bar">
         <div className="catalog-header-row">
           <div className="catalog-title-block">
@@ -1308,103 +1872,24 @@ function PublicCatalogView({
               <strong>{selectedBranch ? `${selectedBranch.name}, ${selectedBranch.city}` : 'Sucursal'}</strong>
             </p>
           </div>
-
-          {/* Search Box */}
-          <div className="catalog-search-wrap">
-            <svg className="search-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              type="text"
-              className="catalog-search-input"
-              value={query}
-              onChange={(e) => onQueryChange(e.target.value)}
-              placeholder="Buscar por medicamento, principio activo, marca o SKU..."
-            />
-            {query && (
-              <button
-                type="button"
-                className="clear-search-btn"
-                onClick={() => onQueryChange('')}
-                title="Limpiar búsqueda"
-              >
-                Cerrar
-              </button>
-            )}
-          </div>
         </div>
 
-        {/* Categories Bar */}
-        {categories.length > 0 && (
-          <div className="filter-pills-row" style={{ marginTop: '0.25rem' }}>
-            <button
-              type="button"
-              className={`filter-pill-btn ${selectedCategoryId === 'all' ? 'active' : ''}`}
-              onClick={() => setSelectedCategoryId('all')}
-            >
-              <span>Todas las categorías</span>
-              <span className="filter-pill-count">{products.length}</span>
-            </button>
-            {categories.map((cat) => {
-              const allowedIds = getCategoryHierarchyIds(cat.id, categories);
-              const count = products.filter((p) => p.categoryId && allowedIds.includes(p.categoryId)).length;
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  className={`filter-pill-btn ${selectedCategoryId === cat.id ? 'active' : ''}`}
-                  onClick={() => setSelectedCategoryId(selectedCategoryId === cat.id ? 'all' : cat.id)}
-                >
-                  <span>{cat.name}</span>
-                  <span className="filter-pill-count">{count}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Prescription & Clean Filters */}
-        <div className="filter-pills-row">
-          <button
-            type="button"
-            className={`filter-pill-btn ${filterType === 'all' ? 'active' : ''}`}
-            onClick={() => setFilterType('all')}
-          >
-            <span>Todos los Tipos</span>
-          </button>
-          <button
-            type="button"
-            className={`filter-pill-btn ${filterType === 'otc' ? 'active' : ''}`}
-            onClick={() => setFilterType('otc')}
-          >
-            <span>Venta libre</span>
-            <span className="filter-pill-count">{otcCount}</span>
-          </button>
-          <button
-            type="button"
-            className={`filter-pill-btn ${filterType === 'rx' ? 'active' : ''}`}
-            onClick={() => setFilterType('rx')}
-          >
-            <span>Requiere receta</span>
-            <span className="filter-pill-count">{rxCount}</span>
-          </button>
-
-          {(selectedCategoryId !== 'all' || filterType !== 'all' || query) && (
+        {/* Active Filters Indicator & Clear */}
+        {(selectedCategoryId !== 'all' || query) && (
+          <div className="filter-pills-row" style={{ marginTop: '0.5rem', justifyContent: 'flex-end' }}>
             <button
               type="button"
               className="btn-secondary"
-              style={{ padding: '0.4rem 0.9rem', fontSize: '0.82rem', marginLeft: 'auto', borderRadius: 'var(--radius-full)' }}
+              style={{ padding: '0.4rem 0.9rem', fontSize: '0.82rem', borderRadius: 'var(--radius-full)' }}
               onClick={() => {
-                setSelectedCategoryId('all');
-                setFilterType('all');
+                onCategorySelect('all');
                 onQueryChange('');
               }}
             >
               Limpiar filtros
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Product Cards Grid */}
@@ -1487,7 +1972,7 @@ function PublicCatalogView({
                     {product.presentation && <span className="product-presentation">{product.presentation}</span>}
                     <p className="product-desc">{product.description}</p>
                     <span className="quick-view-badge">
-                      🔍 Ver especificaciones y detalles completos
+                      Ver especificaciones y detalles completos
                     </span>
                   </div>
                 </div>
@@ -1553,15 +2038,52 @@ function PublicCatalogView({
 }
 
 /* =========================================================================
-   INTERNAL PORTALS: LOGIN, POS, WAREHOUSE, DELIVERY, ADMIN
+   INTERNAL PORTALS - Portales Internos FARMACIA FJK
    ========================================================================= */
 
 function CustomerAuthPage({ onLogin }: { onLogin: (token: string, customer: CustomerAccount) => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [form, setForm] = useState({ fullName: '', email: '', password: '', phone: '', nit: '' });
-  const [status, setStatus] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const { error: showError, success: showSuccess } = useToast();
+
+  const validateForm = useCallback((): boolean => {
+    let valid = true;
+    
+    if (mode === 'register') {
+      if (!form.fullName.trim()) {
+        setEmailError('El nombre completo es requerido');
+        valid = false;
+      } else {
+        setEmailError(null);
+      }
+    }
+    
+    const emailValidation = validateEmail(form.email);
+    if (!emailValidation.valid) {
+      setEmailError(emailValidation.error);
+      valid = false;
+    } else {
+      setEmailError(null);
+    }
+    
+    if (mode === 'register') {
+      const pwdValidation = validatePassword(form.password);
+      if (!pwdValidation.valid) {
+        setPasswordError(pwdValidation.errors.join(', '));
+        valid = false;
+      } else {
+        setPasswordError(null);
+      }
+    }
+    
+    return valid;
+  }, [mode, form]);
 
   async function submit() {
+    if (!validateForm()) return;
+    
     try {
       const path = mode === 'login' ? '/api/auth/customers/login' : '/api/auth/customers/register';
       const result = await apiRequest<{ token: string; customer: CustomerAccount }>(path, {
@@ -1571,8 +2093,10 @@ function CustomerAuthPage({ onLogin }: { onLogin: (token: string, customer: Cust
           : form)
       });
       onLogin(result.token, result.customer);
+      showSuccess(mode === 'login' ? '¡Bienvenido a FARMACIA FJK!' : '¡Cuenta creada exitosamente!');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'No se pudo completar la operación');
+      // El error ya se muestra globalmente via toast, pero también podemos mantener estado local si se prefiere
+      // setStatus(error instanceof Error ? error.message : 'No se pudo completar la operación');
     }
   }
 
@@ -1581,20 +2105,66 @@ function CustomerAuthPage({ onLogin }: { onLogin: (token: string, customer: Cust
       <div className="auth-card-box">
         <h2>{mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta de cliente'}</h2>
         <p>Consulta tus pedidos y el avance de tus entregas.</p>
-        {mode === 'register' && <div className="form-field"><label>Nombre completo</label><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></div>}
-        <div className="form-field"><label>Correo electrónico</label><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-        <div className="form-field"><label>Contraseña</label><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
-        {mode === 'register' && <>
-          <div className="form-grid-2">
-            <div className="form-field"><label>Teléfono</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
-            <div className="form-field"><label>NIT o C/F</label><input value={form.nit} onChange={(e) => setForm({ ...form, nit: e.target.value })} /></div>
+        {mode === 'register' && (
+          <div className="form-field">
+            <label>Nombre completo</label>
+            <input 
+              value={form.fullName} 
+              onChange={(e) => setForm({ ...form, fullName: e.target.value })} 
+              placeholder="Tu nombre completo"
+            />
           </div>
-        </>}
+        )}
+        <div className="form-field">
+          <label>Correo electrónico</label>
+          <input 
+            type="email" 
+            value={form.email} 
+            onChange={(e) => { setForm({ ...form, email: e.target.value }); setEmailError(null); }} 
+            placeholder="correo@ejemplo.com"
+            aria-invalid={emailError ? 'true' : 'false'}
+            aria-describedby={emailError ? 'email-error' : undefined}
+          />
+          {emailError && <p id="email-error" className="form-field-error" role="alert">{emailError}</p>}
+        </div>
+        <PasswordInputComponent
+          label="Contraseña"
+          value={form.password}
+          onChange={(e) => { setForm({ ...form, password: e.target.value }); setPasswordError(null); }}
+          placeholder="Tu contraseña"
+          required
+          error={passwordError}
+          showStrength={mode === 'register'}
+          aria-invalid={passwordError ? 'true' : 'false'}
+          aria-describedby={passwordError ? 'password-error' : undefined}
+        />
+        {passwordError && <p id="password-error" className="form-field-error" role="alert">{passwordError}</p>}
+        {mode === 'register' && (
+          <>
+            <div className="form-grid-2">
+              <div className="form-field">
+                <label>Teléfono</label>
+                <input 
+                  value={form.phone} 
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })} 
+                  placeholder="5555-4444"
+                />
+              </div>
+              <div className="form-field">
+                <label>NIT o C/F</label>
+                <input 
+                  value={form.nit} 
+                  onChange={(e) => setForm({ ...form, nit: e.target.value })} 
+                  placeholder="1234567-8 o C/F"
+                />
+              </div>
+            </div>
+          </>
+        )}
         <button type="button" className="btn-primary" onClick={submit}>{mode === 'login' ? 'Entrar' : 'Crear cuenta'}</button>
-        <button type="button" className="btn-secondary" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setStatus(''); }}>
+        <button type="button" className="btn-secondary" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setPasswordError(null); setEmailError(null); }}>
           {mode === 'login' ? 'Crear una cuenta nueva' : 'Ya tengo una cuenta'}
         </button>
-        {status && <div className="checkout-status-msg">{status}</div>}
       </div>
     </div>
   );
@@ -1688,7 +2258,7 @@ function CustomerOrdersPage({ customer, customerToken, onUpdate, onLogout }: { c
 function LoginPage({ onLogin, onSuccess }: { onLogin: (token: string, profile: EmployeeProfile) => void; onSuccess: () => void }) {
   const [email, setEmail] = useState('admin@derkas.com');
   const [password, setPassword] = useState('Admin123*');
-  const [status, setStatus] = useState('');
+  const { error: showError, success: showSuccess } = useToast();
 
   async function submit() {
     try {
@@ -1698,8 +2268,9 @@ function LoginPage({ onLogin, onSuccess }: { onLogin: (token: string, profile: E
       });
       onLogin(result.token, result.employee);
       onSuccess();
+      showSuccess('¡Bienvenido al sistema de FARMACIA FJK!');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'No se pudo iniciar sesión');
+      // Error ya se muestra globalmente via toast
     }
   }
 
@@ -1714,14 +2285,16 @@ function LoginPage({ onLogin, onSuccess }: { onLogin: (token: string, profile: E
           <label>Correo Corporativo</label>
           <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@farmaciafjk.com" />
         </div>
-        <div className="form-field">
-          <label>Contraseña</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Contraseña" />
-        </div>
+        <PasswordInputComponent
+          label="Contraseña"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Contraseña"
+          required
+        />
         <button type="button" className="btn-primary" onClick={submit}>
           Entrar al Sistema
         </button>
-        {status && <div className="checkout-status-msg">{status}</div>}
       </div>
     </div>
   );
@@ -1851,7 +2424,7 @@ function PosPage({ token, profile, categories }: { token: string | null; profile
           {/* Product Search & Category Filter for Cashier */}
           <div className="form-grid-2" style={{ marginTop: '0.65rem', marginBottom: '0.35rem' }}>
             <div className="form-field">
-              <label>🔍 Buscar Medicamento</label>
+              <label>Buscar Medicamento</label>
               <input
                 type="text"
                 placeholder="Nombre, SKU, marca..."
@@ -1958,7 +2531,7 @@ function PosPage({ token, profile, categories }: { token: string | null; profile
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                   <strong>{selectedProd.name}</strong>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--primary)', fontWeight: 700 }}>🔍 Ver Ficha</span>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--primary)', fontWeight: 700 }}>Ver Ficha</span>
                 </div>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{selectedProd.brand} · {selectedProd.presentation}</p>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.2rem' }}>
@@ -2357,7 +2930,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
             className={`section-tab-btn ${activeTab === 'receive-lot' ? 'active' : ''}`}
             onClick={() => setActiveTab('receive-lot')}
           >
-            <span>📥 Recepción de Lotes Existentes</span>
+            <span>Recepción de Lotes Existentes</span>
           </button>
           <button
             type="button"
@@ -2762,7 +3335,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
             {/* Product Selector with Search & Category */}
             <div className="form-grid-2" style={{ marginBottom: '0.4rem' }}>
               <div className="form-field">
-                <label>🔍 Buscar Medicamento</label>
+                <label>Buscar Medicamento</label>
                 <input
                   type="text"
                   placeholder="Nombre o SKU..."
@@ -2929,7 +3502,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
               onClick={receiveLot}
               style={{ width: '100%', padding: '0.85rem', marginTop: '0.5rem' }}
             >
-              {isSubmitting ? 'Procesando...' : '📥 Registrar Ingreso de Lote'}
+              {isSubmitting ? 'Procesando...' : 'Registrar Ingreso de Lote'}
             </button>
           </div>
 
@@ -2987,7 +3560,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
               <div style={{ flex: 1, minWidth: '240px' }}>
                 <input
                   type="text"
-                  placeholder="🔍 Buscar por nombre, SKU, marca, laboratorio o registro sanitario..."
+                  placeholder="Buscar por nombre, SKU, marca, laboratorio o registro sanitario..."
                   value={listSearch}
                   onChange={(e) => setListSearch(e.target.value)}
                   style={{
@@ -3164,7 +3737,7 @@ function WarehousePage({ token, categories: categoriesProp }: { token: string | 
                       <span className="product-presentation">{p.presentation}</span>
                       <p className="product-desc">{p.description}</p>
                       <span className="quick-view-badge">
-                        🔍 Ver ficha técnica y especificaciones
+                        Ver ficha técnica y especificaciones
                       </span>
                     </div>
 
@@ -3574,6 +4147,17 @@ function InventoryAlerts({ products }: { products: LowStockProduct[] }) {
   </section>;
 }
 
+type AdminTab = 'performance' | 'lowStock' | 'newEmployee' | 'crosscheck' | 'categories' | 'suppliers';
+
+const ADMIN_TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
+  { id: 'performance', label: 'Rendimiento de la farmacia', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
+  { id: 'lowStock', label: 'Inventario bajo', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 20h18"/><path d="M7 20v-8"/><path d="M17 20v-4"/></svg> },
+  { id: 'newEmployee', label: 'Alta de Colaborador', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg> },
+  { id: 'crosscheck', label: 'Auditoría & Crosscheck MSPAS', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> },
+  { id: 'categories', label: 'Categorías de medicamentos', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
+  { id: 'suppliers', label: 'Gestión de proveedores', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 20h18"/><path d="M7 20v-8"/><path d="M17 20v-4"/></svg> },
+];
+
 function AdminPage({ token }: { token: string | null }) {
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [reports, setReports] = useState<AdminReports | null>(null);
@@ -3586,6 +4170,36 @@ function AdminPage({ token }: { token: string | null }) {
   const [supplierSearch, setSupplierSearch] = useState('');
   const [editingSupplierId, setEditingSupplierId] = useState<number | null>(null);
   const [supplierForm, setSupplierForm] = useState({ name: '', contactName: '', nit: '', phone: '', email: '', address: '', active: true });
+
+  // Tab state with URL hash persistence
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.slice(1);
+      if (hash && ADMIN_TABS.some(t => t.id === hash)) {
+        return hash as AdminTab;
+      }
+    }
+    return 'performance';
+  });
+
+  // Sync tab with URL hash
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.location.hash = activeTab;
+    }
+  }, [activeTab]);
+
+  // Handle hash changes from browser back/forward
+  useEffect(() => {
+    const onHashChange = () => {
+      const hash = window.location.hash.slice(1);
+      if (hash && ADMIN_TABS.some(t => t.id === hash)) {
+        setActiveTab(hash as AdminTab);
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   async function loadAll() {
     if (!token) return;
@@ -3701,150 +4315,281 @@ function AdminPage({ token }: { token: string | null }) {
     return !query || [supplier.name, supplier.contactName, supplier.nit, supplier.email, supplier.phone].some((value) => String(value ?? '').toLowerCase().includes(query));
   });
 
-  return (
-    <div className="internal-page-container">
-      {/* Metric Cards */}
+  // Skeleton loader components
+  const SkeletonCard = () => (
+    <div className="skeleton-card">
+      <div className="skeleton-line" style={{ width: '60%' }} />
+      <div className="skeleton-line" style={{ width: '40%', marginTop: '0.5rem' }} />
+      <div className="skeleton-line" style={{ width: '30%', marginTop: '0.5rem' }} />
+    </div>
+  );
+
+  const SkeletonChart = () => (
+    <div className="skeleton-chart">
+      <div className="skeleton-line" style={{ width: '100%', height: '200px' }} />
+    </div>
+  );
+
+  const SkeletonTable = () => (
+    <div className="skeleton-table">
+      <div className="skeleton-row"><div className="skeleton-cell" /><div className="skeleton-cell" /><div className="skeleton-cell" /><div className="skeleton-cell" /><div className="skeleton-cell" /><div className="skeleton-cell" /></div>
+      {[...Array(5)].map((_, i) => (
+        <div key={i} className="skeleton-row"><div className="skeleton-cell" /><div className="skeleton-cell" /><div className="skeleton-cell" /><div className="skeleton-cell" /><div className="skeleton-cell" /><div className="skeleton-cell" /></div>
+      ))}
+    </div>
+  );
+
+const SkeletonForm = () => (
+    <div className="skeleton-form">
+      <div className="skeleton-row"><div className="skeleton-field" /><div className="skeleton-field" /></div>
+      <div className="skeleton-row"><div className="skeleton-field" /><div className="skeleton-field" /></div>
+      <div className="skeleton-row"><div className="skeleton-field" /><div className="skeleton-field" /></div>
+    </div>
+  );
+
+  // Tab panel content components
+  const PerformanceTab = () => (
+    <>
       <div className="stats-grid-4">
         <div className="stat-metric-card">
           <p>Ventas del Día</p>
-          <strong>{dashboard ? money(dashboard.salesToday) : '...'}</strong>
+          <strong>{dashboard ? money(dashboard.salesToday) : <span className="skeleton-text" />}</strong>
           <span>Cajas POS + En Línea</span>
         </div>
         <div className="stat-metric-card">
           <p>Ventas del Mes</p>
-          <strong>{dashboard ? money(dashboard.salesMonth) : '...'}</strong>
+          <strong>{dashboard ? money(dashboard.salesMonth) : <span className="skeleton-text" />}</strong>
           <span>Total acumulado</span>
         </div>
         <div className="stat-metric-card">
           <p>Stock Bajo</p>
-          <strong>{dashboard ? String(dashboard.lowStockCount) : '...'}</strong>
+          <strong>{dashboard ? String(dashboard.lowStockCount) : <span className="skeleton-text" />}</strong>
           <span>Medicamentos críticos</span>
         </div>
         <div className="stat-metric-card">
           <p>Pedidos Pendientes</p>
-          <strong>{dashboard ? String(dashboard.pendingOrders) : '...'}</strong>
+          <strong>{dashboard ? String(dashboard.pendingOrders) : <span className="skeleton-text" />}</strong>
           <span>Empaque o entrega</span>
         </div>
         <div className="stat-metric-card">
           <p>Proveedores</p>
-          <strong>{dashboard ? String(dashboard.suppliersCount) : '...'}</strong>
+          <strong>{dashboard ? String(dashboard.suppliersCount) : <span className="skeleton-text" />}</strong>
           <span>Registrados en el sistema</span>
         </div>
       </div>
+      {dashboard && reports ? (
+        <>
+          <AdminCharts reports={reports} />
+          <InventoryAlerts products={dashboard.lowStockProducts ?? []} />
+        </>
+      ) : (
+        <>
+          <SkeletonChart />
+          <SkeletonCard />
+        </>
+      )}
+    </>
+  );
 
-      <AdminCharts reports={reports} />
-      <InventoryAlerts products={dashboard?.lowStockProducts ?? []} />
+  const LowStockTab = () => (
+    dashboard ? (
+      <InventoryAlerts products={dashboard.lowStockProducts ?? []} />
+    ) : (
+      <SkeletonCard />
+    )
+  );
 
-      <div className="two-col-grid">
-        <div className="panel-card">
-          <div className="panel-head">
-            <h2>Alta de Colaborador</h2>
-            <span className="pill-tag">Control RBAC</span>
-          </div>
-          <div className="form-grid-2">
-            <div className="form-field">
-              <label>Nombre</label>
-              <input value={employee.fullName} onChange={(e) => setEmployee({ ...employee, fullName: e.target.value })} />
-            </div>
-            <div className="form-field">
-              <label>Correo</label>
-              <input value={employee.email} onChange={(e) => setEmployee({ ...employee, email: e.target.value })} />
-            </div>
-          </div>
-          <div className="form-grid-2">
-            <div className="form-field">
-              <label>Rol</label>
-              <select value={employee.role} onChange={(e) => setEmployee({ ...employee, role: e.target.value })}>
-                <option>Administrador</option>
-                <option>Gerente</option>
-                <option>Cajero</option>
-                <option>Bodeguero</option>
-                <option>Repartidor</option>
-              </select>
-            </div>
-            <div className="form-field">
-              <label>Contraseña</label>
-              <input type="password" value={employee.password} onChange={(e) => setEmployee({ ...employee, password: e.target.value })} />
-            </div>
-          </div>
-          <button type="button" className="btn-primary" onClick={createEmployee}>
-            Crear Usuario
-          </button>
+  const NewEmployeeTab = () => (
+    <div className="two-col-grid">
+      <div className="panel-card">
+        <div className="panel-head">
+          <h2>Alta de Colaborador</h2>
+          <span className="pill-tag">Control RBAC</span>
         </div>
-
-        <div className="panel-card">
-          <div className="panel-head">
-            <h2>Auditoría & Crosscheck MSPAS</h2>
-            <span className="pill-tag">Validación Sanitaria</span>
+        <div className="form-grid-2">
+          <div className="form-field">
+            <label>Nombre</label>
+            <input value={employee.fullName} onChange={(e) => setEmployee({ ...employee, fullName: e.target.value })} />
           </div>
           <div className="form-field">
-            <label>ID de Orden a Validar</label>
-            <input value={crosscheckOrderId} onChange={(e) => setCrosscheckOrderId(e.target.value)} />
+            <label>Correo</label>
+            <input value={employee.email} onChange={(e) => setEmployee({ ...employee, email: e.target.value })} />
           </div>
-          <button type="button" className="btn-primary" onClick={doCrosscheck}>
-            Registrar Validación de Receta
-          </button>
-          <div className="reports-summary-grid">
-            <div className="report-summary-box"><strong>{reports?.monthlySales?.length ?? 0}</strong><span>Períodos analizados</span></div>
-            <div className="report-summary-box"><strong>{reports?.topProducts?.length ?? 0}</strong><span>Productos con ventas</span></div>
-          </div>
-          {status && <div className="checkout-status-msg">{status}</div>}
         </div>
-      </div>
-
-      <div className="panel-card" style={{ marginTop: '1rem' }}>
-        <div className="panel-head"><h2>Categorías de medicamentos</h2><span className="pill-tag">Administrador / Gerente</span></div>
         <div className="form-grid-2">
-          <div className="form-field"><label>Nombre de categoría</label><input value={newCategory.name} onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })} placeholder="Ej. Vitaminas" /></div>
-          <div className="form-field"><label>Categoría principal</label><select value={newCategory.parentId ?? ''} onChange={(e) => setNewCategory({ ...newCategory, parentId: e.target.value ? Number(e.target.value) : null })}><option value="">Sin categoría principal</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div>
+          <div className="form-field">
+            <label>Rol</label>
+            <select value={employee.role} onChange={(e) => setEmployee({ ...employee, role: e.target.value })}>
+              <option>Administrador</option>
+              <option>Gerente</option>
+              <option>Cajero</option>
+              <option>Bodeguero</option>
+              <option>Repartidor</option>
+            </select>
+          </div>
+          <div className="form-field">
+            <label>Contraseña</label>
+            <input type="password" value={employee.password} onChange={(e) => setEmployee({ ...employee, password: e.target.value })} />
+          </div>
         </div>
-        <button type="button" className="btn-primary" onClick={addCategory}>Agregar categoría</button>
-        <div className="item-list-stack" style={{ marginTop: '0.75rem' }}>{categories.map((category) => <div className="compact-list-row" key={category.id}><strong>{category.name}</strong><button type="button" className="btn-secondary" onClick={() => removeCategory(category)}>Eliminar</button></div>)}</div>
+        <button type="button" className="btn-primary" onClick={createEmployee}>
+          Crear Usuario
+        </button>
       </div>
 
-      <div className="panel-card admin-suppliers-panel" style={{ marginTop: '1rem' }}>
+      <div className="panel-card">
         <div className="panel-head">
-          <div>
-            <h2>Gestión de proveedores</h2>
-            <span className="panel-subtitle">Contactos, compras y estado operativo</span>
-          </div>
-          <span className="pill-tag">Administrador / Gerente</span>
+          <h2>Auditoría & Crosscheck MSPAS</h2>
+          <span className="pill-tag">Validación Sanitaria</span>
         </div>
-        <div className="supplier-toolbar">
-          <div className="form-field supplier-search-field">
-            <label>Buscar proveedor</label>
-            <input value={supplierSearch} onChange={(e) => setSupplierSearch(e.target.value)} placeholder="Nombre, NIT, correo o teléfono" />
-          </div>
-          {editingSupplierId && <button type="button" className="btn-secondary" onClick={resetSupplierForm}>Cancelar edición</button>}
+        <div className="form-field">
+          <label>ID de Orden a Validar</label>
+          <input value={crosscheckOrderId} onChange={(e) => setCrosscheckOrderId(e.target.value)} />
         </div>
-        <div className="form-grid-2 supplier-form-grid">
-          <div className="form-field"><label>Empresa o proveedor</label><input value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} /></div>
-          <div className="form-field"><label>Nombre del contacto</label><input value={supplierForm.contactName} onChange={(e) => setSupplierForm({ ...supplierForm, contactName: e.target.value })} /></div>
-          <div className="form-field"><label>NIT</label><input value={supplierForm.nit} onChange={(e) => setSupplierForm({ ...supplierForm, nit: e.target.value })} /></div>
-          <div className="form-field"><label>Teléfono</label><input value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} /></div>
-          <div className="form-field"><label>Correo electrónico</label><input type="email" value={supplierForm.email} onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })} /></div>
-          <div className="form-field"><label>Dirección</label><input value={supplierForm.address} onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })} /></div>
+        <button type="button" className="btn-primary" onClick={doCrosscheck}>
+          Registrar Validación de Receta
+        </button>
+        <div className="reports-summary-grid">
+          <div className="report-summary-box"><strong>{reports?.monthlySales?.length ?? 0}</strong><span>Períodos analizados</span></div>
+          <div className="report-summary-box"><strong>{reports?.topProducts?.length ?? 0}</strong><span>Productos con ventas</span></div>
         </div>
-        <div className="supplier-form-actions">
-          <label className="checkbox-field"><input type="checkbox" checked={supplierForm.active} onChange={(e) => setSupplierForm({ ...supplierForm, active: e.target.checked })} /> Proveedor activo</label>
-          <button type="button" className="btn-primary" onClick={saveSupplier}>{editingSupplierId ? 'Guardar cambios' : 'Registrar proveedor'}</button>
+        {status && <div className="checkout-status-msg">{status}</div>}
+      </div>
+    </div>
+  );
+
+  const CrosscheckTab = () => (
+    <div className="panel-card">
+      <div className="panel-head">
+        <h2>Auditoría & Crosscheck MSPAS</h2>
+        <span className="pill-tag">Validación Sanitaria</span>
+      </div>
+      <div className="form-field">
+        <label>ID de Orden a Validar</label>
+        <input value={crosscheckOrderId} onChange={(e) => setCrosscheckOrderId(e.target.value)} />
+      </div>
+      <button type="button" className="btn-primary" onClick={doCrosscheck}>
+        Registrar Validación de Receta
+      </button>
+      <div className="reports-summary-grid">
+        <div className="report-summary-box"><strong>{reports?.monthlySales?.length ?? 0}</strong><span>Períodos analizados</span></div>
+        <div className="report-summary-box"><strong>{reports?.topProducts?.length ?? 0}</strong><span>Productos con ventas</span></div>
+      </div>
+      {status && <div className="checkout-status-msg">{status}</div>}
+    </div>
+  );
+
+  const CategoriesTab = () => (
+    <div className="panel-card" style={{ marginTop: '1rem' }}>
+      <div className="panel-head"><h2>Categorías de medicamentos</h2><span className="pill-tag">Administrador / Gerente</span></div>
+      <div className="form-grid-2">
+        <div className="form-field"><label>Nombre de categoría</label><input value={newCategory.name} onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })} placeholder="Ej. Vitaminas" /></div>
+        <div className="form-field"><label>Categoría principal</label><select value={newCategory.parentId ?? ''} onChange={(e) => setNewCategory({ ...newCategory, parentId: e.target.value ? Number(e.target.value) : null })}><option value="">Sin categoría principal</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div>
+      </div>
+      <button type="button" className="btn-primary" onClick={addCategory}>Agregar categoría</button>
+      <div className="item-list-stack" style={{ marginTop: '0.75rem' }}>{categories.map((category) => <div className="compact-list-row" key={category.id}><strong>{category.name}</strong><button type="button" className="btn-secondary" onClick={() => removeCategory(category)}>Eliminar</button></div>)}</div>
+    </div>
+  );
+
+  const SuppliersTab = () => (
+    <div className="panel-card admin-suppliers-panel" style={{ marginTop: '1rem' }}>
+      <div className="panel-head">
+        <div>
+          <h2>Gestión de proveedores</h2>
+          <span className="panel-subtitle">Contactos, compras y estado operativo</span>
         </div>
-        <div className="lots-table-wrap">
-          <table className="lots-table suppliers-table">
-            <thead><tr><th>Proveedor</th><th>Contacto</th><th>NIT</th><th>Comunicación</th><th>Estado</th><th>Acciones</th></tr></thead>
-            <tbody>
-              {filteredSuppliers.map((supplier) => <tr key={supplier.id}>
-                <td><strong>{supplier.name}</strong><small>{supplier.address}</small></td>
-                <td>{supplier.contactName || 'Sin contacto'}</td>
-                <td>{supplier.nit}</td>
-                <td><span>{supplier.email}</span><small>{supplier.phone}</small></td>
-                <td><span className={`supplier-status ${supplier.active ? 'active' : 'inactive'}`}>{supplier.active ? 'Activo' : 'Inactivo'}</span></td>
-                <td><div className="supplier-actions"><button type="button" className="btn-secondary" onClick={() => editSupplier(supplier)}>Editar</button><button type="button" className="btn-secondary" onClick={() => toggleSupplier(supplier)}>{supplier.active ? 'Desactivar' : 'Activar'}</button></div></td>
-              </tr>)}
-              {filteredSuppliers.length === 0 && <tr><td colSpan={6} className="no-lots-msg">No hay proveedores que coincidan con la búsqueda.</td></tr>}
-            </tbody>
-          </table>
+        <span className="pill-tag">Administrador / Gerente</span>
+      </div>
+      <div className="supplier-toolbar">
+        <div className="form-field supplier-search-field">
+          <label>Buscar proveedor</label>
+          <input value={supplierSearch} onChange={(e) => setSupplierSearch(e.target.value)} placeholder="Nombre, NIT, correo o teléfono" />
         </div>
+        {editingSupplierId && <button type="button" className="btn-secondary" onClick={resetSupplierForm}>Cancelar edición</button>}
+      </div>
+      <div className="form-grid-2 supplier-form-grid">
+        <div className="form-field"><label>Empresa o proveedor</label><input value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} /></div>
+        <div className="form-field"><label>Nombre del contacto</label><input value={supplierForm.contactName} onChange={(e) => setSupplierForm({ ...supplierForm, contactName: e.target.value })} /></div>
+        <div className="form-field"><label>NIT</label><input value={supplierForm.nit} onChange={(e) => setSupplierForm({ ...supplierForm, nit: e.target.value })} /></div>
+        <div className="form-field"><label>Teléfono</label><input value={supplierForm.phone} onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })} /></div>
+        <div className="form-field"><label>Correo electrónico</label><input type="email" value={supplierForm.email} onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })} /></div>
+        <div className="form-field"><label>Dirección</label><input value={supplierForm.address} onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })} /></div>
+      </div>
+      <div className="supplier-form-actions">
+        <label className="checkbox-field"><input type="checkbox" checked={supplierForm.active} onChange={(e) => setSupplierForm({ ...supplierForm, active: e.target.checked })} /> Proveedor activo</label>
+        <button type="button" className="btn-primary" onClick={saveSupplier}>{editingSupplierId ? 'Guardar cambios' : 'Registrar proveedor'}</button>
+      </div>
+      <div className="lots-table-wrap">
+        <table className="lots-table suppliers-table">
+          <thead><tr><th>Proveedor</th><th>Contacto</th><th>NIT</th><th>Comunicación</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <tbody>
+            {filteredSuppliers.map((supplier) => <tr key={supplier.id}>
+              <td><strong>{supplier.name}</strong><small>{supplier.address}</small></td>
+              <td>{supplier.contactName || 'Sin contacto'}</td>
+              <td>{supplier.nit}</td>
+              <td><span>{supplier.email}</span><small>{supplier.phone}</small></td>
+              <td><span className={`supplier-status ${supplier.active ? 'active' : 'inactive'}`}>{supplier.active ? 'Activo' : 'Inactivo'}</span></td>
+              <td><div className="supplier-actions"><button type="button" className="btn-secondary" onClick={() => editSupplier(supplier)}>Editar</button><button type="button" className="btn-secondary" onClick={() => toggleSupplier(supplier)}>{supplier.active ? 'Desactivar' : 'Activar'}</button></div></td>
+            </tr>)}
+            {filteredSuppliers.length === 0 && <tr><td colSpan={6} className="no-lots-msg">No hay proveedores que coincidan con la búsqueda.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  // Render active tab panel
+  const renderTabPanel = () => {
+    switch (activeTab) {
+      case 'performance': return <PerformanceTab />;
+      case 'lowStock': return <LowStockTab />;
+      case 'newEmployee': return <NewEmployeeTab />;
+      case 'crosscheck': return <CrosscheckTab />;
+      case 'categories': return <CategoriesTab />;
+      case 'suppliers': return <SuppliersTab />;
+      default: return <PerformanceTab />;
+    }
+  };
+
+  return (
+    <div className="internal-page-container">
+      {/* Admin Tab Bar */}
+      <div className="admin-tab-bar">
+        <div className="admin-tab-bar-desktop" role="tablist" aria-label="Secciones de administración">
+          {ADMIN_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              aria-controls={`panel-${tab.id}`}
+              id={`tab-${tab.id}`}
+              className={`admin-tab-btn ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <span className="admin-tab-icon">{tab.icon}</span>
+              <span className="admin-tab-label">{tab.label}</span>
+            </button>
+          ))}
+        </div>
+        {/* Mobile Dropdown */}
+        <div className="admin-tab-bar-mobile">
+          <select
+            value={activeTab}
+            onChange={(e) => setActiveTab(e.target.value as AdminTab)}
+            className="admin-tab-select"
+            aria-label="Seleccionar sección de administración"
+          >
+            {ADMIN_TABS.map((tab) => (
+              <option key={tab.id} value={tab.id}>{tab.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Tab Panels */}
+      <div id="admin-tab-panels" role="tabpanel" aria-labelledby={`tab-${activeTab}`}>
+        {renderTabPanel()}
       </div>
     </div>
   );
@@ -3875,7 +4620,10 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<ProductCard[]>([]);
   const [query, setQuery] = useState('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | 'all'>('all');
   const [branchId, setBranchId] = useState(1);
+  const [minPrice, setMinPrice] = useState<number | ''>('');
+  const [maxPrice, setMaxPrice] = useState<number | ''>('');
   const [cart, setCart] = useState<Array<{ productId: number; quantity: number }>>([]);
   const [selectedProductForGlobalModal, setSelectedProductForGlobalModal] = useState<ProductCard | null>(null);
   const [recipeFile, setRecipeFile] = useState<File | null>(null);
@@ -3883,6 +4631,9 @@ export default function App() {
   const [paymentClientSecret, setPaymentClientSecret] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const toggleCheckout = useCallback(() => setIsCheckoutOpen(prev => !prev), []);
 
   const [checkout, setCheckout] = useState({
     name: '',
@@ -3934,12 +4685,17 @@ export default function App() {
   // Load catalog when query or branch changes
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      apiRequest<ProductCard[]>(`/api/public/catalog?q=${encodeURIComponent(query)}&branchId=${branchId}`)
+      const params = new URLSearchParams();
+      params.set('q', query);
+      params.set('branchId', String(branchId));
+      if (minPrice !== '') params.set('minPrice', String(minPrice));
+      if (maxPrice !== '') params.set('maxPrice', String(maxPrice));
+      apiRequest<ProductCard[]>(`/api/public/catalog?${params.toString()}`)
         .then(setProducts)
         .catch((error) => console.error(error.message));
     }, 150);
     return () => window.clearTimeout(timer);
-  }, [query, branchId]);
+  }, [query, branchId, minPrice, maxPrice]);
 
   function handleAddToCart(productId: number, quantity: number = 1) {
     const product = products.find((p) => p.id === productId);
@@ -4140,7 +4896,18 @@ export default function App() {
         onLogout={handleLogout}
         customer={customer}
         onCustomerLogout={handleCustomerLogout}
+        categories={categories}
+        onCategorySelect={setSelectedCategoryId}
+        onQueryChange={setQuery}
+        minPrice={minPrice}
+        maxPrice={maxPrice}
+        onMinPriceChange={setMinPrice}
+        onMaxPriceChange={setMaxPrice}
+        onToggleCheckout={toggleCheckout}
       />
+
+      {/* HERO CAROUSEL - Solo en portal público */}
+      {activePortal === 'public' && <HeroCarousel onNavigatePortal={setActivePortal} />}
 
       {/* 2. TOP PAYMENT SECTION DIRECTLY ABOVE CATALOG */}
       {activePortal === 'public' && (
@@ -4160,6 +4927,8 @@ export default function App() {
           isSubmitting={isSubmitting}
           status={status}
           paymentClientSecret={paymentClientSecret}
+          isExpanded={isCheckoutOpen}
+          onToggleExpand={toggleCheckout}
         />
       )}
 
@@ -4170,11 +4939,17 @@ export default function App() {
           branchId={branchId}
           categories={categories}
           products={products}
-          query={query}
-          onQueryChange={setQuery}
           cart={cart}
           onAddToCart={handleAddToCart}
           toastMessage={toastMessage}
+          minPrice={minPrice}
+          maxPrice={maxPrice}
+          onMinPriceChange={setMinPrice}
+          onMaxPriceChange={setMaxPrice}
+          selectedCategoryId={selectedCategoryId}
+          onCategorySelect={setSelectedCategoryId}
+          query={query}
+          onQueryChange={setQuery}
         />
       )}
 
@@ -4191,7 +4966,7 @@ export default function App() {
         inCartQuantity={activeInCartItemForGlobal?.quantity ?? 0}
       />
 
-      {/* INTERNAL PORTALS */}
+      {/* INTERNAL PORTALS - Portales Internos FARMACIA FJK */}
       {activePortal === 'login' && (
         <LoginPage onLogin={handleLogin} onSuccess={() => setActivePortal('admin')} />
       )}

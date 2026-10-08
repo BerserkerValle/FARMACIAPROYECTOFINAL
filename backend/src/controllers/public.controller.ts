@@ -170,7 +170,7 @@ export async function suppliers(_req: Request, res: Response) {
 
 /**
  * Búsqueda y filtrado del catálogo público de medicamentos.
- * GET /api/public/catalog?q=paracetamol&branchId=1&categoryId=2
+ * GET /api/public/catalog?q=paracetamol&branchId=1&categoryId=2&minPrice=10&maxPrice=100
  * 
  * ¿CÓMO FUNCIONA?
  * - Si `databaseEnabled` es true, realiza consulta SQL optimizada con ILIKE.
@@ -180,9 +180,11 @@ export async function catalog(req: Request, res: Response) {
   const query = String(req.query.q ?? '').trim();
   const branchId = req.query.branchId ? Number(req.query.branchId) : undefined;
   const categoryId = req.query.categoryId ? Number(req.query.categoryId) : undefined;
+  const minPrice = req.query.minPrice ? Number(req.query.minPrice) : undefined;
+  const maxPrice = req.query.maxPrice ? Number(req.query.maxPrice) : undefined;
   const data = databaseEnabled
-    ? await searchDatabaseCatalog(query, branchId, categoryId)
-    : store.searchCatalog(query, branchId, categoryId);
+    ? await searchDatabaseCatalog(query, branchId, categoryId, minPrice, maxPrice)
+    : store.searchCatalog(query, branchId, categoryId, minPrice, maxPrice);
   return res.json({ success: true, data: data ?? [] });
 }
 

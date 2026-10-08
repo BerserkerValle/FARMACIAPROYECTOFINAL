@@ -665,7 +665,7 @@ export class PharmacyStore {
     return ids;
   }
 
-  searchCatalog(query: string, branchId?: number, categoryId?: number) {
+  searchCatalog(query: string, branchId?: number, categoryId?: number, minPrice?: number, maxPrice?: number) {
     this.assertReady();
     const normalized = query.trim().toLowerCase();
     const allowedCategoryIds = categoryId ? this.getCategoryWithDescendants(categoryId) : null;
@@ -679,6 +679,11 @@ export class PharmacyStore {
         const cat = this.snapshot.categories.find((c) => c.id === product.categoryId);
         const catName = cat?.name ?? '';
         return [product.name, product.brand, product.laboratory, product.sku, catName].some((text) => text.toLowerCase().includes(normalized));
+      })
+      .filter((product) => {
+        if (minPrice !== undefined && product.price < minPrice) return false;
+        if (maxPrice !== undefined && product.price > maxPrice) return false;
+        return true;
       })
       .map((product) => ({
         ...product,

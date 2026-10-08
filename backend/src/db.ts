@@ -691,7 +691,7 @@ export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
 /**
  * Realiza búsqueda en catálogo consolidando lotes disponibles en sucursal mediante `jsonb_agg`.
  */
-export async function searchDatabaseCatalog(query: string, branchId?: number, categoryId?: number) {
+export async function searchDatabaseCatalog(query: string, branchId?: number, categoryId?: number, minPrice?: number, maxPrice?: number) {
   if (!pool) return null;
   const result = await pool.query(
     `SELECT p.id_producto AS id,
@@ -728,16 +728,18 @@ export async function searchDatabaseCatalog(query: string, branchId?: number, ca
        LEFT JOIN Stock_Sucursal ss
          ON ss.id_lote = l.id_lote
         AND ($2::integer IS NULL OR ss.id_sucursal = $2)
-      WHERE COALESCE(p.activo, true) = true
-        AND ($1 = '' OR p.nombre_producto ILIKE '%' || $1 || '%'
-                    OR p.sku_codigo ILIKE '%' || $1 || '%'
-                    OR COALESCE(p.marca, '') ILIKE '%' || $1 || '%'
-                    OR COALESCE(p.laboratorio, '') ILIKE '%' || $1 || '%'
-                    OR COALESCE(cat.nombre_categoria, '') ILIKE '%' || $1 || '%')
-        AND ($3::integer IS NULL OR p.id_categoria = $3 OR cat.id_categoria_padre = $3)
-      GROUP BY p.id_producto
-      ORDER BY p.nombre_producto`,
-    [query.trim(), branchId ?? null, categoryId ?? null]
+     WHERE COALESCE(p.activo, true) = true
+       AND ($1 = '' OR p.nombre_producto ILIKE '%' || $1 || '%'
+                   OR p.sku_codigo ILIKE '%' || $1 || '%'
+                   OR COALESCE(p.marca, '') ILIKE '%' || $1 || '%'
+                   OR COALESCE(p.laboratorio, '') ILIKE '%' || $1 || '%'
+                   OR COALESCE(cat.nombre_categoria, '') ILIKE '%' || $1 || '%')
+       AND ($3::integer IS NULL OR p.id_categoria = $3 OR cat.id_categoria_padre = $3)
+       AND ($4::numeric IS NULL OR COALESCE(MIN(l.precio_venta), 0) >= $4)
+       AND ($5::numeric IS NULL OR COALESCE(MIN(l.precio_venta), 0) <= $5)
+     GROUP BY p.id_producto
+     ORDER BY p.nombre_producto`,
+    [query.trim(), branchId ?? null, categoryId ?? null, minPrice ?? null, maxPrice ?? null]
   );
   return result.rows;
 }

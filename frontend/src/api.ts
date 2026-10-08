@@ -12,12 +12,15 @@
  *    - Asignación de cabecera `Content-Type: application/json` cuando no es FormData.
  *    - Desactivación de caché del navegador (`cache: 'no-store'`) para datos en tiempo real.
  *    - Transformación y control de excepciones JSON.
+ *    - Interceptor global de errores con mensajes amigables para FARMACIA FJK.
  * 3. Manejo de Cargas Multimedia (Multipart / FormData):
  *    - `uploadPrescription`: Receta médica vinculada a una orden existente.
  *    - `uploadTemporaryPrescription`: Receta temporal previa al checkout.
  *    - `uploadProductImage`: Fotografía de medicamento para catálogo de bodega.
  * ============================================================================
  */
+
+import { translateApiError } from './lib/errorTranslator';
 
 /**
  * Limpia y normaliza la URL de la API asegurando protocolo y eliminando diagonales finales.
@@ -68,8 +71,34 @@ function triggerUnauthorized(): void {
   }
 }
 
+/**
+ * Callback global para mostrar notificaciones de error (toasts).
+ * Se registra desde el ToastProvider en main.tsx.
+ */
+type GlobalErrorHandler = (message: string) => void;
+
+let globalErrorHandler: GlobalErrorHandler | null = null;
+
+export function setGlobalErrorHandler(handler: GlobalErrorHandler | null): void {
+  globalErrorHandler = handler;
+}
+
+function triggerGlobalError(message: string): void {
+  if (globalErrorHandler) {
+    globalErrorHandler(message);
+  }
+}
+
+/**
+ * Opciones extendidas para apiRequest
+ */
+export interface ApiRequestOptions extends RequestInit {
+  /** Si true, no muestra toast de error global (para manejo local personalizado) */
+  silent?: boolean;
+}
+
 // ============================================================================
-// CLIENTE HTTP PRINCIPAL (FETCH API GENÉRICA)
+// CLIENTE HTTP PRINCIPAL (FETCH API GENÉRICA) CON INTERCEPTOR GLOBAL DE ERRORES
 // ============================================================================
 
 /**
@@ -81,47 +110,61 @@ function triggerUnauthorized(): void {
  * 3. Si el cuerpo de la petición no es un `FormData`, define `Content-Type: application/json`.
  * 4. Ejecuta `fetch` con la opción `cache: 'no-store'` para evitar respuestas desactualizadas.
  * 5. Parsea la respuesta JSON y evalúa `payload.success`. Si es false, arroja un `ApiError`.
- * 6. Retorna la propiedad `payload.data` fuertemente tipada como `T`.
+ * 6. Si hay error y no es `silent`, dispara notificación global amigable (toast).
+ * 7. Retorna la propiedad `payload.data` fuertemente tipada como `T`.
  *
  * @template T Tipo de retorno esperado en `payload.data`.
  * @param {string} path Ruta relativa del endpoint (ej: '/api/public/catalog').
- * @param {RequestInit} [options={}] Opciones estándar de la Fetch API (método, body, etc.).
+ * @param {ApiRequestOptions} [options={}] Opciones estándar de la Fetch API + `silent`.
  * @param {string | null} [token] Token JWT de sesión (empleado o cliente).
  * @returns {Promise<T>} Promesa con los datos devueltos por el backend.
  */
-export async function apiRequest<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
-  const headers = new Headers(options.headers ?? {});
+export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}, token?: string | null): Promise<T> {
+  const { silent, ...fetchOptions } = options;
+  const headers = new Headers(fetchOptions.headers ?? {});
   
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
   
-  if (!(options.body instanceof FormData)) {
+  if (!(fetchOptions.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
 
   let response: Response;
   try {
     response = await fetch(`${API_URL}${path}`, {
-      ...options,
+      ...fetchOptions,
       cache: 'no-store',
       headers
     });
-  } catch {
-    throw new Error(
-      API_URL
-        ? `No se pudo conectar con la API en ${API_URL}. Revisa que el backend esté activo y que VITE_API_URL sea correcto.`
-        : 'La API no está configurada. Define VITE_API_URL en las variables del frontend y vuelve a desplegar.'
-    );
+  } catch (networkError) {
+    const errorMessage = API_URL
+      ? `No se pudo conectar con la API en ${API_URL}. Revisa que el backend esté activo y que VITE_API_URL sea correcto.`
+      : 'La API no está configurada. Define VITE_API_URL en las variables del frontend y vuelve a desplegar.';
+    
+    if (!silent) {
+      triggerGlobalError(translateApiError(networkError));
+    }
+    throw new Error(errorMessage);
   }
 
   const payload = await response.json().catch(() => ({ success: false, message: 'Respuesta inválida' }));
+  
   if (!response.ok || payload.success === false) {
     if (response.status === 401) {
       triggerUnauthorized();
     }
-    throw new ApiError(payload.message || 'No se pudo completar la operación', response.status);
+    
+    const apiError = new ApiError(payload.message || 'No se pudo completar la operación', response.status);
+    
+    if (!silent) {
+      triggerGlobalError(translateApiError(apiError));
+    }
+    
+    throw apiError;
   }
+  
   return payload.data as T;
 }
 
@@ -152,7 +195,9 @@ export async function uploadPrescription(file: File, orderId: number, kind: 'web
   const payload = await response.json();
   if (!response.ok || payload.success === false) {
     if (response.status === 401) triggerUnauthorized();
-    throw new ApiError(payload.message || 'No se pudo subir la receta', response.status);
+    const apiError = new ApiError(payload.message || 'No se pudo subir la receta', response.status);
+    triggerGlobalError(translateApiError(apiError));
+    throw apiError;
   }
   return payload.data as { url: string; order: { id: number; code: string } };
 }
@@ -176,7 +221,9 @@ export async function uploadTemporaryPrescription(file: File, token?: string | n
   const payload = await response.json();
   if (!response.ok || payload.success === false) {
     if (response.status === 401) triggerUnauthorized();
-    throw new ApiError(payload.message || 'No se pudo subir la receta', response.status);
+    const apiError = new ApiError(payload.message || 'No se pudo subir la receta', response.status);
+    triggerGlobalError(translateApiError(apiError));
+    throw apiError;
   }
   return payload.data as { url: string };
 }
@@ -200,7 +247,9 @@ export async function uploadProductImage(file: File, token?: string | null) {
   const payload = await response.json().catch(() => ({ success: false, message: 'Respuesta inválida del servidor' }));
   if (!response.ok || payload.success === false) {
     if (response.status === 401) triggerUnauthorized();
-    throw new ApiError(payload.message || 'No se pudo subir la imagen del medicamento', response.status);
+    const apiError = new ApiError(payload.message || 'No se pudo subir la imagen del medicamento', response.status);
+    triggerGlobalError(translateApiError(apiError));
+    throw apiError;
   }
   return payload.data as { url: string; filename: string };
 }
