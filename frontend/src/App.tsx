@@ -4635,6 +4635,13 @@ export default function App() {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const toggleCheckout = useCallback(() => setIsCheckoutOpen(prev => !prev), []);
 
+  useEffect(() => {
+    if (!isCheckoutOpen) return;
+    window.setTimeout(() => {
+      document.querySelector('.top-payment-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  }, [isCheckoutOpen]);
+
   const [checkout, setCheckout] = useState({
     name: '',
     nit: 'CF',
@@ -4910,7 +4917,7 @@ export default function App() {
       {activePortal === 'public' && <HeroCarousel onNavigatePortal={setActivePortal} />}
 
       {/* 2. TOP PAYMENT SECTION DIRECTLY ABOVE CATALOG */}
-      {activePortal === 'public' && (
+      {activePortal === 'public' && (isCheckoutOpen || paymentClientSecret) && (
         <TopPaymentBar
           cart={cart}
           products={products}
@@ -4927,7 +4934,7 @@ export default function App() {
           isSubmitting={isSubmitting}
           status={status}
           paymentClientSecret={paymentClientSecret}
-          isExpanded={isCheckoutOpen}
+          isExpanded={isCheckoutOpen || Boolean(paymentClientSecret)}
           onToggleExpand={toggleCheckout}
         />
       )}
