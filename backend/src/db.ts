@@ -734,11 +734,11 @@ export async function searchDatabaseCatalog(query: string, branchId?: number, ca
                    OR COALESCE(p.marca, '') ILIKE '%' || $1 || '%'
                    OR COALESCE(p.laboratorio, '') ILIKE '%' || $1 || '%'
                    OR COALESCE(cat.nombre_categoria, '') ILIKE '%' || $1 || '%')
-       AND ($3::integer IS NULL OR p.id_categoria = $3 OR cat.id_categoria_padre = $3)
-       AND ($4::numeric IS NULL OR COALESCE(MIN(l.precio_venta), 0) >= $4)
-       AND ($5::numeric IS NULL OR COALESCE(MIN(l.precio_venta), 0) <= $5)
-     GROUP BY p.id_producto
-     ORDER BY p.nombre_producto`,
+        AND ($3::integer IS NULL OR p.id_categoria = $3 OR cat.id_categoria_padre = $3)
+      GROUP BY p.id_producto
+      HAVING ($4::numeric IS NULL OR COALESCE(MIN(l.precio_venta), 0) >= $4)
+         AND ($5::numeric IS NULL OR COALESCE(MIN(l.precio_venta), 0) <= $5)
+      ORDER BY p.nombre_producto`,
     [query.trim(), branchId ?? null, categoryId ?? null, minPrice ?? null, maxPrice ?? null]
   );
   return result.rows;
