@@ -1814,6 +1814,43 @@ button, input, select, textarea {
   margin-top: 0.85rem;
 }
 
+.checkout-only-page {
+  min-height: 100vh;
+  padding: 1.25rem;
+  background: var(--bg-page);
+}
+
+.checkout-only-header {
+  display: flex;
+  max-width: 980px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 auto 1rem;
+}
+
+.checkout-only-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--text-main);
+}
+
+.checkout-only-brand strong,
+.checkout-only-brand small {
+  display: block;
+}
+
+.checkout-only-brand small {
+  margin-top: 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.checkout-only-page .top-payment-section {
+  padding-top: 0;
+}
+
 .billing-type-options {
   display: flex;
   gap: 0.55rem;

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useRef } from 'react';
 import type { FormEvent } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
@@ -275,7 +275,7 @@ function TopHeader({
   maxPrice,
   onMinPriceChange,
   onMaxPriceChange,
-  onToggleCheckout
+  onOpenCheckout
 }: {
   branches: Branch[];
   branchId: number;
@@ -296,7 +296,7 @@ function TopHeader({
   maxPrice: number | '';
   onMinPriceChange: (value: number | '') => void;
   onMaxPriceChange: (value: number | '') => void;
-  onToggleCheckout: () => void;
+  onOpenCheckout: () => void;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
@@ -414,13 +414,7 @@ function TopHeader({
               <button
                 type="button"
                 className="cart-btn"
-                onClick={() => {
-                  onToggleCheckout();
-                  const paymentSection = document.querySelector('.top-payment-section');
-                  if (paymentSection) {
-                    paymentSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }
-                }}
+                onClick={onOpenCheckout}
                 aria-label={`Carrito de compras: ${cartCount} items, Total ${cartTotal.toFixed(2)}`}
               >
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -4624,7 +4618,15 @@ export default function App() {
   const [branchId, setBranchId] = useState(1);
   const [minPrice, setMinPrice] = useState<number | ''>('');
   const [maxPrice, setMaxPrice] = useState<number | ''>('');
-  const [cart, setCart] = useState<Array<{ productId: number; quantity: number }>>([]);
+  const [cart, setCart] = useState<Array<{ productId: number; quantity: number }>>(() => {
+    try {
+      const raw = localStorage.getItem('farmacia-fjk.cart');
+      const saved = raw ? JSON.parse(raw) : [];
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedProductForGlobalModal, setSelectedProductForGlobalModal] = useState<ProductCard | null>(null);
   const [recipeFile, setRecipeFile] = useState<File | null>(null);
   const [status, setStatus] = useState('');
@@ -4632,15 +4634,9 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  const toggleCheckout = useCallback(() => setIsCheckoutOpen(prev => !prev), []);
-
   useEffect(() => {
-    if (!isCheckoutOpen) return;
-    window.setTimeout(() => {
-      document.querySelector('.top-payment-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 0);
-  }, [isCheckoutOpen]);
+    localStorage.setItem('farmacia-fjk.cart', JSON.stringify(cart));
+  }, [cart]);
 
   const [checkout, setCheckout] = useState({
     name: '',
@@ -4677,6 +4673,18 @@ export default function App() {
       })
       .catch((error) => setStatus(error instanceof Error ? error.message : 'No se pudo cargar el pago'));
   }, []);
+
+  useEffect(() => {
+    if (!customer) return;
+    setCheckout((previous) => ({
+      ...previous,
+      name: customer.fullName,
+      email: customer.email,
+      phone: customer.phone,
+      nit: customer.nit || 'CF',
+      address: customer.address || previous.address
+    }));
+  }, [customer]);
 
   // Load branches & categories
   useEffect(() => {
@@ -4887,6 +4895,50 @@ export default function App() {
     ? cart.find((i) => i.productId === selectedProductForGlobalModal.id)
     : null;
 
+  function openCheckout() {
+    localStorage.setItem('farmacia-fjk.cart', JSON.stringify(cart));
+    const checkoutWindow = window.open(`${window.location.origin}/?checkout=1`, '_blank', 'noopener,noreferrer');
+    if (!checkoutWindow) window.location.assign(`${window.location.origin}/?checkout=1`);
+  }
+
+  const checkoutOnly = ['checkout', 'posPayment'].some((key) => new URLSearchParams(window.location.search).has(key));
+  const checkoutPanel = (
+    <TopPaymentBar
+      cart={cart}
+      products={products}
+      onUpdateQuantity={handleUpdateQuantity}
+      onRemoveItem={handleRemoveItem}
+      onSelectProductForModal={setSelectedProductForGlobalModal}
+      branchId={branchId}
+      branches={branches}
+      recipeFile={recipeFile}
+      onSetRecipeFile={setRecipeFile}
+      checkout={checkout}
+      onUpdateCheckout={(fields) => setCheckout((previous) => ({ ...previous, ...fields }))}
+      onSubmitPayment={handleCheckoutCart}
+      isSubmitting={isSubmitting}
+      status={status}
+      paymentClientSecret={paymentClientSecret}
+      isExpanded
+      onToggleExpand={() => undefined}
+    />
+  );
+
+  if (checkoutOnly) {
+    return (
+      <div className="checkout-only-page">
+        <div className="checkout-only-header">
+          <div className="checkout-only-brand">
+            <div className="brand-icon"><span>+</span></div>
+            <div><strong>Gestión de Farmacia</strong><small>Pago seguro de tu pedido</small></div>
+          </div>
+          <button type="button" className="btn-secondary" onClick={() => { window.location.href = '/'; }}>Volver al catálogo</button>
+        </div>
+        {checkoutPanel}
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       {/* 1. TOP HEADER */}
@@ -4910,36 +4962,13 @@ export default function App() {
         maxPrice={maxPrice}
         onMinPriceChange={setMinPrice}
         onMaxPriceChange={setMaxPrice}
-        onToggleCheckout={toggleCheckout}
+        onOpenCheckout={openCheckout}
       />
 
       {/* HERO CAROUSEL - Solo en portal público */}
       {activePortal === 'public' && <HeroCarousel onNavigatePortal={setActivePortal} />}
 
-      {/* 2. TOP PAYMENT SECTION DIRECTLY ABOVE CATALOG */}
-      {activePortal === 'public' && (isCheckoutOpen || paymentClientSecret) && (
-        <TopPaymentBar
-          cart={cart}
-          products={products}
-          onUpdateQuantity={handleUpdateQuantity}
-          onRemoveItem={handleRemoveItem}
-          onSelectProductForModal={setSelectedProductForGlobalModal}
-          branchId={branchId}
-          branches={branches}
-          recipeFile={recipeFile}
-          onSetRecipeFile={setRecipeFile}
-          checkout={checkout}
-          onUpdateCheckout={(fields) => setCheckout((prev) => ({ ...prev, ...fields }))}
-          onSubmitPayment={handleCheckoutCart}
-          isSubmitting={isSubmitting}
-          status={status}
-          paymentClientSecret={paymentClientSecret}
-          isExpanded={isCheckoutOpen || Boolean(paymentClientSecret)}
-          onToggleExpand={toggleCheckout}
-        />
-      )}
-
-      {/* 3. MAIN PRODUCT CATALOG BELOW TOP PAYMENT */}
+      {/* MAIN PRODUCT CATALOG */}
       {activePortal === 'public' && (
         <PublicCatalogView
           branches={branches}
