@@ -1,4 +1,4 @@
-import type { ApiError } from '../api';
+import { ApiError } from '../api';
 
 export interface ValidationErrorDetail {
   validation?: string;
