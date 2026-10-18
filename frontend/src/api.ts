@@ -57,7 +57,7 @@ export class ApiError extends Error {
  * Callback global para manejar 401 No Autorizado.
  * Se registra desde App.tsx para limpiar sesión y redirigir a login.
  */
-type UnauthorizedHandler = () => void;
+type UnauthorizedHandler = (token: string) => void;
 
 let unauthorizedHandler: UnauthorizedHandler | null = null;
 
@@ -65,9 +65,9 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): voi
   unauthorizedHandler = handler;
 }
 
-function triggerUnauthorized(): void {
+function triggerUnauthorized(token: string): void {
   if (unauthorizedHandler) {
-    unauthorizedHandler();
+    unauthorizedHandler(token);
   }
 }
 
@@ -152,8 +152,8 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const payload = await response.json().catch(() => ({ success: false, message: 'Respuesta inválida' }));
   
   if (!response.ok || payload.success === false) {
-    if (response.status === 401) {
-      triggerUnauthorized();
+    if (response.status === 401 && token) {
+      triggerUnauthorized(token);
     }
     
     const apiError = new ApiError(payload.message || 'No se pudo completar la operación', response.status);
@@ -194,7 +194,7 @@ export async function uploadPrescription(file: File, orderId: number, kind: 'web
   });
   const payload = await response.json();
   if (!response.ok || payload.success === false) {
-    if (response.status === 401) triggerUnauthorized();
+    if (response.status === 401 && token) triggerUnauthorized(token);
     const apiError = new ApiError(payload.message || 'No se pudo subir la receta', response.status);
     triggerGlobalError(translateApiError(apiError));
     throw apiError;
@@ -220,7 +220,7 @@ export async function uploadTemporaryPrescription(file: File, token?: string | n
   });
   const payload = await response.json();
   if (!response.ok || payload.success === false) {
-    if (response.status === 401) triggerUnauthorized();
+    if (response.status === 401 && token) triggerUnauthorized(token);
     const apiError = new ApiError(payload.message || 'No se pudo subir la receta', response.status);
     triggerGlobalError(translateApiError(apiError));
     throw apiError;
@@ -246,7 +246,7 @@ export async function uploadProductImage(file: File, token?: string | null) {
   });
   const payload = await response.json().catch(() => ({ success: false, message: 'Respuesta inválida del servidor' }));
   if (!response.ok || payload.success === false) {
-    if (response.status === 401) triggerUnauthorized();
+    if (response.status === 401 && token) triggerUnauthorized(token);
     const apiError = new ApiError(payload.message || 'No se pudo subir la imagen del medicamento', response.status);
     triggerGlobalError(translateApiError(apiError));
     throw apiError;

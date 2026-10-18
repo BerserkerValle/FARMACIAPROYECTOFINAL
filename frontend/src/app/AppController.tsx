@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { TopHeader, HeroCarousel } from '../components/PublicHeader';
 import LoginPage from '../features/auth/LoginPage';
-import { apiRequest, uploadTemporaryPrescription } from '../api';
+import { apiRequest, setUnauthorizedHandler, uploadTemporaryPrescription } from '../api';
 import { ProductDetailModal } from '../components/ProductDetailModal';
 
 import type { Portal, Branch, Category, ProductCard, EmployeeProfile, CustomerAccount } from '../types';
@@ -68,6 +68,24 @@ export default function AppController() {
     const raw = localStorage.getItem('farmacia-fjk.customer');
     return raw ? JSON.parse(raw) as CustomerAccount : null;
   });
+
+  useEffect(() => {
+    setUnauthorizedHandler((expiredToken) => {
+      if (expiredToken === readToken()) {
+        clearSession();
+        setToken(null);
+        setProfile(null);
+        setActivePortal('public');
+      }
+      if (expiredToken === readCustomerToken()) {
+        localStorage.removeItem('farmacia-fjk.customer');
+        localStorage.removeItem('farmacia-fjk.customer-token');
+        setCustomer(null);
+        setCustomerToken(null);
+      }
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   // Public Catalog State
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -227,7 +245,7 @@ export default function AppController() {
     setCart((current) => current.filter((item) => item.productId !== productId));
   }
 
-  async function handleCheckoutCart() {
+  async function handleCheckoutCart(discountCode?: string) {
     try {
       if (checkout.deliveryMode === 'DELIVERY' && !customer) {
         throw new Error('Inicia sesión o crea una cuenta para poder rastrear tu entrega a domicilio.');
@@ -264,7 +282,8 @@ export default function AppController() {
               phone: checkout.phone
             },
             items: cart,
-            prescriptionWebUrl
+            prescriptionWebUrl,
+            discountCode
           })
         }, customerToken
       );
@@ -473,7 +492,7 @@ export default function AppController() {
       {activePortal === 'pos' && <PosPage token={token} profile={profile} categories={categories} />}
       {activePortal === 'warehouse' && <WarehousePage token={token} categories={categories} />}
       {activePortal === 'delivery' && <DeliveryPage token={token} />}
-      {activePortal === 'admin' && <AdminPage token={token} />}
+      {activePortal === 'admin' && <AdminPage token={token} canManageDiscountCodes={profile?.role === 'Administrador'} />}
     </div>
   );
 }

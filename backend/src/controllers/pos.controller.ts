@@ -33,6 +33,7 @@ import {
 } from '../db.js';
 import { stripeClient } from './public.controller.js';
 import { store } from '../store.js';
+import { fiscalNitSchema } from '../utils.js';
 import {
   FORBIDDEN_MESSAGE,
   canClaimDelivery,
@@ -65,7 +66,7 @@ const saleSchema = z.object({
   branchId: z.number().int().positive('La sucursal debe ser válida'),
   customer: z.object({
     name: z.string().min(2, 'Nombre de cliente requerido'),
-    nit: z.string().min(3, 'NIT requerido o ingrese CF'),
+    nit: fiscalNitSchema('NIT requerido o ingrese CF'),
     email: z.string().email('Correo de facturación inválido'),
     phone: z.string().min(6, 'Teléfono requerido')
   }),

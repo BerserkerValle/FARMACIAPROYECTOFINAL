@@ -19,14 +19,15 @@ export function createEmployeeToken(employeeId: number) {
   return jwt.sign({ tokenType: 'employee' }, getJwtSecret(), {
     subject: String(employeeId),
     issuer: JWT_ISSUER,
-    expiresIn: getJwtExpiresIn()
+    expiresIn: getJwtExpiresIn(),
+    algorithm: 'HS256'
   });
 }
 
 export function getEmployeeIdFromToken(token: string) {
   try {
-    const payload = jwt.verify(token, getJwtSecret(), { issuer: JWT_ISSUER });
-    if (typeof payload === 'string' || (payload.tokenType && payload.tokenType !== 'employee') || !payload.sub) return null;
+    const payload = jwt.verify(token, getJwtSecret(), { issuer: JWT_ISSUER, algorithms: ['HS256'] });
+    if (typeof payload === 'string' || payload.tokenType !== 'employee' || !payload.sub || typeof payload.exp !== 'number') return null;
     const employeeId = Number(payload.sub);
     return Number.isInteger(employeeId) && employeeId > 0 ? employeeId : null;
   } catch {
@@ -38,14 +39,15 @@ export function createCustomerToken(customerId: number) {
   return jwt.sign({ tokenType: 'customer' }, getJwtSecret(), {
     subject: String(customerId),
     issuer: JWT_ISSUER,
-    expiresIn: getJwtExpiresIn()
+    expiresIn: getJwtExpiresIn(),
+    algorithm: 'HS256'
   });
 }
 
 export function getCustomerIdFromToken(token: string) {
   try {
-    const payload = jwt.verify(token, getJwtSecret(), { issuer: JWT_ISSUER });
-    if (typeof payload === 'string' || payload.tokenType !== 'customer' || !payload.sub) return null;
+    const payload = jwt.verify(token, getJwtSecret(), { issuer: JWT_ISSUER, algorithms: ['HS256'] });
+    if (typeof payload === 'string' || payload.tokenType !== 'customer' || !payload.sub || typeof payload.exp !== 'number') return null;
     const customerId = Number(payload.sub);
     return Number.isInteger(customerId) && customerId > 0 ? customerId : null;
   } catch {

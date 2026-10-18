@@ -84,7 +84,7 @@ const PasswordInput = (props: PasswordInputProps, ref: ForwardedRef<HTMLInputEle
           onClick={toggleVisibility}
           aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
           aria-pressed={showPassword}
-          tabIndex={-1}
+          tabIndex={0}
         >
           {showPassword ? (
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

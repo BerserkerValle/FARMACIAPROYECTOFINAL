@@ -2,12 +2,25 @@ import { useEffect, useState } from 'react';
 import { apiRequest } from '../../api';
 import type { Category, DashboardMetrics, LowStockProduct, Supplier } from '../../types';
 import { money } from '../../lib/catalog';
+import { PasswordInputComponent } from '../../components/PasswordInput';
 
 type AdminReports = {
   monthlySales?: Array<{ month: string; total: number }>;
   topProducts?: Array<{ name: string; quantity: number; total: number }>;
   salesByBranch?: Array<{ branch: string; total: number }>;
   purchasesBySupplier?: Array<{ supplier: string; total: number }>;
+};
+
+type AdminDiscountCode = {
+  id: number;
+  code: string;
+  type: 'PERCENTAGE' | 'FIXED';
+  value: number;
+  maxUses: number;
+  startsAt: string | null;
+  expiresAt: string | null;
+  active: boolean;
+  createdAt: string;
 };
 
 function formatChartLabel(value: string) {
@@ -101,21 +114,28 @@ function InventoryAlerts({ products }: { products: LowStockProduct[] }) {
   return <section className="inventory-alerts analytics-card"><div className="analytics-card-head"><div><span className="section-kicker warning-kicker">Acción requerida</span><h3>Inventario bajo</h3><p>Productos que necesitan reposición por sucursal</p></div><span className="alert-counter">{products.length}</span></div>{products.length > 0 ? <div className="inventory-alert-list">{products.map((product) => <div className="inventory-alert-row" key={`${product.productId}-${product.branchId}`}><div className="inventory-alert-icon">!</div><div className="inventory-alert-main"><strong>{product.name}</strong><span>{product.sku} · {product.branchName}</span></div><div className="inventory-alert-stock"><strong>{product.stock}</strong><span>unidades</span></div><span className={`inventory-severity ${product.severity}`}>{product.severity === 'critical' ? 'Agotado' : product.severity === 'urgent' ? 'Urgente' : 'Bajo'}</span></div>)}</div> : <div className="inventory-clear"><span>✓</span><div><strong>Inventario saludable</strong><p>No hay productos por debajo del mínimo de 10 unidades.</p></div></div>}</section>;
 }
 
-type AdminTab = 'performance' | 'lowStock' | 'newEmployee' | 'crosscheck' | 'categories' | 'suppliers';
+type AdminTab = 'performance' | 'lowStock' | 'newEmployee' | 'crosscheck' | 'categories' | 'suppliers' | 'discounts';
 const ADMIN_TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
   { id: 'performance', label: 'Rendimiento de la farmacia', icon: <span>⌁</span> },
   { id: 'lowStock', label: 'Inventario bajo', icon: <span>▥</span> },
   { id: 'newEmployee', label: 'Alta de Colaborador', icon: <span>+</span> },
   { id: 'crosscheck', label: 'Auditoría & Crosscheck MSPAS', icon: <span>✓</span> },
   { id: 'categories', label: 'Categorías de medicamentos', icon: <span>▦</span> },
-  { id: 'suppliers', label: 'Gestión de proveedores', icon: <span>▥</span> }
+  { id: 'suppliers', label: 'Gestión de proveedores', icon: <span>▥</span> },
+  { id: 'discounts', label: 'Códigos de descuento', icon: <span>%</span> }
 ];
 
-export function AdminPage({ token }: { token: string | null }) {
+function isAdminTab(hash: string, canManageDiscountCodes: boolean) {
+  return ADMIN_TABS.some((tab) => tab.id === hash) && (hash !== 'discounts' || canManageDiscountCodes);
+}
+
+export function AdminPage({ token, canManageDiscountCodes }: { token: string | null; canManageDiscountCodes: boolean }) {
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [reports, setReports] = useState<AdminReports | null>(null);
+  const [discountCodes, setDiscountCodes] = useState<AdminDiscountCode[]>([]);
   const [status, setStatus] = useState('');
-  const [employee, setEmployee] = useState({ fullName: 'Nuevo Usuario', email: 'nuevo@farmaciafjk.com', password: 'Clave123*', role: 'Cajero', branchId: 1, supervisorId: null as number | null });
+  const [discountForm, setDiscountForm] = useState({ code: '', type: 'PERCENTAGE' as AdminDiscountCode['type'], value: '10', maxUses: '100', startsAt: '', expiresAt: '' });
+  const [employee, setEmployee] = useState({ fullName: '', email: '', password: '', role: 'Cajero', branchId: 1, supervisorId: null as number | null });
   const [crosscheckOrderId, setCrosscheckOrderId] = useState('1');
   const [categories, setCategories] = useState<Category[]>([]);
   const [newCategory, setNewCategory] = useState({ name: '', parentId: null as number | null });
@@ -125,25 +145,26 @@ export function AdminPage({ token }: { token: string | null }) {
   const [supplierForm, setSupplierForm] = useState({ name: '', contactName: '', nit: '', phone: '', email: '', address: '', active: true });
   const [activeTab, setActiveTab] = useState<AdminTab>(() => {
     const hash = typeof window !== 'undefined' ? window.location.hash.slice(1) : '';
-    return ADMIN_TABS.some((tab) => tab.id === hash) ? hash as AdminTab : 'performance';
+    return isAdminTab(hash, canManageDiscountCodes) ? hash as AdminTab : 'performance';
   });
 
   useEffect(() => { window.location.hash = activeTab; }, [activeTab]);
   useEffect(() => {
-    const onHashChange = () => { const hash = window.location.hash.slice(1); if (ADMIN_TABS.some((tab) => tab.id === hash)) setActiveTab(hash as AdminTab); };
+    const onHashChange = () => { const hash = window.location.hash.slice(1); if (isAdminTab(hash, canManageDiscountCodes)) setActiveTab(hash as AdminTab); };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+  }, [canManageDiscountCodes]);
 
   async function loadAll() {
     if (!token) return;
-    const [dash, rep, categoryData, supplierData] = await Promise.all([
+    const [dash, rep, categoryData, supplierData, discountData] = await Promise.all([
       apiRequest<DashboardMetrics>('/api/admin/dashboard', {}, token), apiRequest<AdminReports>('/api/admin/reports', {}, token),
-      apiRequest<Category[]>('/api/admin/categories', {}, token), apiRequest<Supplier[]>('/api/admin/suppliers', {}, token)
+      apiRequest<Category[]>('/api/admin/categories', {}, token), apiRequest<Supplier[]>('/api/admin/suppliers', {}, token),
+      canManageDiscountCodes ? apiRequest<AdminDiscountCode[]>('/api/admin/discount-codes', {}, token) : Promise.resolve([] as AdminDiscountCode[])
     ]);
-    setDashboard(dash); setReports(rep); setCategories(categoryData); setSuppliers(supplierData);
+    setDashboard(dash); setReports(rep); setCategories(categoryData); setSuppliers(supplierData); setDiscountCodes(discountData);
   }
-  useEffect(() => { loadAll().catch((error) => setStatus(error.message)); }, [token]);
+  useEffect(() => { loadAll().catch((error) => setStatus(error.message)); }, [token, canManageDiscountCodes]);
   async function createEmployee() { try { await apiRequest('/api/admin/employees', { method: 'POST', body: JSON.stringify(employee) }, token); setStatus('Empleado registrado con éxito.'); loadAll(); } catch (error) { setStatus(error instanceof Error ? error.message : 'Error al registrar empleado'); } }
   async function doCrosscheck() { try { await apiRequest(`/api/admin/orders/${crosscheckOrderId}/crosscheck`, { method: 'POST', body: JSON.stringify({ reviewerEmployeeId: 2, approved: true, notes: 'Receta validada y archivada' }) }, token); setStatus(`Crosscheck registrado para orden #${crosscheckOrderId}`); } catch (error) { setStatus(error instanceof Error ? error.message : 'Error en crosscheck'); } }
   async function addCategory() { try { if (!newCategory.name.trim()) throw new Error('Escribe el nombre de la categoría'); await apiRequest('/api/admin/categories', { method: 'POST', body: JSON.stringify(newCategory) }, token); setNewCategory({ name: '', parentId: null }); setStatus('Categoría creada correctamente.'); await loadAll(); } catch (error) { setStatus(error instanceof Error ? error.message : 'No se pudo crear la categoría'); } }
@@ -152,17 +173,51 @@ export function AdminPage({ token }: { token: string | null }) {
   function editSupplier(supplier: Supplier) { setEditingSupplierId(supplier.id); setSupplierForm({ name: supplier.name, contactName: supplier.contactName ?? '', nit: supplier.nit, phone: supplier.phone, email: supplier.email, address: supplier.address, active: supplier.active }); window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }
   async function saveSupplier() { try { const payload = { ...supplierForm, name: supplierForm.name.trim(), contactName: supplierForm.contactName.trim(), nit: supplierForm.nit.trim(), phone: supplierForm.phone.trim(), email: supplierForm.email.trim(), address: supplierForm.address.trim() }; if (!payload.name || !payload.contactName || !payload.nit || !payload.phone || !payload.email || !payload.address) throw new Error('Completa todos los campos del proveedor'); const path = editingSupplierId ? `/api/admin/suppliers/${editingSupplierId}` : '/api/admin/suppliers'; await apiRequest(path, { method: editingSupplierId ? 'PUT' : 'POST', body: JSON.stringify(payload) }, token); setStatus(editingSupplierId ? 'Proveedor actualizado correctamente.' : 'Proveedor registrado correctamente.'); resetSupplierForm(); await loadAll(); } catch (error) { setStatus(error instanceof Error ? error.message : 'No se pudo guardar el proveedor'); } }
   async function toggleSupplier(supplier: Supplier) { try { await apiRequest(`/api/admin/suppliers/${supplier.id}`, { method: 'PUT', body: JSON.stringify({ active: !supplier.active }) }, token); setStatus(`Proveedor ${supplier.active ? 'desactivado' : 'activado'} correctamente.`); await loadAll(); } catch (error) { setStatus(error instanceof Error ? error.message : 'No se pudo actualizar el estado del proveedor'); } }
+  async function saveDiscountCode() {
+    try {
+      await apiRequest('/api/admin/discount-codes', {
+        method: 'POST',
+        body: JSON.stringify({
+          code: discountForm.code,
+          type: discountForm.type,
+          value: Number(discountForm.value),
+          maxUses: Number(discountForm.maxUses),
+          startsAt: discountForm.startsAt ? new Date(discountForm.startsAt).toISOString() : null,
+          expiresAt: discountForm.expiresAt ? new Date(discountForm.expiresAt).toISOString() : null
+        })
+      }, token);
+      setDiscountForm({ code: '', type: 'PERCENTAGE', value: '10', maxUses: '100', startsAt: '', expiresAt: '' });
+      setStatus('Código de descuento creado correctamente.');
+      await loadAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo crear el código de descuento');
+    }
+  }
+  async function toggleDiscountCode(discount: AdminDiscountCode) {
+    try {
+      await apiRequest(`/api/admin/discount-codes/${discount.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ active: !discount.active })
+      }, token);
+      setStatus(`Código ${discount.active ? 'desactivado' : 'activado'} correctamente.`);
+      await loadAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo actualizar el código');
+    }
+  }
   const filteredSuppliers = suppliers.filter((supplier) => { const query = supplierSearch.trim().toLowerCase(); return !query || [supplier.name, supplier.contactName, supplier.nit, supplier.email, supplier.phone].some((value) => String(value ?? '').toLowerCase().includes(query)); });
   const SkeletonCard = () => <div className="skeleton-card"><div className="skeleton-line" style={{ width: '60%' }} /><div className="skeleton-line" style={{ width: '40%', marginTop: '0.5rem' }} /><div className="skeleton-line" style={{ width: '30%', marginTop: '0.5rem' }} /></div>;
   const SkeletonChart = () => <div className="skeleton-chart"><div className="skeleton-line" style={{ width: '100%', height: '200px' }} /></div>;
   const PerformanceTab = () => <><div className="stats-grid-4">{[['Ventas del Día', dashboard?.salesToday, 'Cajas POS + En Línea'], ['Ventas del Mes', dashboard?.salesMonth, 'Total acumulado'], ['Stock Bajo', dashboard?.lowStockCount, 'Medicamentos críticos'], ['Pedidos Pendientes', dashboard?.pendingOrders, 'Empaque o entrega'], ['Proveedores', dashboard?.suppliersCount, 'Registrados en el sistema']].map(([label, value, hint]) => <div className="stat-metric-card" key={String(label)}><p>{label}</p><strong>{dashboard ? (typeof value === 'number' && (label === 'Ventas del Día' || label === 'Ventas del Mes') ? money(value) : String(value)) : <span className="skeleton-text" />}</strong><span>{hint}</span></div>)}</div>{dashboard && reports ? <><AdminCharts reports={reports} /><InventoryAlerts products={dashboard.lowStockProducts ?? []} /></> : <><SkeletonChart /><SkeletonCard /></> }</>;
   const LowStockTab = () => dashboard ? <InventoryAlerts products={dashboard.lowStockProducts ?? []} /> : <SkeletonCard />;
-  const NewEmployeeTab = () => <div className="two-col-grid"><div className="panel-card"><div className="panel-head"><h2>Alta de Colaborador</h2><span className="pill-tag">Control RBAC</span></div><div className="form-grid-2"><div className="form-field"><label>Nombre</label><input value={employee.fullName} onChange={(e) => setEmployee({ ...employee, fullName: e.target.value })} /></div><div className="form-field"><label>Correo</label><input value={employee.email} onChange={(e) => setEmployee({ ...employee, email: e.target.value })} /></div></div><div className="form-grid-2"><div className="form-field"><label>Rol</label><select value={employee.role} onChange={(e) => setEmployee({ ...employee, role: e.target.value })}><option>Administrador</option><option>Gerente</option><option>Cajero</option><option>Bodeguero</option><option>Repartidor</option></select></div><div className="form-field"><label>Contraseña</label><input type="password" value={employee.password} onChange={(e) => setEmployee({ ...employee, password: e.target.value })} /></div></div><button type="button" className="btn-primary" onClick={createEmployee}>Crear Usuario</button></div><CrosscheckPanel /></div>;
+  const NewEmployeeTab = () => <div className="two-col-grid"><div className="panel-card"><div className="panel-head"><h2>Alta de Colaborador</h2><span className="pill-tag">Control RBAC</span></div><div className="form-grid-2"><div className="form-field"><label>Nombre</label><input value={employee.fullName} onChange={(e) => setEmployee({ ...employee, fullName: e.target.value })} /></div><div className="form-field"><label>Correo</label><input value={employee.email} onChange={(e) => setEmployee({ ...employee, email: e.target.value })} /></div></div><div className="form-grid-2"><div className="form-field"><label>Rol</label><select value={employee.role} onChange={(e) => setEmployee({ ...employee, role: e.target.value })}><option>Administrador</option><option>Gerente</option><option>Cajero</option><option>Bodeguero</option><option>Repartidor</option></select></div><PasswordInputComponent label="Contraseña" value={employee.password} onChange={(e) => setEmployee({ ...employee, password: e.target.value })} required /></div><button type="button" className="btn-primary" onClick={createEmployee}>Crear Usuario</button></div><CrosscheckPanel /></div>;
   const CrosscheckPanel = () => <div className="panel-card"><div className="panel-head"><h2>Auditoría & Crosscheck MSPAS</h2><span className="pill-tag">Validación Sanitaria</span></div><div className="form-field"><label>ID de Orden a Validar</label><input value={crosscheckOrderId} onChange={(e) => setCrosscheckOrderId(e.target.value)} /></div><button type="button" className="btn-primary" onClick={doCrosscheck}>Registrar Validación de Receta</button><div className="reports-summary-grid"><div className="report-summary-box"><strong>{reports?.monthlySales?.length ?? 0}</strong><span>Períodos analizados</span></div><div className="report-summary-box"><strong>{reports?.topProducts?.length ?? 0}</strong><span>Productos con ventas</span></div></div>{status && <div className="checkout-status-msg">{status}</div>}</div>;
   const CategoriesTab = () => <div className="panel-card" style={{ marginTop: '1rem' }}><div className="panel-head"><h2>Categorías de medicamentos</h2><span className="pill-tag">Administrador / Gerente</span></div><div className="form-grid-2"><div className="form-field"><label>Nombre de categoría</label><input value={newCategory.name} onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })} placeholder="Ej. Vitaminas" /></div><div className="form-field"><label>Categoría principal</label><select value={newCategory.parentId ?? ''} onChange={(e) => setNewCategory({ ...newCategory, parentId: e.target.value ? Number(e.target.value) : null })}><option value="">Sin categoría principal</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div></div><button type="button" className="btn-primary" onClick={addCategory}>Agregar categoría</button><div className="item-list-stack" style={{ marginTop: '0.75rem' }}>{categories.map((category) => <div className="compact-list-row" key={category.id}><strong>{category.name}</strong><button type="button" className="btn-secondary" onClick={() => removeCategory(category)}>Eliminar</button></div>)}</div></div>;
   const SuppliersTab = () => <div className="panel-card admin-suppliers-panel" style={{ marginTop: '1rem' }}><div className="panel-head"><div><h2>Gestión de proveedores</h2><span className="panel-subtitle">Contactos, compras y estado operativo</span></div><span className="pill-tag">Administrador / Gerente</span></div><div className="supplier-toolbar"><div className="form-field supplier-search-field"><label>Buscar proveedor</label><input value={supplierSearch} onChange={(e) => setSupplierSearch(e.target.value)} placeholder="Nombre, NIT, correo o teléfono" /></div>{editingSupplierId && <button type="button" className="btn-secondary" onClick={resetSupplierForm}>Cancelar edición</button>}</div><div className="form-grid-2 supplier-form-grid">{(['name', 'contactName', 'nit', 'phone', 'email', 'address'] as const).map((field) => <div className="form-field" key={field}><label>{field === 'name' ? 'Empresa o proveedor' : field === 'contactName' ? 'Nombre del contacto' : field === 'nit' ? 'NIT' : field === 'phone' ? 'Teléfono' : field === 'email' ? 'Correo electrónico' : 'Dirección'}</label><input type={field === 'email' ? 'email' : 'text'} value={supplierForm[field]} onChange={(e) => setSupplierForm({ ...supplierForm, [field]: e.target.value })} /></div>)}</div><div className="supplier-form-actions"><label className="checkbox-field"><input type="checkbox" checked={supplierForm.active} onChange={(e) => setSupplierForm({ ...supplierForm, active: e.target.checked })} /> Proveedor activo</label><button type="button" className="btn-primary" onClick={saveSupplier}>{editingSupplierId ? 'Guardar cambios' : 'Registrar proveedor'}</button></div><div className="lots-table-wrap"><table className="lots-table suppliers-table"><thead><tr><th>Proveedor</th><th>Contacto</th><th>NIT</th><th>Comunicación</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{filteredSuppliers.map((supplier) => <tr key={supplier.id}><td><strong>{supplier.name}</strong><small>{supplier.address}</small></td><td>{supplier.contactName || 'Sin contacto'}</td><td>{supplier.nit}</td><td><span>{supplier.email}</span><small>{supplier.phone}</small></td><td><span className={`supplier-status ${supplier.active ? 'active' : 'inactive'}`}>{supplier.active ? 'Activo' : 'Inactivo'}</span></td><td><div className="supplier-actions"><button type="button" className="btn-secondary" onClick={() => editSupplier(supplier)}>Editar</button><button type="button" className="btn-secondary" onClick={() => toggleSupplier(supplier)}>{supplier.active ? 'Desactivar' : 'Activar'}</button></div></td></tr>)}{filteredSuppliers.length === 0 && <tr><td colSpan={6} className="no-lots-msg">No hay proveedores que coincidan con la búsqueda.</td></tr>}</tbody></table></div></div>;
-  const panels: Record<AdminTab, React.ReactNode> = { performance: <PerformanceTab />, lowStock: <LowStockTab />, newEmployee: <NewEmployeeTab />, crosscheck: <CrosscheckPanel />, categories: <CategoriesTab />, suppliers: <SuppliersTab /> };
-  return <div className="internal-page-container"><div className="admin-tab-bar"><div className="admin-tab-bar-desktop" role="tablist" aria-label="Secciones de administración">{ADMIN_TABS.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} id={`tab-${tab.id}`} className={`admin-tab-btn ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}><span className="admin-tab-icon">{tab.icon}</span><span className="admin-tab-label">{tab.label}</span></button>)}</div><div className="admin-tab-bar-mobile"><select value={activeTab} onChange={(e) => setActiveTab(e.target.value as AdminTab)} className="admin-tab-select" aria-label="Seleccionar sección de administración">{ADMIN_TABS.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}</select></div></div><div id="admin-tab-panels" role="tabpanel" aria-labelledby={`tab-${activeTab}`}>{panels[activeTab]}</div></div>;
+  const DiscountCodesTab = () => <div className="panel-card" style={{ marginTop: '1rem' }}><div className="panel-head"><div><h2>Códigos de descuento</h2><span className="panel-subtitle">Aplican a toda la compra; un código por pedido y un uso por correo.</span></div><span className="pill-tag">Máximo 50% · 100 usos por defecto</span></div><div className="form-grid-2"><div className="form-field"><label>Código</label><input value={discountForm.code} maxLength={32} onChange={(event) => setDiscountForm({ ...discountForm, code: event.target.value.toUpperCase() })} placeholder="EJ. BIENVENIDA10" /></div><div className="form-field"><label>Tipo</label><select value={discountForm.type} onChange={(event) => setDiscountForm({ ...discountForm, type: event.target.value as AdminDiscountCode['type'] })}><option value="PERCENTAGE">Porcentaje</option><option value="FIXED">Monto fijo (Q)</option></select></div><div className="form-field"><label>{discountForm.type === 'PERCENTAGE' ? 'Porcentaje (máximo 50)' : 'Monto en quetzales'}</label><input type="number" min="0.01" max={discountForm.type === 'PERCENTAGE' ? 50 : undefined} step="0.01" value={discountForm.value} onChange={(event) => setDiscountForm({ ...discountForm, value: event.target.value })} /></div><div className="form-field"><label>Usos máximos (por defecto 100)</label><input type="number" min="1" max="10000" step="1" value={discountForm.maxUses} onChange={(event) => setDiscountForm({ ...discountForm, maxUses: event.target.value })} /></div><div className="form-field"><label>Válido desde (opcional)</label><input type="datetime-local" value={discountForm.startsAt} onChange={(event) => setDiscountForm({ ...discountForm, startsAt: event.target.value })} /></div><div className="form-field"><label>Vence (opcional)</label><input type="datetime-local" value={discountForm.expiresAt} onChange={(event) => setDiscountForm({ ...discountForm, expiresAt: event.target.value })} /></div></div><button type="button" className="btn-primary" onClick={saveDiscountCode}>Crear código</button><div className="lots-table-wrap" style={{ marginTop: '1rem' }}><table className="lots-table suppliers-table"><thead><tr><th>Código</th><th>Descuento</th><th>Vigencia</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{discountCodes.map((discount) => <tr key={discount.id}><td><strong>{discount.code}</strong><small>Máximo {discount.maxUses} usos</small></td><td>{discount.type === 'PERCENTAGE' ? `${discount.value}%` : money(discount.value)}</td><td><small>{discount.startsAt ? new Date(discount.startsAt).toLocaleString() : 'Desde ahora'}</small><small>{discount.expiresAt ? `Hasta ${new Date(discount.expiresAt).toLocaleString()}` : 'Sin vencimiento'}</small></td><td><span className={`supplier-status ${discount.active ? 'active' : 'inactive'}`}>{discount.active ? 'Activo' : 'Inactivo'}</span></td><td><button type="button" className="btn-secondary" onClick={() => toggleDiscountCode(discount)}>{discount.active ? 'Desactivar' : 'Activar'}</button></td></tr>)}{discountCodes.length === 0 && <tr><td colSpan={5} className="no-lots-msg">Todavía no hay códigos de descuento.</td></tr>}</tbody></table></div>{status && <div className="checkout-status-msg">{status}</div>}</div>;
+  const panels: Record<AdminTab, React.ReactNode> = { performance: <PerformanceTab />, lowStock: <LowStockTab />, newEmployee: <NewEmployeeTab />, crosscheck: <CrosscheckPanel />, categories: <CategoriesTab />, suppliers: <SuppliersTab />, discounts: <DiscountCodesTab /> };
+  const visibleTabs = ADMIN_TABS.filter((tab) => tab.id !== 'discounts' || canManageDiscountCodes);
+  return <div className="internal-page-container"><div className="admin-tab-bar"><div className="admin-tab-bar-desktop" role="tablist" aria-label="Secciones de administración">{visibleTabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} id={`tab-${tab.id}`} className={`admin-tab-btn ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}><span className="admin-tab-icon">{tab.icon}</span><span className="admin-tab-label">{tab.label}</span></button>)}</div><div className="admin-tab-bar-mobile"><select value={activeTab} onChange={(e) => setActiveTab(e.target.value as AdminTab)} className="admin-tab-select" aria-label="Seleccionar sección de administración">{visibleTabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}</select></div></div><div id="admin-tab-panels" role="tabpanel" aria-labelledby={`tab-${activeTab}`}>{panels[activeTab]}</div></div>;
 }
 
 export default AdminPage;

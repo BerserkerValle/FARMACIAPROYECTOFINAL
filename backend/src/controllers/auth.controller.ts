@@ -27,10 +27,12 @@ import {
   findDatabaseCustomerAccount, 
   findDatabaseCustomerAccountById, 
   findDatabaseEmployeeByEmail, 
+  updateDatabaseEmployee,
   updateDatabaseCustomerAccount 
 } from '../db.js';
 import { store } from '../store.js';
 import { createCustomerToken, createEmployeeToken } from '../utils/jwt.js';
+import { fiscalNitSchema } from '../utils.js';
 
 // ============================================================================
 // ESQUEMAS DE VALIDACIÓN ZOD (DTOs)
@@ -58,7 +60,7 @@ const customerRegistrationSchema = z.object({
   email: z.string().email('Formato de correo electrónico inválido'),
   password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
   phone: z.string().min(6, 'Número de teléfono inválido'),
-  nit: z.string().min(3, 'NIT inválido o ingrese CF')
+  nit: fiscalNitSchema('NIT inválido o ingrese CF')
 });
 
 /**
@@ -90,7 +92,9 @@ export async function login(req: Request, res: Response) {
 
   // Intenta recuperar el empleado desde la base de datos o desde el store en memoria
   const databaseEmployee = databaseEnabled ? await findDatabaseEmployeeByEmail(email) : null;
-  const employee = databaseEmployee ?? store.findEmployeeByCredentials(email, password);
+  const employee = databaseEnabled
+    ? databaseEmployee
+    : store.findEmployeeByCredentials(email, password);
 
   if (!employee) {
     return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
@@ -98,12 +102,16 @@ export async function login(req: Request, res: Response) {
 
   // Validación de seguridad criptográfica con bcrypt para base de datos
   if (databaseEmployee) {
-    const validPassword = databaseEmployee.password.startsWith('$2')
+    const hasBcryptHash = databaseEmployee.password.startsWith('$2');
+    const validPassword = hasBcryptHash
       ? await bcrypt.compare(password, databaseEmployee.password)
       : password === databaseEmployee.password;
 
     if (!validPassword) {
       return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
+    }
+    if (!hasBcryptHash) {
+      await updateDatabaseEmployee(databaseEmployee.employeeId, { password });
     }
   }
   const employeeId = 'employeeId' in employee ? employee.employeeId : employee.id;

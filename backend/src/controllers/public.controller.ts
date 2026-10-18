@@ -35,10 +35,13 @@ import {
   getDatabaseCategories, 
   getDatabaseSuppliers, 
   listDatabaseCustomerOrders, 
+  markDatabaseDiscountRedeemed,
   registerDatabasePayment, 
+  releaseDatabaseDiscountRedemption,
   searchDatabaseCatalog 
 } from '../db.js';
 import { store } from '../store.js';
+import { fiscalNitSchema } from '../utils.js';
 import { FORBIDDEN_MESSAGE } from '../utils/permissions.js';
 
 async function resolveAuthenticatedCustomer(customerId: number) {
@@ -77,7 +80,7 @@ const checkoutSchema = z.object({
   deliveryLongitude: z.number().min(-180).max(180).optional().nullable(),
   customer: z.object({
     name: z.string().min(2, 'Nombre de cliente requerido'),
-    nit: z.string().min(3, 'NIT requerido o ingrese CF'),
+    nit: fiscalNitSchema('NIT requerido o ingrese CF'),
     email: z.string().email('Correo electrónico de facturación inválido'),
     phone: z.string().min(6, 'Número telefónico requerido')
   }),
@@ -87,7 +90,8 @@ const checkoutSchema = z.object({
       quantity: z.number().int().positive()
     })
   ).min(1, 'El carrito no puede estar vacío'),
-  prescriptionWebUrl: z.string().url('URL de receta inválida').optional().nullable()
+  prescriptionWebUrl: z.string().url('URL de receta inválida').optional().nullable(),
+  discountCode: z.string().trim().toUpperCase().min(1).max(32).optional().nullable()
 });
 
 /** Esquema para carga de archivo de receta médica vinculada a una orden existente */
@@ -206,6 +210,7 @@ export async function catalog(req: Request, res: Response) {
  *    - Si no está configurado: Utiliza una pasarela simulada (Modo Demo).
  */
 export async function checkout(req: Request, res: Response) {
+  let createdOrderId: number | null = null;
   try {
     const payload = checkoutSchema.parse(req.body);
     const customerAccountId = authenticatedCustomerId(res);
@@ -219,6 +224,7 @@ export async function checkout(req: Request, res: Response) {
     }
 
     const created = databaseEnabled ? await createDatabaseCheckout(payload) : store.createWebCheckout(payload);
+    createdOrderId = created.order.id;
     
     // Si la entrega es a domicilio, registra el seguimiento inicial para el mapa de repartidor
     if (databaseEnabled && payload.deliveryMode === 'DELIVERY') {
@@ -258,6 +264,7 @@ export async function checkout(req: Request, res: Response) {
       const paidOrder = databaseEnabled
         ? created.order
         : store.registerPayment(created.order.id, 'demo', `demo-${created.order.id}`);
+      if (databaseEnabled) await markDatabaseDiscountRedeemed(created.order.id);
       return res.json({
         success: true,
         data: {
@@ -277,7 +284,8 @@ export async function checkout(req: Request, res: Response) {
       description: `Orden ${created.order.code}`,
       metadata: {
         orderId: String(created.order.id),
-        orderCode: created.order.code
+        orderCode: created.order.code,
+        discountCode: created.order.discountCode ?? ''
       }
     });
 
@@ -291,6 +299,10 @@ export async function checkout(req: Request, res: Response) {
       }
     });
   } catch (error) {
+    if (createdOrderId !== null) {
+      if (databaseEnabled) await releaseDatabaseDiscountRedemption(createdOrderId);
+      else store.releaseDiscountRedemption(createdOrderId);
+    }
     const message = error instanceof Error ? error.message : 'No se pudo iniciar el pago con Stripe';
     return res.status(400).json({ success: false, message });
   }
@@ -340,6 +352,13 @@ export async function stripeWebhook(req: Request, res: Response) {
         } else {
           store.registerPayment(orderId, 'stripe', payment.id);
         }
+      }
+    } else if (event.type === 'payment_intent.canceled') {
+      const payment = event.data.object as Stripe.PaymentIntent;
+      const orderId = Number(payment.metadata?.orderId);
+      if (Number.isInteger(orderId) && orderId > 0) {
+        if (databaseEnabled) await releaseDatabaseDiscountRedemption(orderId);
+        else store.releaseDiscountRedemption(orderId);
       }
     }
     return res.json({ received: true });
