@@ -31,7 +31,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
-import type { CreateProductInput, DashboardMetrics, DataSnapshot, PublicCheckoutInput, Supplier } from './domain.js';
+import type { CreateProductInput, DashboardMetrics, DataSnapshot, DiscountCode, DiscountRedemption, PublicCheckoutInput, Supplier } from './domain.js';
+import { assertDiscountCodeUsable, calculateDiscountAmount } from './discounts.js';
 
 dotenv.config();
 dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../.env') });
@@ -922,6 +923,7 @@ export async function createDatabaseProduct(input: CreateProductInput) {
         quantityAvailable: Number(input.initialStock.quantity) 
       };
     }
+
     await client.query('COMMIT');
     return { 
       product: { 
@@ -949,6 +951,105 @@ export async function createDatabaseProduct(input: CreateProductInput) {
   } finally {
     client.release();
   }
+}
+
+function mapDatabaseDiscountCode(row: Record<string, unknown>): DiscountCode {
+  return {
+    id: Number(row.id),
+    code: String(row.code),
+    type: row.discount_type as DiscountCode['type'],
+    value: Number(row.discount_value),
+    maxUses: Number(row.max_uses),
+    startsAt: row.starts_at ? new Date(String(row.starts_at)).toISOString() : null,
+    expiresAt: row.expires_at ? new Date(String(row.expires_at)).toISOString() : null,
+    active: Boolean(row.active),
+    createdAt: new Date(String(row.created_at)).toISOString()
+  };
+}
+
+export async function listDatabaseDiscountCodes() {
+  const database = requirePool();
+  const result = await database.query('SELECT * FROM pharmacy_discount_codes ORDER BY created_at DESC, id DESC');
+  return result.rows.map(mapDatabaseDiscountCode);
+}
+
+export async function createDatabaseDiscountCode(input: Omit<DiscountCode, 'id' | 'createdAt'>) {
+  const database = requirePool();
+  const result = await database.query(
+    `INSERT INTO pharmacy_discount_codes (code, discount_type, discount_value, max_uses, starts_at, expires_at, active)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING *`,
+    [input.code, input.type, input.value, input.maxUses, input.startsAt, input.expiresAt, input.active]
+  );
+  return mapDatabaseDiscountCode(result.rows[0]);
+}
+
+export async function setDatabaseDiscountCodeActive(id: number, active: boolean) {
+  const database = requirePool();
+  const result = await database.query(
+    'UPDATE pharmacy_discount_codes SET active = $2 WHERE id = $1 RETURNING *',
+    [id, active]
+  );
+  if (!result.rows[0]) throw new Error('Código de descuento no encontrado');
+  return mapDatabaseDiscountCode(result.rows[0]);
+}
+
+export async function quoteDatabaseDiscountCode(input: {
+  code: string;
+  email: string;
+  branchId: number;
+  items: Array<{ productId: number; quantity: number }>;
+}) {
+  const database = requirePool();
+  const codeResult = await database.query('SELECT * FROM pharmacy_discount_codes WHERE code = $1', [input.code.trim().toUpperCase()]);
+  const row = codeResult.rows[0];
+  if (!row) throw new Error('El código de descuento no existe');
+  const discount = mapDatabaseDiscountCode(row);
+  const redemptionResult = await database.query(
+    `SELECT discount_code_id AS "discountCodeId", order_id AS "orderId", customer_email AS "customerEmail",
+            status, created_at AS "createdAt"
+       FROM pharmacy_discount_redemptions
+      WHERE discount_code_id = $1 AND status IN ('RESERVED', 'REDEEMED')`,
+    [discount.id]
+  );
+  const redemptions = redemptionResult.rows.map((redemption) => ({
+    discountCodeId: Number(redemption.discountCodeId),
+    orderId: Number(redemption.orderId),
+    customerEmail: String(redemption.customerEmail),
+    status: redemption.status as DiscountRedemption['status'],
+    createdAt: new Date(String(redemption.createdAt)).toISOString()
+  }));
+  assertDiscountCodeUsable(discount, input.email, redemptions);
+
+  let subtotal = 0;
+  const quantitiesByProduct = new Map<number, number>();
+  for (const item of input.items) {
+    quantitiesByProduct.set(item.productId, (quantitiesByProduct.get(item.productId) ?? 0) + item.quantity);
+  }
+  for (const [productId, quantity] of quantitiesByProduct) {
+    const lotsResult = await database.query(
+      `SELECT l.precio_venta, ss.cantidad_disponible
+         FROM Lotes l JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+        WHERE l.id_producto = $1 AND ss.id_sucursal = $2 AND ss.cantidad_disponible > 0
+        ORDER BY l.fecha_vencimiento ASC, l.id_lote ASC`,
+      [productId, input.branchId]
+    );
+    let remaining = quantity;
+    let productSubtotal = 0;
+    for (const row of lotsResult.rows) {
+      const taken = Math.min(remaining, Number(row.cantidad_disponible));
+      productSubtotal += taken * Number(row.precio_venta);
+      remaining -= taken;
+      if (remaining <= 0) break;
+    }
+    if (remaining > 0) {
+      throw new Error(`Existencias insuficientes en la sucursal para el producto ${productId}`);
+    }
+    subtotal += productSubtotal;
+  }
+  if (subtotal <= 0) throw new Error('El carrito está vacío');
+  const discountAmount = calculateDiscountAmount(subtotal, discount.type, discount.value);
+  return { code: discount.code, subtotal, discountAmount, total: subtotal - discountAmount };
 }
 
 /**
@@ -1116,6 +1217,31 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
   const client = await database.connect();
   try {
     await client.query('BEGIN');
+    const normalizedDiscountCode = input.discountCode?.trim().toUpperCase() || null;
+    let discount: DiscountCode | null = null;
+    if (normalizedDiscountCode) {
+      const discountResult = await client.query(
+        'SELECT * FROM pharmacy_discount_codes WHERE code = $1 FOR UPDATE',
+        [normalizedDiscountCode]
+      );
+      if (!discountResult.rows[0]) throw new Error('El código de descuento no existe');
+      discount = mapDatabaseDiscountCode(discountResult.rows[0]);
+      const redemptionsResult = await client.query(
+        `SELECT discount_code_id AS "discountCodeId", order_id AS "orderId", customer_email AS "customerEmail",
+                status, created_at AS "createdAt"
+           FROM pharmacy_discount_redemptions
+          WHERE discount_code_id = $1 AND status IN ('RESERVED', 'REDEEMED')`,
+        [discount.id]
+      );
+      const redemptions = redemptionsResult.rows.map((redemption) => ({
+        discountCodeId: Number(redemption.discountCodeId),
+        orderId: Number(redemption.orderId),
+        customerEmail: String(redemption.customerEmail),
+        status: redemption.status as DiscountRedemption['status'],
+        createdAt: new Date(String(redemption.createdAt)).toISOString()
+      }));
+      assertDiscountCodeUsable(discount, input.customer.email, redemptions);
+    }
     const customerResult = await client.query(
       `INSERT INTO Clientes (nombre, correo, nit, telefono)
        VALUES ($1, $2, $3, $4)
@@ -1158,17 +1284,27 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
         lots.push({ id: Number(row.id_lote), quantity: take, price: Number(row.precio_venta) });
         remaining -= take;
       }
-      const price = Number(stockResult.rows[0].precio_venta);
-      items.push({ product, quantity: item.quantity, subtotal: price * item.quantity, lots });
+      const itemSubtotal = lots.reduce((sum, lot) => sum + lot.price * lot.quantity, 0);
+      items.push({ product, quantity: item.quantity, subtotal: itemSubtotal, lots });
     }
     
-    const total = items.reduce((sum, item) => sum + item.subtotal, 0);
+    const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+    const discountAmount = discount ? calculateDiscountAmount(subtotal, discount.type, discount.value) : 0;
+    const total = subtotal - discountAmount;
     const invoiceResult = await client.query(
-      `INSERT INTO Facturas (id_cliente, id_sucursal, fecha_emision, correlativo_sat, total_neto)
-       VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4) RETURNING id_factura`,
-      [customer.id_cliente, input.branchId, `WEB-${Date.now()}`, total]
+      `INSERT INTO Facturas (id_cliente, id_sucursal, fecha_emision, correlativo_sat, total_neto,
+                             subtotal_bruto, descuento_aplicado, codigo_descuento)
+       VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4, $5, $6, $7) RETURNING id_factura`,
+      [customer.id_cliente, input.branchId, `WEB-${Date.now()}`, total, subtotal, discountAmount, discount?.code ?? null]
     );
     const invoiceId = Number(invoiceResult.rows[0].id_factura);
+    if (discount) {
+      await client.query(
+        `INSERT INTO pharmacy_discount_redemptions (discount_code_id, order_id, customer_email, status)
+         VALUES ($1, $2, LOWER($3), $4)`,
+        [discount.id, invoiceId, input.customer.email.trim(), input.paymentMethod === 'CASH' ? 'REDEEMED' : 'RESERVED']
+      );
+    }
     for (const item of items) {
       for (const lot of item.lots) {
         await client.query(`INSERT INTO Detalle_Facturas (id_factura, id_lote, cantidad_vendida, precio_venta_aplicado, subtotal) VALUES ($1, $2, $3, $4, $5)`, [invoiceId, lot.id, lot.quantity, lot.price, lot.quantity * lot.price]);
@@ -1179,6 +1315,9 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
       order: { 
         id: invoiceId, 
         code: `WEB-${String(invoiceId).padStart(6, '0')}`, 
+        subtotal,
+        discountAmount,
+        discountCode: discount?.code ?? null,
         total, 
         deliveryMode: input.deliveryMode, 
         status: 'AWAITING_PAYMENT', 
@@ -1211,6 +1350,29 @@ export async function registerDatabasePayment(invoiceId: number, transactionId: 
   let methodId = method.rows[0]?.id_metodo_pago;
   if (!methodId) methodId = (await database.query(`SELECT id_metodo_pago FROM MetodosPago WHERE LOWER(nombre_metodo) = 'stripe' LIMIT 1`)).rows[0]?.id_metodo_pago;
   await database.query(`INSERT INTO Pagos (id_factura, id_metodo_pago, transaccion_pasarela_id, monto_pagado) VALUES ($1, $2, $3, $4)`, [invoiceId, methodId, transactionId, amount]);
+  await database.query(
+    `UPDATE pharmacy_discount_redemptions SET status = 'REDEEMED'
+      WHERE order_id = $1 AND status = 'RESERVED'`,
+    [invoiceId]
+  );
+}
+
+export async function releaseDatabaseDiscountRedemption(invoiceId: number) {
+  const database = requirePool();
+  await database.query(
+    `UPDATE pharmacy_discount_redemptions SET status = 'RELEASED'
+      WHERE order_id = $1 AND status = 'RESERVED'`,
+    [invoiceId]
+  );
+}
+
+export async function markDatabaseDiscountRedeemed(invoiceId: number) {
+  const database = requirePool();
+  await database.query(
+    `UPDATE pharmacy_discount_redemptions SET status = 'REDEEMED'
+      WHERE order_id = $1 AND status = 'RESERVED'`,
+    [invoiceId]
+  );
 }
 
 // ============================================================================
@@ -1232,6 +1394,9 @@ export async function initializeDatabase() {
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS imagen_url TEXT');
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true');
   await pool.query("ALTER TABLE Proveedores ADD COLUMN IF NOT EXISTS nombre_contacto TEXT NOT NULL DEFAULT ''");
+  await pool.query('ALTER TABLE Facturas ADD COLUMN IF NOT EXISTS subtotal_bruto NUMERIC(12, 2)');
+  await pool.query('ALTER TABLE Facturas ADD COLUMN IF NOT EXISTS descuento_aplicado NUMERIC(12, 2) NOT NULL DEFAULT 0');
+  await pool.query('ALTER TABLE Facturas ADD COLUMN IF NOT EXISTS codigo_descuento TEXT');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS pharmacy_customer_accounts (
       id BIGSERIAL PRIMARY KEY,
@@ -1261,6 +1426,33 @@ export async function initializeDatabase() {
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS longitude NUMERIC');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS assigned_employee_id INTEGER');
   await pool.query('CREATE INDEX IF NOT EXISTS pharmacy_delivery_tracking_assignee_idx ON pharmacy_delivery_tracking (branch_id, assigned_employee_id)');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pharmacy_discount_codes (
+      id BIGSERIAL PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      discount_type TEXT NOT NULL CHECK (discount_type IN ('PERCENTAGE', 'FIXED')),
+      discount_value NUMERIC(12, 2) NOT NULL CHECK (discount_value > 0),
+      max_uses INTEGER NOT NULL CHECK (max_uses > 0),
+      starts_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (expires_at IS NULL OR starts_at IS NULL OR expires_at > starts_at)
+    );
+    CREATE TABLE IF NOT EXISTS pharmacy_discount_redemptions (
+      id BIGSERIAL PRIMARY KEY,
+      discount_code_id BIGINT NOT NULL REFERENCES pharmacy_discount_codes(id),
+      order_id BIGINT NOT NULL,
+      customer_email TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('RESERVED', 'REDEEMED', 'RELEASED')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS pharmacy_discount_redemptions_usage_idx
+      ON pharmacy_discount_redemptions (discount_code_id, status);
+    CREATE UNIQUE INDEX IF NOT EXISTS pharmacy_discount_redemptions_customer_idx
+      ON pharmacy_discount_redemptions (discount_code_id, LOWER(customer_email))
+      WHERE status IN ('RESERVED', 'REDEEMED');
+  `);
 }
 
 /** Carga el snapshot de estado en formato JSONB de la base de datos */

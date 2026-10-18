@@ -14,6 +14,7 @@ import {
   uploadPrescription,
   uploadTemporaryPrescription
 } from '../controllers/public.controller.js';
+import { validateDiscountCode } from '../controllers/discounts.controller.js';
 import { getUploadsDir } from '../utils.js';
 import { authenticate, authenticateCustomer, authorize, authorizeStaffOrCustomer, optionalAuthenticateCustomer } from '../middleware/auth.js';
 import { ORDER_READ_ROLES, WAREHOUSE_ROLES } from '../utils/permissions.js';
@@ -42,6 +43,7 @@ publicRouter.get('/branches', branches);
 publicRouter.get('/categories', categories);
 publicRouter.get('/suppliers', authenticate, authorize(...WAREHOUSE_ROLES), suppliers);
 publicRouter.get('/catalog', catalog);
+publicRouter.post('/discounts/validate', validateDiscountCode);
 
  
 // CHECKOUT Y SEGUIMIENTO DE COMPRAS

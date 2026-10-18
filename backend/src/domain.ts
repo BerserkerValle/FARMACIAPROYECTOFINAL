@@ -294,6 +294,9 @@ export interface Order {
   prescriptionWebUrl: string | null;
   /** Foto de receta validada por el repartidor en la entrega */
   prescriptionDeliveryUrl: string | null;
+  subtotal?: number;
+  discountAmount?: number;
+  discountCode?: string | null;
   total: number;
   createdAt: string;
   paidAt: string | null;
@@ -327,6 +330,31 @@ export interface Invoice {
   satCorrelative: string;
   issuedAt: string;
   total: number;
+  subtotal?: number;
+  discountAmount?: number;
+  discountCode?: string | null;
+}
+
+export type DiscountType = 'PERCENTAGE' | 'FIXED';
+
+export interface DiscountCode {
+  id: number;
+  code: string;
+  type: DiscountType;
+  value: number;
+  maxUses: number;
+  startsAt: string | null;
+  expiresAt: string | null;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface DiscountRedemption {
+  discountCodeId: number;
+  orderId: number;
+  customerEmail: string;
+  status: 'RESERVED' | 'REDEEMED' | 'RELEASED';
+  createdAt: string;
 }
 
 // ============================================================================
@@ -402,6 +430,8 @@ export interface DataSnapshot {
   invoices: Invoice[];
   returns: ReturnRecord[];
   crosschecks: CrosscheckRecord[];
+  discountCodes: DiscountCode[];
+  discountRedemptions: DiscountRedemption[];
   counters: {
     customer: number;
     employee: number;
@@ -413,6 +443,7 @@ export interface DataSnapshot {
     crosscheck: number;
     lot: number;
     product: number;
+    discountCode: number;
   };
 }
 
@@ -441,6 +472,7 @@ export interface PublicCheckoutInput {
     quantity: number;
   }>;
   prescriptionWebUrl?: string | null;
+  discountCode?: string | null;
 }
 
 /**

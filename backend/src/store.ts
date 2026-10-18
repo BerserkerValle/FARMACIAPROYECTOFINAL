@@ -33,6 +33,8 @@ import type {
   Customer,
   DashboardMetrics,
   DataSnapshot,
+  DiscountCode,
+  DiscountRedemption,
   Employee,
   Invoice,
   Lot,
@@ -48,6 +50,7 @@ import type {
   Role,
   Supplier
 } from './domain.js';
+import { assertDiscountCodeUsable, calculateDiscountAmount } from './discounts.js';
 
 // ============================================================================
 // CONFIGURACIÓN DE RUTA DEL ARCHIVO DE ALMACENAMIENTO LOCAL
@@ -125,6 +128,7 @@ export class PharmacyStore {
       const databaseSnapshot = await loadDatabaseSnapshot();
       if (databaseSnapshot) {
         this.snapshot = databaseSnapshot;
+        this.ensureDiscountSnapshotDefaults();
         await this.migrateEmployeePasswords();
         return;
       }
@@ -136,15 +140,23 @@ export class PharmacyStore {
     try {
       const raw = await readFile(storageFile, 'utf8');
       this.snapshot = JSON.parse(raw) as DataSnapshot;
+      this.ensureDiscountSnapshotDefaults();
       if (!this.snapshot.counters.product) {
         this.snapshot.counters.product = Math.max(0, ...this.snapshot.products.map((p) => p.id));
       }
+
       await this.migrateEmployeePasswords();
       return;
     } catch {
       this.snapshot = this.seed();
       await this.save();
     }
+  }
+
+  private ensureDiscountSnapshotDefaults() {
+    this.snapshot.discountCodes ??= [];
+    this.snapshot.discountRedemptions ??= [];
+    this.snapshot.counters.discountCode ??= this.snapshot.discountCodes.reduce((max, item) => Math.max(max, item.id), 0);
   }
 
   /** Cifra con bcrypt cualquier contraseña almacenada en texto plano */
@@ -304,6 +316,8 @@ export class PharmacyStore {
       invoices: [],
       returns: [],
       crosschecks: [],
+      discountCodes: [],
+      discountRedemptions: [],
       counters: {
         customer: 1,
         employee: 6,
@@ -314,7 +328,8 @@ export class PharmacyStore {
         return: 0,
         crosscheck: 0,
         lot: 8,
-        product: 4
+        product: 4,
+        discountCode: 0
       }
     };
   }
@@ -352,6 +367,53 @@ export class PharmacyStore {
   getEmployees() {
     this.assertReady();
     return clone(this.snapshot.employees);
+  }
+
+  getDiscountCodes() {
+    this.assertReady();
+    return clone(this.snapshot.discountCodes);
+  }
+
+  createDiscountCode(input: Omit<DiscountCode, 'id' | 'createdAt'>) {
+    this.assertReady();
+    if (this.snapshot.discountCodes.some((item) => item.code === input.code)) {
+      throw new Error('Ya existe un código con ese nombre');
+    }
+    const discount: DiscountCode = {
+      ...input,
+      id: ++this.snapshot.counters.discountCode,
+      createdAt: now()
+    };
+    this.snapshot.discountCodes.push(discount);
+    this.touch();
+    return clone(discount);
+  }
+
+  setDiscountCodeActive(id: number, active: boolean) {
+    this.assertReady();
+    const discount = this.snapshot.discountCodes.find((item) => item.id === id);
+    if (!discount) throw new Error('Código de descuento no encontrado');
+    discount.active = active;
+    this.touch();
+    return clone(discount);
+  }
+
+  quoteDiscountCode(codeValue: string, email: string, branchId: number, items: Array<{ productId: number; quantity: number }>) {
+    this.assertReady();
+    const normalizedCode = codeValue.trim().toUpperCase();
+    const discount = this.snapshot.discountCodes.find((item) => item.code === normalizedCode);
+    if (!discount) throw new Error('El código de descuento no existe');
+    assertDiscountCodeUsable(discount, email, this.snapshot.discountRedemptions);
+    const subtotal = items.reduce((sum, item) => {
+      const product = this.snapshot.products.find((candidate) => candidate.id === item.productId);
+      if (!product || product.active === false) throw new Error(`Producto no disponible: ${item.productId}`);
+      const stock = this.getStock(product.id, branchId);
+      if (stock < item.quantity) throw new Error(`Stock insuficiente para ${product.name}`);
+      return sum + product.price * item.quantity;
+    }, 0);
+    if (subtotal <= 0) throw new Error('El carrito está vacío');
+    const discountAmount = calculateDiscountAmount(subtotal, discount.type, discount.value);
+    return { code: discount.code, subtotal, discountAmount, total: subtotal - discountAmount };
   }
 
   getProducts() {
@@ -717,7 +779,6 @@ export class PharmacyStore {
 
   createWebCheckout(input: PublicCheckoutInput) {
     this.assertReady();
-    const customer = this.upsertCustomer(input.customer);
     const items = input.items.map((item) => {
       const product = this.snapshot.products.find((candidate) => candidate.id === item.productId);
       if (!product) {
@@ -733,12 +794,21 @@ export class PharmacyStore {
         subtotal: item.quantity * product.price
       };
     });
+    const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+    const normalizedCode = input.discountCode?.trim().toUpperCase() || null;
+    const discount = normalizedCode
+      ? this.snapshot.discountCodes.find((item) => item.code === normalizedCode)
+      : null;
+    if (normalizedCode && !discount) throw new Error('El código de descuento no existe');
+    if (discount) assertDiscountCodeUsable(discount, input.customer.email, this.snapshot.discountRedemptions);
+    const discountAmount = discount ? calculateDiscountAmount(subtotal, discount.type, discount.value) : 0;
 
     const requiresPrescription = items.some(({ product }) => product.requiresPrescription);
     if (requiresPrescription && !input.prescriptionWebUrl) {
       throw new Error('La receta médica es obligatoria para este carrito.');
     }
 
+    const customer = this.upsertCustomer(input.customer);
     const order: Order = {
       id: ++this.snapshot.counters.order,
       code: code('DK', this.snapshot.counters.order),
@@ -756,7 +826,10 @@ export class PharmacyStore {
       requiresPrescription,
       prescriptionWebUrl: input.prescriptionWebUrl ?? null,
       prescriptionDeliveryUrl: null,
-      total: items.reduce((sum, item) => sum + item.subtotal, 0),
+      subtotal,
+      discountAmount,
+      discountCode: discount?.code ?? null,
+      total: subtotal - discountAmount,
       createdAt: now(),
       paidAt: null,
       releasedAt: null
@@ -772,6 +845,15 @@ export class PharmacyStore {
         unitPrice: item.product.price,
         subtotal: item.subtotal,
         assignedLotIds: []
+      });
+    }
+    if (discount) {
+      this.snapshot.discountRedemptions.push({
+        discountCodeId: discount.id,
+        orderId: order.id,
+        customerEmail: input.customer.email.trim().toLowerCase(),
+        status: input.paymentMethod === 'CASH' ? 'REDEEMED' : 'RESERVED',
+        createdAt: now()
       });
     }
     this.touch();
@@ -862,6 +944,9 @@ export class PharmacyStore {
     order.paymentStatus = 'PAID';
     order.status = order.deliveryMode === 'PICKUP' ? 'READY_FOR_PICKUP' : 'PACKING';
     order.paidAt = now();
+    for (const redemption of this.snapshot.discountRedemptions) {
+      if (redemption.orderId === orderId && redemption.status === 'RESERVED') redemption.status = 'REDEEMED';
+    }
     this.snapshot.payments.push({
       id: ++this.snapshot.counters.payment,
       orderId,
@@ -882,6 +967,18 @@ export class PharmacyStore {
     this.consumeOrderStock(orderId);
     this.touch();
     return clone(order);
+  }
+
+  releaseDiscountRedemption(orderId: number) {
+    this.assertReady();
+    let changed = false;
+    for (const redemption of this.snapshot.discountRedemptions) {
+      if (redemption.orderId === orderId && redemption.status === 'RESERVED') {
+        redemption.status = 'RELEASED';
+        changed = true;
+      }
+    }
+    if (changed) this.touch();
   }
 
   private consumeOrderStock(orderId: number) {
@@ -1172,6 +1269,7 @@ export class PharmacyStore {
       .filter((order) => new Date(order.paidAt ?? order.createdAt) >= month)
       .reduce((sum, order) => sum + order.total, 0);
     const lowStockProducts = this.snapshot.products.flatMap((product) => this.snapshot.branches.flatMap((branch) => {
+      if (!this.snapshot.lots.some((lot) => lot.productId === product.id && lot.branchId === branch.id)) return [];
       const stock = this.getStock(product.id, branch.id);
       if (stock > 10) return [];
       return [{

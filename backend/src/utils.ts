@@ -14,6 +14,7 @@
 
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { z } from 'zod';
 
 // ============================================================================
 // GESTIÓN DEL SISTEMA DE ARCHIVOS Y CARPETA DE SUBIDAS
@@ -79,6 +80,13 @@ export function jsonError(message: string, details?: unknown) {
 // ============================================================================
 // UTILIDADES DE CONVERSIÓN Y VALIDACIÓN
 // ============================================================================
+
+export function fiscalNitSchema(message: string) {
+  return z.string()
+    .trim()
+    .transform((nit) => nit.toUpperCase() === 'CF' ? 'CF' : nit)
+    .refine((nit) => nit === 'CF' || nit.length >= 3, message);
+}
 
 /**
  * Parsea un parámetro de cadena a número entero o flotante finito.
