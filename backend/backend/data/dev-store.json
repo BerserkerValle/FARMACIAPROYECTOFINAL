@@ -282,12 +282,12 @@
     },
     {
       "id": 2,
-      "name": "Francisco",
+      "name": "jose",
       "nit": "Valle",
       "email": "samayoapaco2004@gmail.com",
       "phone": "46932765",
       "createdAt": "2026-10-03T22:07:56.622Z",
-      "updatedAt": "2026-10-03T22:07:56.622Z"
+      "updatedAt": "2026-10-22T17:18:08.249Z"
     },
     {
       "id": 3,
@@ -402,6 +402,31 @@
       "createdAt": "2026-10-03T23:56:27.642Z",
       "paidAt": "2026-10-03T23:56:27.642Z",
       "releasedAt": "2026-10-03T23:56:35.689Z"
+    },
+    {
+      "id": 3,
+      "code": "DK-00003",
+      "source": "WEB",
+      "branchId": 1,
+      "customerId": 2,
+      "customerEmail": "samayoapaco2004@gmail.com",
+      "employeeId": null,
+      "deliveryMode": "PICKUP",
+      "address": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "AWAITING_PAYMENT",
+      "paymentStatus": "PENDING",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "subtotal": 1800,
+      "discountAmount": 0,
+      "discountCode": null,
+      "total": 1800,
+      "createdAt": "2026-10-22T17:18:08.250Z",
+      "paidAt": null,
+      "releasedAt": null
     }
   ],
   "orderItems": [
@@ -426,6 +451,15 @@
       "assignedLotIds": [
         3
       ]
+    },
+    {
+      "id": 3,
+      "orderId": 3,
+      "productId": 2,
+      "quantity": 60,
+      "unitPrice": 30,
+      "subtotal": 1800,
+      "assignedLotIds": []
     }
   ],
   "payments": [
@@ -471,13 +505,16 @@
   "counters": {
     "customer": 3,
     "employee": 6,
-    "order": 2,
-    "orderItem": 2,
+    "order": 3,
+    "orderItem": 3,
     "payment": 2,
     "invoice": 2,
     "return": 0,
     "crosscheck": 0,
     "lot": 8,
-    "product": 4
-  }
+    "product": 4,
+    "discountCode": 0
+  },
+  "discountCodes": [],
+  "discountRedemptions": []
 }

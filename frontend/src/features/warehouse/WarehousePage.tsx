@@ -243,6 +243,22 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
     setEditImagePreview(product.imageUrl ?? null);
   }
 
+  function prepareRestock(product: ProductCard) {
+    setLotForm((previous) => ({
+      ...previous,
+      productId: product.id,
+      supplierId: previous.supplierId || suppliers[0]?.id || 1,
+      batchCode: `LOT-${product.sku}-${Date.now().toString().slice(-6)}`,
+      costPrice: product.cost ?? previous.costPrice,
+      salePrice: product.price,
+      quantity: 20
+    }));
+    setLotProductSearch('');
+    setLotProductCategoryId('all');
+    setActiveTab('receive-lot');
+    setStatus(`Producto listo para reabastecer: ${product.name}. Completa el lote y registra el ingreso.`);
+  }
+
   async function saveProductChanges() {
     if (!editingProduct || !token) return;
     try {
@@ -1126,6 +1142,7 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
                         <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Costo: {money(p.cost ?? 0)}</span>
                       </div>
                       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.65rem' }} onClick={(e) => e.stopPropagation()}>
+                        <button type="button" className="btn-primary" onClick={() => prepareRestock(p)}>Reabastecer</button>
                         <button type="button" className="btn-secondary" onClick={() => startEditingProduct(p)}>Editar</button>
                         <button type="button" className="btn-secondary" onClick={() => removeProduct(p)}>Eliminar</button>
                       </div>
