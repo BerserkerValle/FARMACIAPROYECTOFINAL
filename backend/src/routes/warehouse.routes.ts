@@ -2,7 +2,6 @@
 
 import { Router } from 'express';
 import multer from 'multer';
-import { extname } from 'node:path';
 import { authenticate, authorize } from '../middleware/auth.js';
 import {
   categories,
@@ -15,23 +14,12 @@ import {
   updateProduct,
   uploadProductImage
 } from '../controllers/warehouse.controller.js';
-import { getUploadsDir } from '../utils.js';
 import { WAREHOUSE_ROLES } from '../utils/permissions.js';
 
 
 // CONFIGURACIÓN DE ALMACENAMIENTO DE IMÁGENES 
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, getUploadsDir());
-  },
-  filename: (_req, file, cb) => {
-    const ext = extname(file.originalname).toLowerCase() || '.jpg';
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, `med-${uniqueSuffix}${ext}`);
-  }
-});
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
 export const warehouseRouter = Router();
 

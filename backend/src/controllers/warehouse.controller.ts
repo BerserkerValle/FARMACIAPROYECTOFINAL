@@ -23,6 +23,8 @@
  */
 
 import type { Request, Response } from 'express';
+import { writeFile } from 'node:fs/promises';
+import { extname, resolve } from 'node:path';
 import { z } from 'zod';
 import { 
   createDatabaseProduct, 
@@ -37,6 +39,8 @@ import {
 } from '../db.js';
 import { store } from '../store.js';
 import { resolveBranchScope } from '../utils/permissions.js';
+import { getUploadsDir } from '../utils.js';
+import { cloudinaryEnabled, uploadProductImageToCloudinary } from '../cloudinary.js';
 
 // ============================================================================
 // ESQUEMAS DE VALIDACIÓN ZOD (DTOs)
@@ -239,10 +243,23 @@ export async function deleteProduct(req: Request, res: Response) {
  * POST /api/warehouse/products/upload-image
  * Retorna la URL pública y el nombre del archivo guardado.
  */
-export function uploadProductImage(req: Request, res: Response) {
+export async function uploadProductImage(req: Request, res: Response) {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'Debe adjuntar una imagen' });
   }
-  const url = `${apiBaseUrl(req)}/uploads/${req.file.filename}`;
-  return res.json({ success: true, data: { url, filename: req.file.filename } });
+  try {
+    if (cloudinaryEnabled) {
+      const uploaded = await uploadProductImageToCloudinary(req.file.buffer, req.file.originalname);
+      return res.json({ success: true, data: uploaded });
+    }
+
+    const extension = extname(req.file.originalname).toLowerCase() || '.jpg';
+    const filename = `med-${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
+    await writeFile(resolve(getUploadsDir(), filename), req.file.buffer);
+    const url = `${apiBaseUrl(req)}/uploads/${filename}`;
+    return res.json({ success: true, data: { url, filename } });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo almacenar la imagen';
+    return res.status(400).json({ success: false, message });
+  }
 }
