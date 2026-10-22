@@ -61,10 +61,10 @@ export function StripePaymentForm({ clientSecret }: { clientSecret: string }) {
 
 type Checkout = { name: string; nit: string; email: string; phone: string; deliveryMode: 'DELIVERY' | 'PICKUP'; paymentMethod: 'STRIPE' | 'CASH'; address: string; deliveryLatitude: number | null; deliveryLongitude: number | null };
 type DiscountQuote = { code: string; subtotal: number; discountAmount: number; total: number; cartSignature: string; email: string };
-type Props = { cart: Array<{ productId: number; quantity: number }>; products: ProductCard[]; onUpdateQuantity: (productId: number, delta: number) => void; onRemoveItem: (productId: number) => void; onSelectProductForModal?: (product: ProductCard) => void; branchId: number; branches: Branch[]; recipeFile: File | null; onSetRecipeFile: (file: File | null) => void; checkout: Checkout; onUpdateCheckout: (fields: Partial<Checkout>) => void; onSubmitPayment: (discountCode?: string) => void; isSubmitting: boolean; status: string; paymentClientSecret: string; isExpanded: boolean; onToggleExpand: () => void; StripePaymentFormComponent?: typeof StripePaymentForm };
+type Props = { cart: Array<{ productId: number; quantity: number }>; products: ProductCard[]; onUpdateQuantity: (productId: number, delta: number) => void; onRemoveItem: (productId: number) => void; onSelectProductForModal?: (product: ProductCard) => void; branchId: number; branches: Branch[]; recipeFile: File | null; onSetRecipeFile: (file: File | null) => void; checkout: Checkout; onUpdateCheckout: (fields: Partial<Checkout>) => void; onSubmitPayment: (discountCode?: string) => void; isSubmitting: boolean; status: string; paymentClientSecret: string; isExpanded: boolean; onToggleExpand: () => void; onClosePayment?: () => void; StripePaymentFormComponent?: typeof StripePaymentForm };
 
 export function TopPaymentBar({ StripePaymentFormComponent = StripePaymentForm, ...props }: Props) {
-  const { cart, products, branches, branchId, checkout, recipeFile, onSetRecipeFile, onUpdateCheckout, onUpdateQuantity, onRemoveItem, onSelectProductForModal, onSubmitPayment, isSubmitting, status, paymentClientSecret, isExpanded, onToggleExpand } = props;
+  const { cart, products, branches, branchId, checkout, recipeFile, onSetRecipeFile, onUpdateCheckout, onUpdateQuantity, onRemoveItem, onSelectProductForModal, onSubmitPayment, isSubmitting, status, paymentClientSecret, isExpanded, onToggleExpand, onClosePayment } = props;
   const [couponCode, setCouponCode] = useState('');
   const [couponMessage, setCouponMessage] = useState('');
   const [isCheckingCoupon, setIsCheckingCoupon] = useState(false);
@@ -129,7 +129,19 @@ export function TopPaymentBar({ StripePaymentFormComponent = StripePaymentForm, 
       {checkout.deliveryMode === 'DELIVERY' && <div className="form-field"><label>Dirección de Entrega</label><input value={checkout.address} onChange={(event) => onUpdateCheckout({ address: event.target.value })} placeholder="Dirección exacta, zona, número de casa..." /><button type="button" className="btn-secondary" onClick={() => navigator.geolocation?.getCurrentPosition((position) => onUpdateCheckout({ deliveryLatitude: position.coords.latitude, deliveryLongitude: position.coords.longitude }), () => onUpdateCheckout({ deliveryLatitude: null, deliveryLongitude: null }))}>{checkout.deliveryLatitude !== null ? 'Ubicación real guardada' : 'Usar mi ubicación actual'}</button></div>}
       <div className="form-field"><label>Método de pago</label><div className="delivery-toggle-group"><button type="button" className={`delivery-toggle-btn ${checkout.paymentMethod === 'STRIPE' ? 'active' : ''}`} onClick={() => onUpdateCheckout({ paymentMethod: 'STRIPE' })}>Pagar con Stripe</button><button type="button" className={`delivery-toggle-btn ${checkout.paymentMethod === 'CASH' ? 'active' : ''}`} onClick={() => onUpdateCheckout({ paymentMethod: 'CASH' })}>{checkout.deliveryMode === 'DELIVERY' ? 'Efectivo contra entrega' : 'Efectivo en sucursal'}</button></div></div>
       {hasPrescriptionItems && <div className="form-field"><label>Fotografía de Receta Médica</label><label className="prescription-dropzone"><span>Receta</span><span>{recipeFile?.name ?? 'Subir archivo de receta médica...'}</span><input type="file" accept="image/*,.pdf" onChange={(event) => onSetRecipeFile(event.target.files?.[0] ?? null)} /></label></div>}
-      <button type="button" className="checkout-submit-btn" disabled={cart.length === 0 || isSubmitting} onClick={() => onSubmitPayment(validCoupon?.code)}>{isSubmitting ? 'Procesando pago seguro...' : `${checkout.paymentMethod === 'CASH' ? 'CONFIRMAR PEDIDO' : 'PAGAR ORDEN'}${total > 0 ? ` (${money(total)})` : ''}`}</button>{status && <div className="checkout-status-msg">{status}</div>}{paymentClientSecret && <StripePaymentFormComponent clientSecret={paymentClientSecret} />}</div>
-    </div></div>}
-  </div></section>;
+       <button type="button" className="checkout-submit-btn" disabled={cart.length === 0 || isSubmitting} onClick={() => onSubmitPayment(validCoupon?.code)}>{isSubmitting ? 'Procesando pago seguro...' : `${checkout.paymentMethod === 'CASH' ? 'CONFIRMAR PEDIDO' : 'PAGAR ORDEN'}${total > 0 ? ` (${money(total)})` : ''}`}</button>{status && <div className="checkout-status-msg">{status}</div>}</div>
+     </div></div>}
+   </div>
+   {paymentClientSecret && (
+     <div className="stripe-payment-modal-backdrop" role="presentation" onClick={onClosePayment}>
+       <div className="stripe-payment-modal" role="dialog" aria-modal="true" aria-labelledby="stripe-payment-title" onClick={(event) => event.stopPropagation()}>
+         <div className="stripe-payment-modal-header">
+           <div><span className="stripe-payment-kicker">Pago con tarjeta</span><h2 id="stripe-payment-title">Completa tu pago</h2><p>Total de la orden: {money(total)}</p></div>
+           <button type="button" className="modal-close-btn" onClick={onClosePayment}>Cerrar</button>
+         </div>
+         <StripePaymentFormComponent clientSecret={paymentClientSecret} />
+       </div>
+     </div>
+   )}
+ </section>;
 }

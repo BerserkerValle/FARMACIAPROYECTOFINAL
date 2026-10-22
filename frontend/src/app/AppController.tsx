@@ -398,6 +398,7 @@ export default function AppController() {
       isSubmitting={isSubmitting}
       status={status}
        paymentClientSecret={paymentClientSecret}
+       onClosePayment={() => setPaymentClientSecret('')}
        StripePaymentFormComponent={StripePaymentForm}
        isExpanded
       onToggleExpand={() => undefined}
