@@ -44,15 +44,15 @@ import { resolveBranchScope } from '../utils/permissions.js';
 
 /** Esquema para registrar la recepción de un lote de medicamentos */
 const receiveSchema = z.object({
-  branchId: z.number().int().positive('Debe especificar la sucursal de destino'),
-  supplierId: z.number().int().positive('Debe especificar el proveedor o laboratorio'),
-  productId: z.number().int().positive('Debe especificar el medicamento'),
+  branchId: z.coerce.number().int().positive('Debe especificar la sucursal de destino'),
+  supplierId: z.coerce.number().int().positive('Debe especificar el proveedor o laboratorio'),
+  productId: z.coerce.number().int().positive('Debe especificar el medicamento'),
   batchCode: z.string().min(3, 'El código de lote debe tener al menos 3 caracteres'),
   expirationDate: z.string().min(8, 'Fecha de vencimiento requerida (YYYY-MM-DD)'),
   productionDate: z.string().min(8, 'Fecha de elaboración requerida (YYYY-MM-DD)'),
-  quantity: z.number().int().positive('La cantidad a ingresar debe ser mayor a 0'),
-  costPrice: z.number().positive('El costo de compra debe ser positivo'),
-  salePrice: z.number().positive('El precio de venta debe ser positivo')
+  quantity: z.coerce.number().int().positive('La cantidad a ingresar debe ser mayor a 0'),
+  costPrice: z.coerce.number().positive('El costo de compra debe ser positivo'),
+  salePrice: z.coerce.number().positive('El precio de venta debe ser positivo')
 });
 
 /** Esquema para la creación de un nuevo producto en catálogo */
@@ -130,21 +130,23 @@ export async function lots(req: Request, res: Response) {
  * Asocia la recepción al ID del empleado autenticado para trazabilidad de auditoría.
  */
 export async function receive(req: Request, res: Response) {
-  if (!req.user) {
-    return res.status(401).json({ success: false, message: 'No autenticado' });
-  }
-  const payload = receiveSchema.parse(req.body);
-  const branchId = resolveBranchScope(req.user.branchId, payload.branchId);
-  if (!branchId) {
-    return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
-  }
   try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'No autenticado' });
+    }
+    const payload = receiveSchema.parse(req.body);
+    const branchId = resolveBranchScope(req.user.branchId, payload.branchId);
+    if (!branchId) {
+      return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
+    }
     const lot = databaseEnabled
       ? await receiveDatabaseLot({ ...payload, branchId, employeeId: req.user.employeeId })
       : store.receiveGoods({ ...payload, branchId, employeeId: req.user.employeeId });
     return res.status(201).json({ success: true, data: lot });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'No se pudo recibir el lote';
+    const message = error instanceof z.ZodError
+      ? error.errors.map((issue) => `${issue.path.join('.') || 'campo'}: ${issue.message}`).join(', ')
+      : error instanceof Error ? error.message : 'No se pudo recibir el lote';
     return res.status(400).json({ success: false, message });
   }
 }
