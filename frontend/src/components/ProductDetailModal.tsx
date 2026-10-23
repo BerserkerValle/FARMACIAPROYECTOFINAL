@@ -259,6 +259,21 @@ export function ProductDetailModal({
                         : 'Venta libre (OTC) - dispensación directa'}
                     </strong>
                   </div>
+                  <div className="spec-box" style={{ gridColumn: 'span 2' }}>
+                    <span className="spec-box-label">Información regulatoria</span>
+                    <strong className="spec-box-value">
+                      {[
+                        product.controlledProduct && 'Producto controlado',
+                        product.chronicUse && 'Uso crónico',
+                        product.avoidPregnancy && 'Evitar embarazo',
+                        product.requiresRefrigeration && 'Requiere refrigeración'
+                      ].filter(Boolean).join(' · ') || 'Sin restricciones regulatorias adicionales'}
+                    </strong>
+                  </div>
+                  <div className="spec-box" style={{ gridColumn: 'span 2' }}>
+                    <span className="spec-box-label">Ingredientes</span>
+                    <div>{product.ingredients?.length ? product.ingredients.map((item, index) => <div key={index}><strong>{item.ingredient}</strong>{item.quantity && ` · ${item.quantity}`}{item.concentration && ` · ${item.concentration}`}{item.principal && ' · Principal'}</div>) : 'No especificados'}</div>
+                  </div>
                 </div>
               </div>
             )}

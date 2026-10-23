@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiRequest, uploadProductImage } from '../../api';
-import type { Branch, Category, ProductCard, Supplier } from '../../types';
+import type { Branch, Category, ProductCard, ProductIngredient, Supplier } from '../../types';
 import { money, getCategoryHierarchyIds } from '../../lib/catalog';
 import { ProductDetailModal } from '../../components/ProductDetailModal';
 
@@ -68,6 +68,11 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
     unitMeasure: 'tableta',
     sanitaryRegistry: 'MSPAS-2026-9412',
     requiresPrescription: true,
+    controlledProduct: false,
+    chronicUse: false,
+    avoidPregnancy: false,
+    requiresRefrigeration: false,
+    ingredients: [] as ProductIngredient[],
     price: 165,
     cost: 110,
     description: 'Antibiótico bactericida de amplio espectro para infecciones respiratorias.',
@@ -155,10 +160,25 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
     setNewProd((prev) => ({ ...prev, sku: generated }));
   }
 
+  function generateSanitaryRegistry() {
+    const usedRegistries = new Set(products.map((product) => product.sanitaryRegistry?.trim()).filter(Boolean));
+    let candidate = '';
+    do {
+      candidate = `MSPAS-2026-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+    } while (usedRegistries.has(candidate));
+    setNewProd((prev) => ({ ...prev, sanitaryRegistry: candidate }));
+  }
+
+  function updateIngredient(index: number, changes: Partial<ProductIngredient>) {
+    setNewProd((prev) => ({ ...prev, ingredients: prev.ingredients.map((item, itemIndex) => itemIndex === index ? { ...item, ...changes } : item) }));
+  }
+
   async function handleCreateProduct() {
     try {
       if (!newProd.name.trim()) throw new Error('El nombre del medicamento es requerido.');
       if (!newProd.sku.trim()) throw new Error('El código SKU es requerido.');
+      if (!/^MSPAS-2026-\d{4}$/.test(newProd.sanitaryRegistry)) throw new Error('El registro sanitario debe tener el formato MSPAS-2026-0000.');
+      if (products.some((product) => product.sanitaryRegistry?.trim() === newProd.sanitaryRegistry.trim())) throw new Error('Ya existe un medicamento con ese registro sanitario.');
 
       setIsSubmitting(true);
       setStatus('Guardando medicamento y procesando imagen...');
@@ -181,6 +201,11 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
         unitMeasure: newProd.unitMeasure,
         sanitaryRegistry: newProd.sanitaryRegistry,
         requiresPrescription: Boolean(newProd.requiresPrescription),
+        controlledProduct: newProd.controlledProduct,
+        chronicUse: newProd.chronicUse,
+        avoidPregnancy: newProd.avoidPregnancy,
+        requiresRefrigeration: newProd.requiresRefrigeration,
+        ingredients: newProd.ingredients,
         price: Number(newProd.price),
         cost: Number(newProd.cost),
         description: newProd.description,
@@ -208,8 +233,10 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
       setNewProd((prev) => ({
         ...prev,
         sku: `SKU-MED-${Math.floor(100 + Math.random() * 900)}`,
-        name: '',
-        description: '',
+         name: '',
+         description: '',
+         sanitaryRegistry: 'MSPAS-2026-0000',
+         ingredients: [],
         initialBatchCode: `LOT-${Date.now().toString().slice(-4)}`
       }));
       loadAllData();
@@ -279,6 +306,11 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
           unitMeasure: editForm.unitMeasure ?? '',
           sanitaryRegistry: editForm.sanitaryRegistry ?? '',
           requiresPrescription: Boolean(editForm.requiresPrescription),
+          controlledProduct: Boolean(editForm.controlledProduct),
+          chronicUse: Boolean(editForm.chronicUse),
+          avoidPregnancy: Boolean(editForm.avoidPregnancy),
+          requiresRefrigeration: Boolean(editForm.requiresRefrigeration),
+          ingredients: editForm.ingredients ?? [],
           description: editForm.description ?? '',
           price: Number(editForm.price),
           cost: Number(editForm.cost),
@@ -438,12 +470,11 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
               </div>
               <div className="form-field">
                 <label>Registro Sanitario MSPAS</label>
-                <input
-                  type="text"
-                  value={newProd.sanitaryRegistry}
-                  onChange={(e) => setNewProd({ ...newProd, sanitaryRegistry: e.target.value })}
-                  placeholder="MSPAS-2026-XXXX"
-                />
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <span style={{ alignSelf: 'center', whiteSpace: 'nowrap' }}>MSPAS-2026-</span>
+                  <input type="text" maxLength={4} inputMode="numeric" value={newProd.sanitaryRegistry.replace('MSPAS-2026-', '')} onChange={(e) => setNewProd({ ...newProd, sanitaryRegistry: `MSPAS-2026-${e.target.value.replace(/\D/g, '').slice(0, 4)}` })} placeholder="0000" />
+                  <button type="button" className="btn-secondary" onClick={generateSanitaryRegistry}>Generar</button>
+                </div>
               </div>
             </div>
 
@@ -478,6 +509,27 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
                 onChange={(e) => setNewProd({ ...newProd, description: e.target.value })}
                 placeholder="Descripción, indicaciones terapéuticas, precauciones..."
               />
+            </div>
+
+            <div className="form-field">
+              <label>Información regulatoria</label>
+              <div className="form-grid-2">
+                {([['controlledProduct', 'Producto controlado'], ['chronicUse', 'Uso crónico'], ['avoidPregnancy', 'Evitar embarazo'], ['requiresRefrigeration', 'Requiere refrigeración']] as const).map(([key, label]) => (
+                  <label className="checkbox-inline-label" key={key}><input type="checkbox" checked={newProd[key]} onChange={(e) => setNewProd({ ...newProd, [key]: e.target.checked })} /> {label}</label>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-field">
+              <label>Ingredientes</label>
+              {newProd.ingredients.map((item, index) => <div key={index} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                <input placeholder="Ingrediente / nombre" value={item.ingredient} onChange={(e) => updateIngredient(index, { ingredient: e.target.value })} />
+                <input placeholder="Cantidad" value={item.quantity} onChange={(e) => updateIngredient(index, { quantity: e.target.value })} />
+                <input placeholder="Concentración" value={item.concentration} onChange={(e) => updateIngredient(index, { concentration: e.target.value })} />
+                <button type="button" className="btn-secondary" onClick={() => setNewProd((prev) => ({ ...prev, ingredients: prev.ingredients.filter((_, itemIndex) => itemIndex !== index) }))}>Eliminar</button>
+                <label className="checkbox-inline-label"><input type="checkbox" checked={item.principal} onChange={(e) => updateIngredient(index, { principal: e.target.checked })} /> Principal</label>
+              </div>)}
+              <button type="button" className="btn-secondary" onClick={() => setNewProd((prev) => ({ ...prev, ingredients: [...prev.ingredients, { ingredient: '', quantity: '', concentration: '', principal: prev.ingredients.length === 0 }] }))}>Agregar ingrediente</button>
             </div>
 
             {/* Requires Prescription Switch */}
@@ -1184,7 +1236,20 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
                   <div className="form-field"><label>Costo</label><input type="number" min="0.01" step="0.01" value={Number(editForm.cost ?? 0)} onChange={(e) => setEditForm({ ...editForm, cost: Number(e.target.value) })} /></div>
                 </div>
                 <div className="form-field"><label>Descripción</label><textarea rows={3} value={String(editForm.description ?? '')} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} /></div>
-                <label className="checkbox-inline-label"><input type="checkbox" checked={Boolean(editForm.requiresPrescription)} onChange={(e) => setEditForm({ ...editForm, requiresPrescription: e.target.checked })} /> Requiere receta</label>
+                 <label className="checkbox-inline-label"><input type="checkbox" checked={Boolean(editForm.requiresPrescription)} onChange={(e) => setEditForm({ ...editForm, requiresPrescription: e.target.checked })} /> Requiere receta</label>
+                 <div className="form-grid-2">
+                   {([['controlledProduct', 'Producto controlado'], ['chronicUse', 'Uso crónico'], ['avoidPregnancy', 'Evitar embarazo'], ['requiresRefrigeration', 'Requiere refrigeración']] as const).map(([key, label]) => <label className="checkbox-inline-label" key={key}><input type="checkbox" checked={Boolean(editForm[key])} onChange={(e) => setEditForm({ ...editForm, [key]: e.target.checked })} /> {label}</label>)}
+                 </div>
+                 <div className="form-field"><label>Ingredientes</label>
+                   {(editForm.ingredients ?? []).map((item, index) => <div key={index} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                     <input value={item.ingredient} placeholder="Ingrediente / nombre" onChange={(e) => setEditForm({ ...editForm, ingredients: (editForm.ingredients ?? []).map((entry, itemIndex) => itemIndex === index ? { ...entry, ingredient: e.target.value } : entry) })} />
+                     <input value={item.quantity} placeholder="Cantidad" onChange={(e) => setEditForm({ ...editForm, ingredients: (editForm.ingredients ?? []).map((entry, itemIndex) => itemIndex === index ? { ...entry, quantity: e.target.value } : entry) })} />
+                     <input value={item.concentration} placeholder="Concentración" onChange={(e) => setEditForm({ ...editForm, ingredients: (editForm.ingredients ?? []).map((entry, itemIndex) => itemIndex === index ? { ...entry, concentration: e.target.value } : entry) })} />
+                     <button type="button" className="btn-secondary" onClick={() => setEditForm({ ...editForm, ingredients: (editForm.ingredients ?? []).filter((_, itemIndex) => itemIndex !== index) })}>Eliminar</button>
+                     <label className="checkbox-inline-label"><input type="checkbox" checked={item.principal} onChange={(e) => setEditForm({ ...editForm, ingredients: (editForm.ingredients ?? []).map((entry, itemIndex) => itemIndex === index ? { ...entry, principal: e.target.checked } : entry) })} /> Principal</label>
+                   </div>)}
+                   <button type="button" className="btn-secondary" onClick={() => setEditForm({ ...editForm, ingredients: [...(editForm.ingredients ?? []), { ingredient: '', quantity: '', concentration: '', principal: (editForm.ingredients ?? []).length === 0 }] })}>Agregar ingrediente</button>
+                 </div>
                 <div className="form-field">
                   <label>Fotografía del medicamento</label>
                   <input

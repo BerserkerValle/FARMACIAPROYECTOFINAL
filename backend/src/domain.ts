@@ -120,6 +120,11 @@ export interface Product {
   sanitaryRegistry: string;
   /** Indica si requiere receta médica para su venta */
   requiresPrescription: boolean;
+  controlledProduct: boolean;
+  chronicUse: boolean;
+  avoidPregnancy: boolean;
+  requiresRefrigeration: boolean;
+  ingredients: ProductIngredient[];
   /** Estado activo o descontinuado en catálogo */
   active: boolean;
   /** Descripción terapéutica, indicaciones o especificaciones */
@@ -130,6 +135,13 @@ export interface Product {
   cost: number;
   /** URL o ruta del archivo de imagen del producto */
   imageUrl?: string | null;
+}
+
+export interface ProductIngredient {
+  ingredient: string;
+  quantity: string;
+  concentration: string;
+  principal: boolean;
 }
 
 /**
@@ -146,6 +158,11 @@ export interface CreateProductInput {
   unitMeasure: string;
   sanitaryRegistry: string;
   requiresPrescription: boolean;
+  controlledProduct?: boolean;
+  chronicUse?: boolean;
+  avoidPregnancy?: boolean;
+  requiresRefrigeration?: boolean;
+  ingredients?: ProductIngredient[];
   active?: boolean;
   description: string;
   price: number;

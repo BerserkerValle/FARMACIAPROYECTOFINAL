@@ -704,8 +704,13 @@ export async function searchDatabaseCatalog(query: string, branchId?: number, ca
             COALESCE(p.presentacion, '') AS presentation,
             COALESCE(p.unidad_medida, '') AS "unitMeasure",
             COALESCE(p.registro_sanitario, '') AS "sanitaryRegistry",
-            COALESCE(p.requiere_receta, false) AS "requiresPrescription",
-            p.imagen_url AS "imageUrl",
+             COALESCE(p.requiere_receta, false) AS "requiresPrescription",
+             COALESCE(p.producto_controlado, false) AS "controlledProduct",
+             COALESCE(p.uso_cronico, false) AS "chronicUse",
+             COALESCE(p.evitar_embarazo, false) AS "avoidPregnancy",
+             COALESCE(p.requiere_refrigeracion, false) AS "requiresRefrigeration",
+             COALESCE((SELECT jsonb_agg(jsonb_build_object('ingredient', i.ingredient, 'quantity', i.quantity, 'concentration', i.concentration, 'principal', i.principal) ORDER BY i.id) FROM pharmacy_product_ingredients i WHERE i.product_id = p.id_producto), '[]'::jsonb) AS ingredients,
+             p.imagen_url AS "imageUrl",
             true AS active,
             ''::text AS description,
             COALESCE(MIN(l.precio_venta), 0) AS price,
@@ -757,8 +762,13 @@ export async function listDatabaseProducts() {
             COALESCE(p.presentacion, '') AS presentation,
             COALESCE(p.unidad_medida, '') AS "unitMeasure",
             COALESCE(p.registro_sanitario, '') AS "sanitaryRegistry",
-            COALESCE(p.requiere_receta, false) AS "requiresPrescription",
-            p.imagen_url AS "imageUrl",
+             COALESCE(p.requiere_receta, false) AS "requiresPrescription",
+             COALESCE(p.producto_controlado, false) AS "controlledProduct",
+             COALESCE(p.uso_cronico, false) AS "chronicUse",
+             COALESCE(p.evitar_embarazo, false) AS "avoidPregnancy",
+             COALESCE(p.requiere_refrigeracion, false) AS "requiresRefrigeration",
+             COALESCE((SELECT jsonb_agg(jsonb_build_object('ingredient', i.ingredient, 'quantity', i.quantity, 'concentration', i.concentration, 'principal', i.principal) ORDER BY i.id) FROM pharmacy_product_ingredients i WHERE i.product_id = p.id_producto), '[]'::jsonb) AS ingredients,
+             p.imagen_url AS "imageUrl",
             COALESCE(p.activo, true) AS active,
             ''::text AS description,
             COALESCE(MIN(l.precio_venta), 0) AS price,
@@ -867,11 +877,14 @@ export async function createDatabaseProduct(input: CreateProductInput) {
   const client = await database.connect();
   try {
     await client.query('BEGIN');
+    const duplicate = await client.query('SELECT 1 FROM Productos WHERE registro_sanitario = $1 LIMIT 1', [input.sanitaryRegistry.trim()]);
+    if (duplicate.rowCount) throw new Error('Ya existe un medicamento con ese registro sanitario');
     const productResult = await client.query(
       `INSERT INTO Productos
         (sku_codigo, nombre_producto, id_categoria, requiere_receta, marca,
-         laboratorio, presentacion, unidad_medida, registro_sanitario, imagen_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         laboratorio, presentacion, unidad_medida, registro_sanitario, imagen_url,
+         producto_controlado, uso_cronico, evitar_embarazo, requiere_refrigeracion)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING id_producto`,
       [
         input.sku.trim().toUpperCase(),
@@ -883,10 +896,17 @@ export async function createDatabaseProduct(input: CreateProductInput) {
         input.presentation.trim(),
         input.unitMeasure.trim(),
         input.sanitaryRegistry.trim(),
-        input.imageUrl?.trim() || null
+         input.imageUrl?.trim() || null,
+         Boolean(input.controlledProduct), Boolean(input.chronicUse), Boolean(input.avoidPregnancy), Boolean(input.requiresRefrigeration)
       ]
     );
     const productId = Number(productResult.rows[0].id_producto);
+    for (const ingredient of input.ingredients ?? []) {
+      if (ingredient.ingredient.trim()) await client.query(
+        `INSERT INTO pharmacy_product_ingredients (product_id, ingredient, quantity, concentration, principal) VALUES ($1, $2, $3, $4, $5)`,
+        [productId, ingredient.ingredient.trim(), ingredient.quantity.trim(), ingredient.concentration.trim(), Boolean(ingredient.principal)]
+      );
+    }
     let initialLot = null;
     if (input.initialStock && input.initialStock.quantity > 0) {
       const lotResult = await client.query(
@@ -1153,8 +1173,16 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
     ['laboratory', 'laboratorio'],
     ['presentation', 'presentacion'],
     ['unitMeasure', 'unidad_medida'],
-    ['sanitaryRegistry', 'registro_sanitario']
+    ['sanitaryRegistry', 'registro_sanitario'],
+    ['controlledProduct', 'producto_controlado'],
+    ['chronicUse', 'uso_cronico'],
+    ['avoidPregnancy', 'evitar_embarazo'],
+    ['requiresRefrigeration', 'requiere_refrigeracion']
   ];
+  if (input.sanitaryRegistry !== undefined) {
+    const duplicate = await database.query('SELECT 1 FROM Productos WHERE registro_sanitario = $1 AND id_producto <> $2 LIMIT 1', [String(input.sanitaryRegistry).trim(), id]);
+    if (duplicate.rowCount) throw new Error('Ya existe otro medicamento con ese registro sanitario');
+  }
   if ('imageUrl' in input) fields.push(['imagen_url', input.imageUrl]);
   for (const [inputKey, column] of mappings) {
     if (inputKey in input) fields.push([column, input[inputKey]]);
@@ -1167,12 +1195,24 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
       WHERE id_producto = $1
       RETURNING id_producto AS id, sku_codigo AS sku, nombre_producto AS name,
                 id_categoria AS "categoryId", requiere_receta AS "requiresPrescription",
+                producto_controlado AS "controlledProduct", uso_cronico AS "chronicUse",
+                evitar_embarazo AS "avoidPregnancy", requiere_refrigeracion AS "requiresRefrigeration",
                 marca AS brand, laboratorio AS laboratory, presentacion AS presentation,
                 unidad_medida AS "unitMeasure", registro_sanitario AS "sanitaryRegistry",
                 imagen_url AS "imageUrl"`,
     [id, ...fields.map(([, value]) => value)]
   );
   if (!result.rows[0]) throw new Error(`Producto #${id} no encontrado`);
+  if (input.ingredients !== undefined) {
+    await database.query('DELETE FROM pharmacy_product_ingredients WHERE product_id = $1', [id]);
+    for (const ingredient of input.ingredients as Array<Record<string, unknown>>) {
+      const name = String(ingredient.ingredient ?? '').trim();
+      if (name) await database.query(
+        `INSERT INTO pharmacy_product_ingredients (product_id, ingredient, quantity, concentration, principal) VALUES ($1, $2, $3, $4, $5)`,
+        [id, name, String(ingredient.quantity ?? '').trim(), String(ingredient.concentration ?? '').trim(), Boolean(ingredient.principal)]
+      );
+    }
+  }
 
   if (input.price !== undefined || input.cost !== undefined) {
     const lotUpdates: string[] = [];
@@ -1197,7 +1237,8 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
     ...result.rows[0],
     price: input.price !== undefined ? Number(input.price) : 0,
     cost: input.cost !== undefined ? Number(input.cost) : 0,
-    description: typeof input.description === 'string' ? input.description : ''
+    description: typeof input.description === 'string' ? input.description : '',
+    ingredients: input.ingredients ?? []
   };
 }
 
@@ -1393,6 +1434,30 @@ export async function initializeDatabase() {
   `);
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS imagen_url TEXT');
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true');
+  await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS producto_controlado BOOLEAN NOT NULL DEFAULT false');
+  await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS uso_cronico BOOLEAN NOT NULL DEFAULT false');
+  await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS evitar_embarazo BOOLEAN NOT NULL DEFAULT false');
+  await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS requiere_refrigeracion BOOLEAN NOT NULL DEFAULT false');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pharmacy_product_ingredients (
+      id BIGSERIAL PRIMARY KEY,
+      product_id INTEGER NOT NULL REFERENCES Productos(id_producto) ON DELETE CASCADE,
+      ingredient TEXT NOT NULL,
+      quantity TEXT NOT NULL DEFAULT '',
+      concentration TEXT NOT NULL DEFAULT '',
+      principal BOOLEAN NOT NULL DEFAULT false
+    )
+  `);
+  await pool.query(`
+    WITH duplicates AS (
+      SELECT id_producto, ROW_NUMBER() OVER (PARTITION BY registro_sanitario ORDER BY id_producto) AS duplicate_number
+      FROM Productos WHERE COALESCE(registro_sanitario, '') <> ''
+    )
+    UPDATE Productos p
+       SET registro_sanitario = 'MSPAS-2026-' || LPAD((p.id_producto % 10000)::text, 4, '0')
+      FROM duplicates d
+      WHERE p.id_producto = d.id_producto AND d.duplicate_number > 1
+  `);
   await pool.query("ALTER TABLE Proveedores ADD COLUMN IF NOT EXISTS nombre_contacto TEXT NOT NULL DEFAULT ''");
   await pool.query('ALTER TABLE Facturas ADD COLUMN IF NOT EXISTS subtotal_bruto NUMERIC(12, 2)');
   await pool.query('ALTER TABLE Facturas ADD COLUMN IF NOT EXISTS descuento_aplicado NUMERIC(12, 2) NOT NULL DEFAULT 0');
