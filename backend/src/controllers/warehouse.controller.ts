@@ -70,6 +70,11 @@ const createProductSchema = z.object({
   unitMeasure: z.string().default(''),
   sanitaryRegistry: z.string().default(''),
   requiresPrescription: z.boolean().default(false),
+  controlledProduct: z.boolean().default(false),
+  chronicUse: z.boolean().default(false),
+  avoidPregnancy: z.boolean().default(false),
+  requiresRefrigeration: z.boolean().default(false),
+  ingredients: z.array(z.object({ ingredient: z.string().default(''), quantity: z.string().default(''), concentration: z.string().default(''), principal: z.boolean().default(false) })).default([]),
   active: z.boolean().optional().default(true),
   description: z.string().nullish().transform((v) => v ?? ''),
   price: z.coerce.number().positive('El precio debe ser mayor a 0'),
@@ -100,6 +105,11 @@ const updateProductSchema = z.object({
   unitMeasure: z.string().nullish().transform((v) => (v == null ? undefined : v)),
   sanitaryRegistry: z.string().nullish().transform((v) => (v == null ? undefined : v)),
   requiresPrescription: z.boolean().optional(),
+  controlledProduct: z.boolean().optional(),
+  chronicUse: z.boolean().optional(),
+  avoidPregnancy: z.boolean().optional(),
+  requiresRefrigeration: z.boolean().optional(),
+  ingredients: z.array(z.object({ ingredient: z.string().default(''), quantity: z.string().default(''), concentration: z.string().default(''), principal: z.boolean().default(false) })).optional(),
   active: z.boolean().optional(),
   description: z.string().nullish().transform((v) => (v == null ? '' : v)),
   price: z.coerce.number().positive().optional(),
@@ -185,6 +195,9 @@ export async function suppliers(_req: Request, res: Response) {
 export async function createProduct(req: Request, res: Response) {
   try {
     const payload = createProductSchema.parse(req.body);
+    if (!/^MSPAS-2026-\d{4}$/.test(payload.sanitaryRegistry)) {
+      throw new Error('El registro sanitario debe tener el formato MSPAS-2026-0000');
+    }
     const result = databaseEnabled ? await createDatabaseProduct(payload) : store.addProduct(payload);
     return res.status(201).json({ success: true, data: result });
   } catch (error) {

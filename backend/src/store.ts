@@ -104,6 +104,17 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function normalizeProduct(product: Product): Product {
+  return {
+    ...product,
+    controlledProduct: product.controlledProduct ?? false,
+    chronicUse: product.chronicUse ?? false,
+    avoidPregnancy: product.avoidPregnancy ?? false,
+    requiresRefrigeration: product.requiresRefrigeration ?? false,
+    ingredients: product.ingredients ?? []
+  };
+}
+
 // ============================================================================
 // CLASE PRINCIPAL: PharmacyStore
 // ============================================================================
@@ -128,6 +139,7 @@ export class PharmacyStore {
       const databaseSnapshot = await loadDatabaseSnapshot();
       if (databaseSnapshot) {
         this.snapshot = databaseSnapshot;
+        this.snapshot.products = this.snapshot.products.map(normalizeProduct);
         this.ensureDiscountSnapshotDefaults();
         await this.migrateEmployeePasswords();
         return;
@@ -144,6 +156,7 @@ export class PharmacyStore {
       if (!this.snapshot.counters.product) {
         this.snapshot.counters.product = Math.max(0, ...this.snapshot.products.map((p) => p.id));
       }
+      this.snapshot.products = this.snapshot.products.map(normalizeProduct);
 
       await this.migrateEmployeePasswords();
       return;
@@ -212,7 +225,12 @@ export class PharmacyStore {
         presentation: 'Caja x 14 tabletas',
         unitMeasure: 'tableta',
         sanitaryRegistry: 'MSPAS-2026-8841',
-        requiresPrescription: true,
+         requiresPrescription: true,
+         controlledProduct: false,
+         chronicUse: false,
+         avoidPregnancy: false,
+         requiresRefrigeration: false,
+         ingredients: [],
         active: true,
         description: 'Antibiótico de amplio espectro con control sanitario.',
         price: 145,
@@ -229,7 +247,12 @@ export class PharmacyStore {
         presentation: 'Caja x 10 tabletas',
         unitMeasure: 'tableta',
         sanitaryRegistry: 'MSPAS-2026-4410',
-        requiresPrescription: false,
+         requiresPrescription: false,
+         controlledProduct: false,
+         chronicUse: false,
+         avoidPregnancy: false,
+         requiresRefrigeration: false,
+         ingredients: [],
         active: true,
         description: 'Analgésico y antipirético de alta rotación.',
         price: 30,
@@ -246,7 +269,12 @@ export class PharmacyStore {
         presentation: 'Caja x 20 tabletas',
         unitMeasure: 'tableta',
         sanitaryRegistry: 'MSPAS-2025-3320',
-        requiresPrescription: false,
+         requiresPrescription: false,
+         controlledProduct: false,
+         chronicUse: false,
+         avoidPregnancy: false,
+         requiresRefrigeration: false,
+         ingredients: [],
         active: true,
         description: 'Anti-inflamatorio para venta libre.',
         price: 28,
@@ -263,7 +291,12 @@ export class PharmacyStore {
         presentation: 'Frasco x 120 ml',
         unitMeasure: 'frasco',
         sanitaryRegistry: 'MSPAS-2026-9912',
-        requiresPrescription: false,
+         requiresPrescription: false,
+         controlledProduct: false,
+         chronicUse: false,
+         avoidPregnancy: false,
+         requiresRefrigeration: false,
+         ingredients: [],
         active: true,
         description: 'Suplemento infantil de rotación media.',
         price: 48,
@@ -431,6 +464,9 @@ export class PharmacyStore {
     if (!this.snapshot.counters.product) {
       this.snapshot.counters.product = Math.max(0, ...this.snapshot.products.map((p) => p.id));
     }
+    if (this.snapshot.products.some((candidate) => candidate.sanitaryRegistry.trim() === input.sanitaryRegistry.trim())) {
+      throw new Error('Ya existe un medicamento con ese registro sanitario');
+    }
     const product: Product = {
       id: ++this.snapshot.counters.product,
       sku: input.sku.trim().toUpperCase(),
@@ -442,6 +478,11 @@ export class PharmacyStore {
       unitMeasure: input.unitMeasure.trim(),
       sanitaryRegistry: input.sanitaryRegistry.trim(),
       requiresPrescription: Boolean(input.requiresPrescription),
+      controlledProduct: Boolean(input.controlledProduct),
+      chronicUse: Boolean(input.chronicUse),
+      avoidPregnancy: Boolean(input.avoidPregnancy),
+      requiresRefrigeration: Boolean(input.requiresRefrigeration),
+      ingredients: (input.ingredients ?? []).filter((item) => item.ingredient.trim()).map((item) => ({ ...item, ingredient: item.ingredient.trim(), quantity: item.quantity.trim(), concentration: item.concentration.trim() })),
       active: input.active ?? true,
       description: input.description.trim(),
       price: Number(input.price),
@@ -485,7 +526,15 @@ export class PharmacyStore {
     if (input.presentation !== undefined) product.presentation = (input.presentation ?? '').trim();
     if (input.unitMeasure !== undefined) product.unitMeasure = (input.unitMeasure ?? '').trim();
     if (input.sanitaryRegistry !== undefined) product.sanitaryRegistry = (input.sanitaryRegistry ?? '').trim();
+    if (input.sanitaryRegistry !== undefined && this.snapshot.products.some((candidate) => candidate.id !== id && candidate.sanitaryRegistry.trim() === product.sanitaryRegistry)) {
+      throw new Error('Ya existe otro medicamento con ese registro sanitario');
+    }
     if (input.requiresPrescription !== undefined) product.requiresPrescription = Boolean(input.requiresPrescription);
+    if (input.controlledProduct !== undefined) product.controlledProduct = Boolean(input.controlledProduct);
+    if (input.chronicUse !== undefined) product.chronicUse = Boolean(input.chronicUse);
+    if (input.avoidPregnancy !== undefined) product.avoidPregnancy = Boolean(input.avoidPregnancy);
+    if (input.requiresRefrigeration !== undefined) product.requiresRefrigeration = Boolean(input.requiresRefrigeration);
+    if (input.ingredients !== undefined) product.ingredients = input.ingredients.filter((item) => item.ingredient.trim()).map((item) => ({ ...item, ingredient: item.ingredient.trim(), quantity: item.quantity.trim(), concentration: item.concentration.trim() }));
     if (input.active !== undefined) product.active = Boolean(input.active);
     if (input.description !== undefined) product.description = (input.description ?? '').trim();
     if (input.price !== undefined) product.price = Number(input.price);

@@ -6,10 +6,13 @@ export interface Supplier {
   id: number; name: string; contactName?: string; nit: string; email: string;
   phone: string; address: string; active: boolean;
 }
+export interface ProductIngredient { ingredient: string; quantity: string; concentration: string; principal: boolean; }
 export interface ProductCard {
   id: number; name: string; sku: string; categoryId?: number; brand: string;
   laboratory: string; presentation: string; unitMeasure?: string; sanitaryRegistry?: string;
   requiresPrescription: boolean; price: number; cost?: number; stock: number; description: string;
+  controlledProduct: boolean; chronicUse: boolean; avoidPregnancy: boolean; requiresRefrigeration: boolean;
+  ingredients: ProductIngredient[];
   imageUrl?: string | null;
   lots: Array<{ id: number; batchCode: string; expirationDate: string; quantityAvailable: number; branchId?: number; salePrice?: number }>;
 }
