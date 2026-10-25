@@ -1,21 +1,21 @@
 /**
  * ============================================================================
- * PROYECTO FARMACIA - ALMACÉN DE DATOS EN MEMORIA Y PERSISTENCIA JSON (STORE)
+ * PROYECTO FARMACIA - ALMACÃ‰N DE DATOS EN MEMORIA Y PERSISTENCIA JSON (STORE)
  * ============================================================================
- * Este módulo proporciona una capa de persistencia dual para el sistema:
- * 1. Modo PostgreSQL: Cuando `DATABASE_URL` está configurada, sincroniza snapshots
+ * Este mÃ³dulo proporciona una capa de persistencia dual para el sistema:
+ * 1. Modo PostgreSQL: Cuando `DATABASE_URL` estÃ¡ configurada, sincroniza snapshots
  *    en formato JSONB y ejecuta migraciones iniciales.
  * 2. Modo Local / Fallback: En ausencia de base de datos externa, opera en memoria
- *    con persistencia automática en disco (`data/dev-store.json`).
+ *    con persistencia automÃ¡tica en disco (`data/dev-store.json`).
  *
- * MÉTODOS Y ALGORITMOS CLAVE:
+ * MÃ‰TODOS Y ALGORITMOS CLAVE:
  * - Algoritmo FEFO (First Expired, First Out):
  *   Al procesar una venta (POS o Web), las existencias se descuentan de los lotes
- *   cuya fecha de vencimiento sea más próxima (`sort((a, b) => a.expirationDate - b.expirationDate)`).
- * - Cifrado Dinámico:
- *   Migra automáticamente contraseñas de empleados no cifradas a hashes bcrypt de 12 rondas.
- * - Motor de Métricas y KPIs:
- *   Calcula ventas diarias, mensuales, productos con rotación crítica y alertas de caducidad (< 90 días).
+ *   cuya fecha de vencimiento sea mÃ¡s prÃ³xima (`sort((a, b) => a.expirationDate - b.expirationDate)`).
+ * - Cifrado DinÃ¡mico:
+ *   Migra automÃ¡ticamente contraseÃ±as de empleados no cifradas a hashes bcrypt de 12 rondas.
+ * - Motor de MÃ©tricas y KPIs:
+ *   Calcula ventas diarias, mensuales, productos con rotaciÃ³n crÃ­tica y alertas de caducidad (< 90 dÃ­as).
  * ============================================================================
  */
 
@@ -35,6 +35,7 @@ import type {
   DataSnapshot,
   DiscountCode,
   DiscountRedemption,
+  EmailStatus,
   Employee,
   Invoice,
   Lot,
@@ -51,13 +52,14 @@ import type {
   Supplier
 } from './domain.js';
 import { assertDiscountCodeUsable, calculateDiscountAmount } from './discounts.js';
+import { generarFacturaDesdeOrden } from './services/invoice.service.js';
 
 // ============================================================================
-// CONFIGURACIÓN DE RUTA DEL ARCHIVO DE ALMACENAMIENTO LOCAL
+// CONFIGURACIÃ“N DE RUTA DEL ARCHIVO DE ALMACENAMIENTO LOCAL
 // ============================================================================
 
 /**
- * Resuelve la ruta adecuada al archivo dev-store.json según el directorio de ejecución.
+ * Resuelve la ruta adecuada al archivo dev-store.json segÃºn el directorio de ejecuciÃ³n.
  */
 function getStorageFilePath(): string {
   const cwd = process.cwd();
@@ -122,12 +124,14 @@ function normalizeProduct(product: Product): Product {
 export class PharmacyStore {
   private snapshot!: DataSnapshot;
   private ready: Promise<void>;
+  /** Mapa de claves de idempotencia para POS: key -> { orderId, timestamp, fingerprint } */
+  private posIdempotencyKeys = new Map<string, { orderId: number; timestamp: number; fingerprint: string }>();
 
   constructor() {
     this.ready = this.load();
   }
 
-  /** Permite al servidor esperar a que los datos estén completamente cargados antes de responder peticiones */
+  /** Permite al servidor esperar a que los datos estÃ©n completamente cargados antes de responder peticiones */
   async waitUntilReady() {
     await this.ready;
   }
@@ -172,7 +176,7 @@ export class PharmacyStore {
     this.snapshot.counters.discountCode ??= this.snapshot.discountCodes.reduce((max, item) => Math.max(max, item.id), 0);
   }
 
-  /** Cifra con bcrypt cualquier contraseña almacenada en texto plano */
+  /** Cifra con bcrypt cualquier contraseÃ±a almacenada en texto plano */
   private async migrateEmployeePasswords() {
     let changed = false;
     for (const employee of this.snapshot.employees) {
@@ -201,16 +205,16 @@ export class PharmacyStore {
       { id: 2, name: 'Ciudad Vieja', city: 'Ciudad Vieja', address: '5a Calle Oriente 8' },
       { id: 3, name: 'Jocotenango', city: 'Jocotenango', address: 'Avenida Central 14' },
       { id: 4, name: 'Pastores', city: 'Pastores', address: 'Calzada Principal 22' },
-      { id: 5, name: 'San Lucas', city: 'San Lucas Sacatepéquez', address: 'Ruta Interamericana Km 28' },
-      { id: 6, name: 'Santa María', city: 'Santa María de Jesús', address: 'Zona 1, Calle Real' },
-      { id: 7, name: 'Dueñas', city: 'Dueñas', address: 'Entrada principal lote 3' }
+      { id: 5, name: 'San Lucas', city: 'San Lucas SacatepÃ©quez', address: 'Ruta Interamericana Km 28' },
+      { id: 6, name: 'Santa MarÃ­a', city: 'Santa MarÃ­a de JesÃºs', address: 'Zona 1, Calle Real' },
+      { id: 7, name: 'DueÃ±as', city: 'DueÃ±as', address: 'Entrada principal lote 3' }
     ];
 
     const categories: Category[] = [
       { id: 1, name: 'Medicamentos', parentId: null },
-      { id: 2, name: 'Analgésicos', parentId: 1 },
-      { id: 3, name: 'Antibióticos', parentId: 1 },
-      { id: 4, name: 'Línea Pediátrica', parentId: 1 },
+      { id: 2, name: 'AnalgÃ©sicos', parentId: 1 },
+      { id: 3, name: 'AntibiÃ³ticos', parentId: 1 },
+      { id: 4, name: 'LÃ­nea PediÃ¡trica', parentId: 1 },
       { id: 5, name: 'Controlados', parentId: 1 }
     ];
 
@@ -232,7 +236,7 @@ export class PharmacyStore {
          requiresRefrigeration: false,
          ingredients: [],
         active: true,
-        description: 'Antibiótico de amplio espectro con control sanitario.',
+        description: 'AntibiÃ³tico de amplio espectro con control sanitario.',
         price: 145,
         cost: 97,
         imageUrl: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=600&q=80'
@@ -240,7 +244,7 @@ export class PharmacyStore {
       {
         id: 2,
         sku: 'SKU-ACETA-500',
-        name: 'Acetaminofén Genfar 500mg',
+        name: 'AcetaminofÃ©n Genfar 500mg',
         categoryId: 2,
         brand: 'Genfar',
         laboratory: 'Laboratorios Genfar',
@@ -254,7 +258,7 @@ export class PharmacyStore {
          requiresRefrigeration: false,
          ingredients: [],
         active: true,
-        description: 'Analgésico y antipirético de alta rotación.',
+        description: 'AnalgÃ©sico y antipirÃ©tico de alta rotaciÃ³n.',
         price: 30,
         cost: 18,
         imageUrl: 'https://images.unsplash.com/photo-1584017911766-d451b3d0e843?auto=format&fit=crop&w=600&q=80'
@@ -284,7 +288,7 @@ export class PharmacyStore {
       {
         id: 4,
         sku: 'SKU-JARABE-120',
-        name: 'Jarabe Pediátrico Multivitamínico',
+        name: 'Jarabe PediÃ¡trico MultivitamÃ­nico',
         categoryId: 4,
         brand: 'PediaLife',
         laboratory: 'PediaLife S.A.',
@@ -298,7 +302,7 @@ export class PharmacyStore {
          requiresRefrigeration: false,
          ingredients: [],
         active: true,
-        description: 'Suplemento infantil de rotación media.',
+        description: 'Suplemento infantil de rotaciÃ³n media.',
         price: 48,
         cost: 26,
         imageUrl: 'https://images.unsplash.com/photo-1577401239170-897942555fb3?auto=format&fit=crop&w=600&q=80'
@@ -379,7 +383,7 @@ export class PharmacyStore {
   }
 
   // ============================================================================
-  // SUCURSALES, CATEGORÍAS Y PROVEEDORES
+  // SUCURSALES, CATEGORÃAS Y PROVEEDORES
   // ============================================================================
 
   getBranches() {
@@ -410,7 +414,7 @@ export class PharmacyStore {
   createDiscountCode(input: Omit<DiscountCode, 'id' | 'createdAt'>) {
     this.assertReady();
     if (this.snapshot.discountCodes.some((item) => item.code === input.code)) {
-      throw new Error('Ya existe un código con ese nombre');
+      throw new Error('Ya existe un cÃ³digo con ese nombre');
     }
     const discount: DiscountCode = {
       ...input,
@@ -425,7 +429,7 @@ export class PharmacyStore {
   setDiscountCodeActive(id: number, active: boolean) {
     this.assertReady();
     const discount = this.snapshot.discountCodes.find((item) => item.id === id);
-    if (!discount) throw new Error('Código de descuento no encontrado');
+    if (!discount) throw new Error('CÃ³digo de descuento no encontrado');
     discount.active = active;
     this.touch();
     return clone(discount);
@@ -435,7 +439,7 @@ export class PharmacyStore {
     this.assertReady();
     const normalizedCode = codeValue.trim().toUpperCase();
     const discount = this.snapshot.discountCodes.find((item) => item.code === normalizedCode);
-    if (!discount) throw new Error('El código de descuento no existe');
+    if (!discount) throw new Error('El cÃ³digo de descuento no existe');
     assertDiscountCodeUsable(discount, email, this.snapshot.discountRedemptions);
     const subtotal = items.reduce((sum, item) => {
       const product = this.snapshot.products.find((candidate) => candidate.id === item.productId);
@@ -444,7 +448,7 @@ export class PharmacyStore {
       if (stock < item.quantity) throw new Error(`Stock insuficiente para ${product.name}`);
       return sum + product.price * item.quantity;
     }, 0);
-    if (subtotal <= 0) throw new Error('El carrito está vacío');
+    if (subtotal <= 0) throw new Error('El carrito estÃ¡ vacÃ­o');
     const discountAmount = calculateDiscountAmount(subtotal, discount.type, discount.value);
     return { code: discount.code, subtotal, discountAmount, total: subtotal - discountAmount };
   }
@@ -575,7 +579,7 @@ export class PharmacyStore {
   deleteBranch(id: number) {
     this.assertReady();
     if (this.snapshot.orders.some((order) => order.branchId === id) || this.snapshot.lots.some((lot) => lot.branchId === id)) {
-      throw new Error('No se puede eliminar una sucursal con órdenes o inventario asociado');
+      throw new Error('No se puede eliminar una sucursal con Ã³rdenes o inventario asociado');
     }
     const index = this.snapshot.branches.findIndex((item) => item.id === id);
     if (index < 0) throw new Error(`Sucursal #${id} no encontrada`);
@@ -595,7 +599,7 @@ export class PharmacyStore {
   updateCategory(id: number, input: Partial<Omit<Category, 'id'>>) {
     this.assertReady();
     const category = this.snapshot.categories.find((item) => item.id === id);
-    if (!category) throw new Error(`Categoría #${id} no encontrada`);
+    if (!category) throw new Error(`CategorÃ­a #${id} no encontrada`);
     Object.assign(category, input);
     this.touch();
     return clone(category);
@@ -604,10 +608,10 @@ export class PharmacyStore {
   deleteCategory(id: number) {
     this.assertReady();
     if (this.snapshot.products.some((product) => product.categoryId === id) || this.snapshot.categories.some((category) => category.parentId === id)) {
-      throw new Error('No se puede eliminar una categoría que tiene productos o subcategorías');
+      throw new Error('No se puede eliminar una categorÃ­a que tiene productos o subcategorÃ­as');
     }
     const index = this.snapshot.categories.findIndex((item) => item.id === id);
-    if (index < 0) throw new Error(`Categoría #${id} no encontrada`);
+    if (index < 0) throw new Error(`CategorÃ­a #${id} no encontrada`);
     const [category] = this.snapshot.categories.splice(index, 1);
     this.touch();
     return clone(category);
@@ -652,7 +656,7 @@ export class PharmacyStore {
     this.assertReady();
     const existing = this.snapshot.customers.find((customer) => customer.email.toLowerCase() === input.email.toLowerCase());
     if (existing) {
-      if (existing.passwordHash) throw new Error('El correo ya está registrado');
+      if (existing.passwordHash) throw new Error('El correo ya estÃ¡ registrado');
       existing.name = input.fullName.trim();
       existing.phone = input.phone.trim();
       existing.nit = input.nit.trim();
@@ -698,15 +702,7 @@ export class PharmacyStore {
       })
       .map((order) => {
         const orderCustomer = this.snapshot.customers.find((candidate) => candidate.id === order.customerId);
-        return { 
-          code: order.code, 
-          branchId: order.branchId, 
-          address: order.address, 
-          status: order.status, 
-          latitude: orderCustomer?.deliveryLatitude ?? null, 
-          longitude: orderCustomer?.deliveryLongitude ?? null, 
-          updatedAt: order.releasedAt ?? order.createdAt 
-        };
+        return { id: order.id, code: order.code, branchId: order.branchId, address: order.address, status: order.status, paymentStatus: order.paymentStatus, latitude: orderCustomer?.deliveryLatitude ?? null, longitude: orderCustomer?.deliveryLongitude ?? null, updatedAt: order.releasedAt ?? order.createdAt };
       });
   }
 
@@ -728,12 +724,12 @@ export class PharmacyStore {
       customer.updatedAt = now();
     }
     this.touch();
-    return clone({ 
-      id: order.id, 
-      code: order.code, 
-      status: order.status, 
-      latitude: orderCustomer?.deliveryLatitude ?? null, 
-      longitude: orderCustomer?.deliveryLongitude ?? null 
+    return clone({
+      id: order.id,
+      code: order.code,
+      status: order.status,
+      latitude: orderCustomer?.deliveryLatitude ?? null,
+      longitude: orderCustomer?.deliveryLongitude ?? null
     });
   }
 
@@ -764,7 +760,7 @@ export class PharmacyStore {
   }
 
   // ============================================================================
-  // CATÁLOGO Y CONTROL DE LOTES
+  // CATÃLOGO Y CONTROL DE LOTES
   // ============================================================================
 
   getCategoryWithDescendants(categoryId: number): number[] {
@@ -848,13 +844,13 @@ export class PharmacyStore {
     const discount = normalizedCode
       ? this.snapshot.discountCodes.find((item) => item.code === normalizedCode)
       : null;
-    if (normalizedCode && !discount) throw new Error('El código de descuento no existe');
+    if (normalizedCode && !discount) throw new Error('El cÃ³digo de descuento no existe');
     if (discount) assertDiscountCodeUsable(discount, input.customer.email, this.snapshot.discountRedemptions);
     const discountAmount = discount ? calculateDiscountAmount(subtotal, discount.type, discount.value) : 0;
 
     const requiresPrescription = items.some(({ product }) => product.requiresPrescription);
     if (requiresPrescription && !input.prescriptionWebUrl) {
-      throw new Error('La receta médica es obligatoria para este carrito.');
+      throw new Error('La receta mÃ©dica es obligatoria para este carrito.');
     }
 
     const customer = this.upsertCustomer(input.customer);
@@ -975,7 +971,11 @@ export class PharmacyStore {
       invoiceNumber: `FAC-${String(order.id).padStart(6, '0')}`,
       satCorrelative: `SAT-${String(order.id).padStart(8, '0')}`,
       issuedAt: now(),
-      total: order.total
+      total: order.total,
+      emailStatus: 'PENDING',
+      emailSentAt: null,
+      emailError: null,
+      emailAttemptAt: null
     });
     this.touch();
     return clone({ order, customer, items });
@@ -1011,7 +1011,11 @@ export class PharmacyStore {
       invoiceNumber: `FAC-${String(order.id).padStart(6, '0')}`,
       satCorrelative: `SAT-${String(order.id).padStart(8, '0')}`,
       issuedAt: now(),
-      total: order.total
+      total: order.total,
+      emailStatus: 'PENDING',
+      emailSentAt: null,
+      emailError: null,
+      emailAttemptAt: null
     });
     this.consumeOrderStock(orderId);
     this.touch();
@@ -1028,6 +1032,232 @@ export class PharmacyStore {
       }
     }
     if (changed) this.touch();
+  }
+
+  /**
+   * Intenta reservar el envío de correo (transición PENDING → SENDING).
+   * Retorna true solo si la factura estaba en PENDING o FAILED (reintento).
+   * Bloquea envíos concurrentes para la misma factura.
+   */
+  reserveInvoiceEmailSend(orderId: number): boolean {
+    this.assertReady();
+    const invoice = this.snapshot.invoices.find((inv) => inv.orderId === orderId);
+    if (!invoice) {
+      return false;
+    }
+    // Solo permitir reserva si está PENDING (primer envío) o FAILED (reintento)
+    if (invoice.emailStatus === 'SENT' || invoice.emailStatus === 'SENDING') {
+      return false; // Ya enviado o en proceso
+    }
+    invoice.emailStatus = 'SENDING';
+    invoice.emailAttemptAt = now();
+    invoice.emailError = null;
+    this.touch();
+    return true;
+  }
+
+  /**
+   * Marca el envío como exitoso (transición SENDING → SENT).
+   * Solo tiene efecto si estaba en SENDING.
+   */
+  markInvoiceEmailSent(orderId: number): boolean {
+    this.assertReady();
+    const invoice = this.snapshot.invoices.find((inv) => inv.orderId === orderId);
+    if (!invoice) {
+      return false;
+    }
+    if (invoice.emailStatus !== 'SENDING') {
+      return false; // No estaba en proceso de envío
+    }
+    invoice.emailStatus = 'SENT';
+    invoice.emailSentAt = now();
+    invoice.emailError = null;
+    this.touch();
+    return true;
+  }
+
+  /**
+   * Marca el envío como fallido (transición SENDING → FAILED).
+   * Guarda el error para diagnóstico y permite reintentos.
+   */
+  markInvoiceEmailFailed(orderId: number, error: string): boolean {
+    this.assertReady();
+    const invoice = this.snapshot.invoices.find((inv) => inv.orderId === orderId);
+    if (!invoice) {
+      return false;
+    }
+    if (invoice.emailStatus !== 'SENDING') {
+      return false; // No estaba en proceso de envío
+    }
+    invoice.emailStatus = 'FAILED';
+    invoice.emailError = error.slice(0, 500); // Limitar longitud
+    this.touch();
+    return true;
+  }
+
+  /**
+   * Obtiene el estado de envío de correo de una factura.
+   */
+  getInvoiceEmailStatus(orderId: number): { status: EmailStatus | undefined; error: string | null | undefined; attemptAt: string | null | undefined } | null {
+    this.assertReady();
+    const invoice = this.snapshot.invoices.find((inv) => inv.orderId === orderId);
+    if (!invoice) return null;
+    return { status: invoice.emailStatus, error: invoice.emailError, attemptAt: invoice.emailAttemptAt };
+  }
+
+  /**
+   * Recupera correos atascados en estado SENDING por más de 10 minutos.
+   * Cambia su estado a FAILED para permitir reintentos controlados.
+   * Operación atómica: solo afecta facturas con emailStatus === 'SENDING' y emailAttemptAt > 10 min.
+   * Retorna el número de facturas recuperadas.
+   *
+   * LIMITACIONES EN MODO JSON (memoria local):
+   * - No protege contra múltiples instancias del backend: cada proceso tiene su propia memoria.
+   * - Al reiniciar el backend, las claves de idempotencia POS (posIdempotencyKeys) se pierden.
+   * - La recuperación se ejecuta solo cuando se invoca explícitamente (no hay job programado interno).
+   * - En producción con PostgreSQL, usar transacciones y bloqueos de fila (SELECT FOR UPDATE).
+   *
+   * NOTA: SMTP solo confirma aceptación del mensaje (código 250), NO garantiza entrega en buzón.
+   * El estado SENT significa "aceptado por el servidor SMTP", no "entregado al destinatario".
+   */
+  recoverStuckSendingEmails(maxAgeMinutes: number = 10): number {
+    this.assertReady();
+    const now = new Date();
+    const threshold = new Date(now.getTime() - maxAgeMinutes * 60 * 1000);
+    let recovered = 0;
+
+    for (const invoice of this.snapshot.invoices) {
+      if (invoice.emailStatus === 'SENDING' && invoice.emailAttemptAt) {
+        const attemptAt = new Date(invoice.emailAttemptAt);
+        if (attemptAt < threshold) {
+          invoice.emailStatus = 'FAILED';
+          invoice.emailError = `Recuperado automáticamente: envío SENDING por más de ${maxAgeMinutes} minutos (último intento: ${invoice.emailAttemptAt})`;
+          recovered++;
+        }
+      }
+    }
+
+    if (recovered > 0) {
+      this.touch();
+      console.log(`[Store] Recuperados ${recovered} correos atascados en SENDING (>${maxAgeMinutes} min) → FAILED`);
+    }
+    return recovered;
+  }
+
+  /**
+   * Reintenta el envío de correos en estado FAILED, con límite de intentos y espera progresiva.
+   * No reintenta correos ya marcados SENT.
+   * Requiere que el servicio de correo esté configurado (initializeEmailService).
+   * Retorna { attempted: number, succeeded: number, failed: number }.
+   *
+   * Para producción con múltiples instancias, implementar bloqueo distribuido (ej. pg_advisory_lock)
+   * o cola de trabajos (ej. BullMQ) en lugar de invocación directa.
+   */
+  async retryFailedEmails(
+    maxAttempts: number = 3,
+    baseDelayMs: number = 60000,
+    sendFn: (params: { customerEmail: string; customerName: string; orderCode: string; invoiceNumber: string; total: number; pdfBuffer: Buffer; isOnline: boolean }) => Promise<{ success: boolean; messageId?: string; error?: string }>
+  ): Promise<{ attempted: number; succeeded: number; failed: number }> {
+    this.assertReady();
+
+    const failedInvoices = this.snapshot.invoices.filter(inv => inv.emailStatus === 'FAILED');
+    let attempted = 0, succeeded = 0, failed = 0;
+
+    for (const invoice of failedInvoices) {
+      // Contar intentos previos (aproximado: cada vez que pasa a FAILED cuenta como intento)
+      // En implementación completa, añadir campo emailAttemptCount a Invoice.
+      // Aquí usamos heurística: si emailError contiene "Recuperado automáticamente", es primer reintento.
+      const isFirstRetry = invoice.emailError?.includes('Recuperado automáticamente') ?? true;
+
+      // Límite simple: no reintentar más de maxAttempts veces
+      // (En producción, añadir contador persistente)
+      if (!isFirstRetry && maxAttempts <= 1) continue;
+
+      attempted++;
+
+      try {
+        // Obtener datos necesarios para reenvío
+        const order = this.snapshot.orders.find(o => o.id === invoice.orderId);
+        if (!order) {
+          console.warn(`[Store] Reintento fallido: orden ${invoice.orderId} no encontrada para factura ${invoice.id}`);
+          failed++;
+          continue;
+        }
+        const customer = this.snapshot.customers.find(c => c.id === order.customerId);
+        if (!customer || !customer.email) {
+          console.warn(`[Store] Reintento fallido: cliente sin email para orden ${order.id}`);
+          failed++;
+          continue;
+        }
+
+        // Reservar atómicamente (PENDING/FAILED → SENDING)
+        const reserved = this.reserveInvoiceEmailSend(invoice.orderId);
+        if (!reserved) {
+          console.log(`[Store] Reintento omitido: factura ${invoice.id} ya no en estado reintentable`);
+          attempted--;
+          continue;
+        }
+
+        // Generar PDF
+        const { pdfBuffer } = await generarFacturaDesdeOrden(invoice.orderId, order.source === 'WEB');
+
+        // Enviar con espera progresiva (backoff exponencial simple)
+        const delay = baseDelayMs * Math.pow(2, isFirstRetry ? 0 : 1);
+        if (delay > 0) await new Promise(r => setTimeout(r, delay));
+
+        const result = await sendFn({
+          customerEmail: customer.email,
+          customerName: customer.name,
+          orderCode: order.code,
+          invoiceNumber: invoice.invoiceNumber,
+          total: invoice.total,
+          pdfBuffer,
+          isOnline: order.source === 'WEB'
+        });
+
+        if (result.success) {
+          this.markInvoiceEmailSent(invoice.orderId);
+          succeeded++;
+          console.log(`[Store] Reintento exitoso: factura ${invoice.id} → SENT (MessageID: ${result.messageId})`);
+        } else {
+          this.markInvoiceEmailFailed(invoice.orderId, result.error ?? 'Error SMTP en reintento');
+          failed++;
+          console.error(`[Store] Reintento fallido: factura ${invoice.id} → FAILED (${result.error})`);
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Error desconocido en reintento';
+        this.markInvoiceEmailFailed(invoice.orderId, errorMsg);
+        failed++;
+        console.error(`[Store] Excepción en reintento factura ${invoice.id}:`, errorMsg);
+      }
+    }
+
+    return { attempted, succeeded, failed };
+  }
+
+  /**
+   * Verifica y registra una clave de idempotencia para ventas POS.
+   * Retorna { isDuplicate: boolean, existingOrderId?: number, fingerprintMatch?: boolean }.
+   * Si es duplicado (mismo key en últimos 5 min), retorna el orderId existente.
+   * Valida la huella de la solicitud para evitar colisiones con contenido diferente.
+   */
+  checkPosIdempotency(key: string, requestFingerprint: string): { isDuplicate: boolean; existingOrderId?: number; fingerprintMatch?: boolean } {
+    const now = Date.now();
+    const entry = this.posIdempotencyKeys.get(key);
+    // Limpiar entradas antiguas (> 5 min)
+    if (entry && now - entry.timestamp > 5 * 60 * 1000) {
+      this.posIdempotencyKeys.delete(key);
+      return { isDuplicate: false };
+    }
+    if (entry) {
+      return { isDuplicate: true, existingOrderId: entry.orderId, fingerprintMatch: entry.fingerprint === requestFingerprint };
+    }
+    return { isDuplicate: false };
+  }
+
+  /** Registra una clave de idempotencia tras crear una venta POS exitosa */
+  registerPosIdempotency(key: string, orderId: number, requestFingerprint: string): void {
+    this.posIdempotencyKeys.set(key, { orderId, timestamp: Date.now(), fingerprint: requestFingerprint });
   }
 
   private consumeOrderStock(orderId: number) {
@@ -1113,7 +1343,7 @@ export class PharmacyStore {
   }
 
   // ============================================================================
-  // GESTIÓN DE PERSONAL Y PERMISOS
+  // GESTIÃ“N DE PERSONAL Y PERMISOS
   // ============================================================================
 
   addEmployee(input: {
@@ -1162,7 +1392,7 @@ export class PharmacyStore {
   }
 
   // ============================================================================
-  // AUDITORÍA Y CONTROL DE CALIDAD
+  // AUDITORÃA Y CONTROL DE CALIDAD
   // ============================================================================
 
   crosscheckOrder(orderId: number, input: CrosscheckInput) {
@@ -1302,7 +1532,7 @@ export class PharmacyStore {
   }
 
   // ============================================================================
-  // ANALÍTICA, DASHBOARD Y REPORTES
+  // ANALÃTICA, DASHBOARD Y REPORTES
   // ============================================================================
 
   getDashboard(): DashboardMetrics {
@@ -1409,6 +1639,31 @@ export class PharmacyStore {
   getCustomerById(id: number) {
     this.assertReady();
     return this.snapshot.customers.find((customer) => customer.id === id) ?? null;
+  }
+
+  getBranchById(id: number) {
+    this.assertReady();
+    return this.snapshot.branches.find((branch) => branch.id === id) ?? null;
+  }
+
+  getInvoiceByOrderId(orderId: number) {
+    this.assertReady();
+    return this.snapshot.invoices.find((invoice) => invoice.orderId === orderId) ?? null;
+  }
+
+  getPaymentByOrderId(orderId: number) {
+    this.assertReady();
+    return this.snapshot.payments.find((payment) => payment.orderId === orderId) ?? null;
+  }
+
+  getOrderItems(orderId: number) {
+    this.assertReady();
+    return this.snapshot.orderItems
+      .filter((item) => item.orderId === orderId)
+      .map((item) => ({
+        ...item,
+        product: this.snapshot.products.find((p) => p.id === item.productId) ?? null
+      }));
   }
 
   getEmployeeById(id: number) {

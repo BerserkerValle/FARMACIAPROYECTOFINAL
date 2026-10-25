@@ -11,7 +11,7 @@
  *    - Pasarela de pagos con tarjeta de crédito mediante Stripe Checkout Sessions.
  *    - Soporte para pago contra entrega en efectivo (CASH) y modo demostración.
  * 3. Webhook de Seguridad de Stripe:
- *    - Verificación criptográfica con la firma `stripe-signature` y cuerpo crudo (buffer).
+ *    - Verificación criptográfica con la firma 'stripe-signature' y cuerpo crudo (buffer).
  *    - Conciliación automática de la orden una vez completada la transacción.
  * 4. Gestión de Recetas Médicas Digitales:
  *    - Carga de imágenes/PDF de prescripción médica vía Multer.
@@ -19,30 +19,37 @@
  * 5. Rastreo y Seguimiento de Órdenes:
  *    - Búsqueda pública por código correlativo (ej: ORD-00001).
  *    - Historial de pedidos por cliente autenticado.
+ * 6. Descarga de Facturas para Clientes:
+ *    - Descarga de factura PDF de compras en línea propias.
  * ============================================================================
  */
 
 import type { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { z } from 'zod';
-import { 
-  createDatabaseCheckout, 
-  createDatabaseDeliveryTracking, 
-  databaseEnabled, 
-  findDatabaseCustomerAccount, 
-  findDatabaseCustomerAccountById, 
-  getDatabaseBranches, 
-  getDatabaseCategories, 
-  getDatabaseSuppliers, 
-  listDatabaseCustomerOrders, 
+import {
+  createDatabaseCheckout,
+  createDatabaseDeliveryTracking,
+  databaseEnabled,
+  findDatabaseCustomerAccount,
+  findDatabaseCustomerAccountById,
+  getDatabaseBranches,
+  getDatabaseCategories,
+  getDatabaseSuppliers,
+  listDatabaseCustomerOrders,
   markDatabaseDiscountRedeemed,
-  registerDatabasePayment, 
+  markDatabaseInvoiceEmailFailed,
+  markDatabaseInvoiceEmailSent,
+  registerDatabasePayment,
   releaseDatabaseDiscountRedemption,
-  searchDatabaseCatalog 
+  reserveDatabaseInvoiceEmailSend,
+  searchDatabaseCatalog
 } from '../db.js';
 import { store } from '../store.js';
 import { fiscalNitSchema } from '../utils.js';
 import { FORBIDDEN_MESSAGE } from '../utils/permissions.js';
+import { generarFacturaDesdeOrden } from '../services/invoice.service.js';
+import { initializeEmailService, isEmailServiceReady, sendInvoiceEmail } from '../services/email.service.js';
 
 async function resolveAuthenticatedCustomer(customerId: number) {
   if (databaseEnabled) {
@@ -108,7 +115,7 @@ const uploadSchema = z.object({
  * Obtiene la URL base de la API para construir las rutas absolutas a archivos subidos.
  */
 function apiBaseUrl(req: Request): string {
-  return process.env.API_BASE_URL?.trim() || `${req.protocol}://${req.get('host')}`;
+  return process.env.API_BASE_URL?.trim() || req.protocol + '://' + req.get('host');
 }
 
 /**
@@ -175,9 +182,9 @@ export async function suppliers(_req: Request, res: Response) {
 /**
  * Búsqueda y filtrado del catálogo público de medicamentos.
  * GET /api/public/catalog?q=paracetamol&branchId=1&categoryId=2&minPrice=10&maxPrice=100
- * 
+ *
  * ¿CÓMO FUNCIONA?
- * - Si `databaseEnabled` es true, realiza consulta SQL optimizada con ILIKE.
+ * - Si 'databaseEnabled' es true, realiza consulta SQL optimizada con ILIKE.
  * - Si está en memoria, filtra la colección de productos contrastando texto y sucursal.
  */
 export async function catalog(req: Request, res: Response) {
@@ -199,14 +206,14 @@ export async function catalog(req: Request, res: Response) {
 /**
  * Procesa la compra de productos desde la tienda web.
  * POST /api/public/checkout
- * 
+ *
  * ¿CÓMO FUNCIONA?
  * 1. Valida el carrito, datos del comprador y modo de entrega (Delivery o Pickup).
  * 2. Verifica si alguno de los medicamentos requiere receta médica obligatoria.
  * 3. Crea la orden en PostgreSQL o almacén en memoria.
  * 4. Si el pago es en efectivo (CASH), finaliza la orden en estado AWAITING_PAYMENT.
  * 5. Si el pago es con tarjeta (STRIPE):
- *    - Si Stripe está configurado: Genera una sesión de pago alojada en Stripe (`stripe.checkout.sessions.create`).
+ *    - Si Stripe está configurado: Genera una sesión de pago alojada en Stripe ('stripe.checkout.sessions.create').
  *    - Si no está configurado: Utiliza una pasarela simulada (Modo Demo).
  */
 export async function checkout(req: Request, res: Response) {
@@ -225,7 +232,7 @@ export async function checkout(req: Request, res: Response) {
 
     const created = databaseEnabled ? await createDatabaseCheckout(payload) : store.createWebCheckout(payload);
     createdOrderId = created.order.id;
-    
+
     // Si la entrega es a domicilio, registra el seguimiento inicial para el mapa de repartidor
     if (databaseEnabled && payload.deliveryMode === 'DELIVERY') {
       const account = customerAccountId
@@ -261,15 +268,17 @@ export async function checkout(req: Request, res: Response) {
 
     // Opción B: Pasarela simulada en caso de no contar con claves de Stripe
     if (!stripe) {
-      const paidOrder = databaseEnabled
-        ? created.order
-        : store.registerPayment(created.order.id, 'demo', `demo-${created.order.id}`);
-      if (databaseEnabled) await markDatabaseDiscountRedeemed(created.order.id);
+      if (databaseEnabled) {
+        await registerDatabasePayment(created.order.id, 'demo-' + created.order.id, created.order.total);
+        await markDatabaseDiscountRedeemed(created.order.id);
+      } else {
+        store.registerPayment(created.order.id, 'demo', 'demo-' + created.order.id);
+      }
       return res.json({
         success: true,
         data: {
-          order: paidOrder,
-          paymentUrl: `${process.env.APP_BASE_URL?.trim() || 'http://localhost:5173'}/?payment=success&order=${created.order.code}`,
+          order: created.order,
+          paymentUrl: (process.env.APP_BASE_URL?.trim() || 'http://localhost:5173') + '/?payment=success&order=' + created.order.code,
           mode: 'demo'
         }
       });
@@ -281,7 +290,7 @@ export async function checkout(req: Request, res: Response) {
       currency: process.env.STRIPE_CURRENCY?.trim().toLowerCase() || 'gtq',
       automatic_payment_methods: { enabled: true },
       receipt_email: created.customer.email,
-      description: `Orden ${created.order.code}`,
+      description: 'Orden ' + created.order.code,
       metadata: {
         orderId: String(created.order.id),
         orderCode: created.order.code,
@@ -315,12 +324,13 @@ export async function checkout(req: Request, res: Response) {
 /**
  * Endpoint de Webhook invocado por los servidores de Stripe.
  * POST /api/webhooks/stripe
- * 
+ *
  * ¿CÓMO FUNCIONA?
- * 1. Requiere el cuerpo de la petición sin procesar (`express.raw({ type: 'application/json' })`).
- * 2. Verifica la autenticidad con `stripe.webhooks.constructEvent` y el secreto de webhook.
- * 3. Al recibir `payment_intent.succeeded` (o sesiones antiguas), registra el pago
+ * 1. Requiere el cuerpo de la petición sin procesar ('express.raw({ type: 'application/json' })').
+ * 2. Verifica la autenticidad con 'stripe.webhooks.constructEvent' y el secreto de webhook.
+ * 3. Al recibir 'payment_intent.succeeded' (o sesiones antiguas), registra el pago
  *    y descuenta el inventario definitivo si no se había hecho previamente.
+ * 4. Genera la factura PDF y la envía por correo al cliente.
  */
 export async function stripeWebhook(req: Request, res: Response) {
   const stripe = stripeClient();
@@ -339,18 +349,133 @@ export async function stripeWebhook(req: Request, res: Response) {
       const payment = event.data.object as Stripe.Checkout.Session | Stripe.PaymentIntent;
       const orderId = Number(payment.metadata?.orderId);
       if (Number.isInteger(orderId) && orderId > 0) {
-        if (databaseEnabled) {
-          const transactionId = event.type === 'payment_intent.succeeded'
-            ? payment.id
-            : (payment as Stripe.Checkout.Session).payment_intent
-              ? String((payment as Stripe.Checkout.Session).payment_intent)
-              : payment.id;
-          const amount = event.type === 'payment_intent.succeeded'
-            ? Number((payment as Stripe.PaymentIntent).amount_received ?? (payment as Stripe.PaymentIntent).amount) / 100
-            : Number((payment as Stripe.Checkout.Session).amount_total ?? 0) / 100;
-          await registerDatabasePayment(orderId, transactionId, amount);
+        let paymentRegistered = false;
+        let transactionId = '';
+        let amount = 0;
+        let currency = '';
+
+        if (event.type === 'payment_intent.succeeded') {
+          const pi = payment as Stripe.PaymentIntent;
+          transactionId = pi.id;
+          amount = Number(pi.amount_received ?? pi.amount) / 100;
+          currency = (pi.currency ?? '').toLowerCase();
         } else {
-          store.registerPayment(orderId, 'stripe', payment.id);
+          const session = payment as Stripe.Checkout.Session;
+          transactionId = session.payment_intent ? String(session.payment_intent) : session.id;
+          amount = Number(session.amount_total ?? 0) / 100;
+          currency = (session.currency ?? '').toLowerCase();
+        }
+
+        // Verificar amount y currency contra la orden esperada (seguridad: evita pagos por importe incorrecto)
+        const expectedCurrency = (process.env.STRIPE_CURRENCY?.trim().toLowerCase() || 'gtq');
+        const order = store.getOrderById(orderId);
+        if (!order) {
+          console.error('[StripeWebhook] Orden no encontrada:', orderId);
+        } else if (Math.abs(amount - order.total) > 0.01) {
+          console.error('[StripeWebhook] Importe no coincide:', { orderId, expected: order.total, received: amount });
+          // No registrar pago ni enviar factura si el importe no coincide
+          return res.json({ received: true });
+        } else if (currency !== expectedCurrency) {
+          console.error('[StripeWebhook] Moneda no coincide:', { orderId, expected: expectedCurrency, received: currency });
+          return res.json({ received: true });
+        }
+
+        if (databaseEnabled) {
+          await registerDatabasePayment(orderId, transactionId, amount);
+          paymentRegistered = true;
+        } else {
+          store.registerPayment(orderId, 'stripe', transactionId);
+          paymentRegistered = true;
+        }
+
+        // Generar factura y enviar correo si el pago se registró correctamente (idempotente con state machine)
+        if (paymentRegistered) {
+          try {
+            const { pdfBuffer } = await generarFacturaDesdeOrden(orderId, true);
+
+            // Obtener email del cliente
+            const order = store.getOrderById(orderId);
+            if (order) {
+              const customer = store.getCustomerById(order.customerId);
+              if (customer && customer.email) {
+                const invoice = store.getInvoiceByOrderId(orderId);
+                if (invoice) {
+                  // PASO 1: Reservar atómicamente el envío (PENDING/FAILED → SENDING)
+                  // Esto evita que dos webhooks concurrentes procesen la misma factura
+                  let reserved = false;
+                  if (databaseEnabled) {
+                    reserved = await reserveDatabaseInvoiceEmailSend(orderId);
+                  } else {
+                    reserved = store.reserveInvoiceEmailSend(orderId);
+                  }
+
+                  if (!reserved) {
+                    // Ya está SENT (completado), SENDING (en proceso por otro webhook), o no existe
+                    console.log('[StripeWebhook] Email no reservado para orden', orderId, '- estado actual impide envío (ya SENT/SENDING)');
+                  } else {
+                    // PASO 2: Intentar envío SMTP
+                    // Inicializar servicio de correo si no está listo
+                    if (!isEmailServiceReady()) {
+                      initializeEmailService();
+                    }
+
+                    if (isEmailServiceReady()) {
+                      const emailResult = await sendInvoiceEmail({
+                        customerEmail: customer.email,
+                        customerName: customer.name,
+                        orderCode: order.code,
+                        invoiceNumber: invoice.invoiceNumber,
+                        total: invoice.total,
+                        pdfBuffer,
+                        isOnline: true
+                      });
+
+                      if (emailResult.success) {
+                        // PASO 3a: SMTP confirmó aceptación → marcar SENT
+                        if (databaseEnabled) {
+                          await markDatabaseInvoiceEmailSent(orderId);
+                        } else {
+                          store.markInvoiceEmailSent(orderId);
+                        }
+                        console.log('[StripeWebhook] Email enviado y marcado SENT para orden', orderId, 'MessageID:', emailResult.messageId);
+                      } else {
+                        // PASO 3b: SMTP falló → marcar FAILED con error para reintento
+                        if (databaseEnabled) {
+                          await markDatabaseInvoiceEmailFailed(orderId, emailResult.error ?? 'Error SMTP desconocido');
+                        } else {
+                          store.markInvoiceEmailFailed(orderId, emailResult.error ?? 'Error SMTP desconocido');
+                        }
+                        console.error('[StripeWebhook] Fallo SMTP, marcado FAILED para orden', orderId, ':', emailResult.error);
+                      }
+                    } else {
+                      // Servicio de correo no configurado → marcar FAILED
+                      const configError = 'Servicio de correo no configurado (faltan variables SMTP)';
+                      if (databaseEnabled) {
+                        await markDatabaseInvoiceEmailFailed(orderId, configError);
+                      } else {
+                        store.markInvoiceEmailFailed(orderId, configError);
+                      }
+                      console.warn('[StripeWebhook]', configError, '- factura generada pero no enviada, marcado FAILED');
+                    }
+                  }
+                }
+              }
+            }
+          } catch (invoiceError) {
+            const errorMsg = invoiceError instanceof Error ? invoiceError.message : 'Error generando/enviando factura';
+            // Si falla la generación de factura o envío, marcar FAILED si estaba en SENDING
+            try {
+              if (databaseEnabled) {
+                await markDatabaseInvoiceEmailFailed(orderId, errorMsg);
+              } else {
+                store.markInvoiceEmailFailed(orderId, errorMsg);
+              }
+            } catch {
+              // Ignorar errores de marcado
+            }
+            console.error('[StripeWebhook] Error generando/enviando factura:', invoiceError);
+            // No fallar el webhook por error en factura/correo
+          }
         }
       }
     } else if (event.type === 'payment_intent.canceled') {
@@ -393,7 +518,7 @@ export function uploadPrescription(req: Request, res: Response) {
       return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
     }
   }
-  const url = `${apiBaseUrl(req)}/uploads/${req.file.filename}`;
+  const url = apiBaseUrl(req) + '/uploads/' + req.file.filename;
   const order = store.attachPrescription(parsed.orderId, parsed.kind, url);
   return res.json({ success: true, data: { order, url } });
 }
@@ -406,7 +531,7 @@ export function uploadTemporaryPrescription(req: Request, res: Response) {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'Debe adjuntar un archivo de receta' });
   }
-  const url = `${apiBaseUrl(req)}/uploads/${req.file.filename}`;
+  const url = apiBaseUrl(req) + '/uploads/' + req.file.filename;
   return res.json({ success: true, data: { url } });
 }
 
@@ -455,7 +580,7 @@ export function trackOrder(req: Request, res: Response) {
 
 /**
  * Lista el historial de compras del cliente logueado en la tienda web.
- * GET /api/public/customers/orders
+ * GET /api/public/customer/orders
  */
 export async function customerOrders(req: Request, res: Response) {
   const customerId = Number(res.locals.customerId);
@@ -464,4 +589,56 @@ export async function customerOrders(req: Request, res: Response) {
   }
   const data = databaseEnabled ? await listDatabaseCustomerOrders(customerId) : store.listCustomerOrders(customerId);
   return res.json({ success: true, data });
+}
+
+// ============================================================================
+// SECCIÓN 6: DESCARGA DE FACTURAS PARA CLIENTES
+// ============================================================================
+
+/**
+ * Descarga la factura PDF de una compra en línea propia.
+ * GET /api/public/orders/:id/invoice
+ * Solo el cliente propietario de la orden puede descargarla.
+ */
+export async function downloadOrderInvoice(req: Request, res: Response) {
+  const customerId = authenticatedCustomerId(res);
+  if (!customerId) {
+    return res.status(401).json({ success: false, message: 'No autenticado' });
+  }
+
+  const orderId = Number(req.params.id);
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({ success: false, message: 'ID de orden inválido' });
+  }
+
+  // Verificar que la orden pertenece al cliente
+  const order = store.getOrderByIdForCustomer(customerId, orderId);
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Orden no encontrada' });
+  }
+
+  // Verificar que la orden es una compra en línea y está pagada
+  if (order.source !== 'WEB') {
+    return res.status(400).json({ success: false, message: 'Esta orden no es una compra en línea' });
+  }
+
+  if (order.paymentStatus !== 'PAID') {
+    return res.status(400).json({ success: false, message: 'La orden no está pagada, no se puede descargar la factura' });
+  }
+
+  try {
+    const { pdfBuffer } = await generarFacturaDesdeOrden(orderId, true);
+
+    const invoice = store.getInvoiceByOrderId(orderId);
+    const filename = invoice ? 'factura-' + invoice.invoiceNumber + '.pdf' : 'factura-' + order.code + '.pdf';
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=\"' + filename + '\"');
+    res.setHeader('Content-Length', pdfBuffer.length);
+    return res.send(pdfBuffer);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error generando la factura';
+    console.error('[Public] Error generando factura:', error);
+    return res.status(500).json({ success: false, message });
+  }
 }

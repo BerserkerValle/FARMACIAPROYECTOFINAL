@@ -335,6 +335,9 @@ export interface Payment {
   createdAt: string;
 }
 
+/** Estado del envío de correo de factura */
+export type EmailStatus = 'PENDING' | 'SENDING' | 'SENT' | 'FAILED';
+
 /**
  * Factura emitida según correlativo fiscal (SAT / FEL).
  */
@@ -350,6 +353,14 @@ export interface Invoice {
   subtotal?: number;
   discountAmount?: number;
   discountCode?: string | null;
+  /** Estado del envío de correo */
+  emailStatus?: EmailStatus;
+  /** Timestamp del último envío exitoso de correo */
+  emailSentAt?: string | null;
+  /** Error del último intento fallido (para diagnóstico) */
+  emailError?: string | null;
+  /** Timestamp del último intento */
+  emailAttemptAt?: string | null;
 }
 
 export type DiscountType = 'PERCENTAGE' | 'FIXED';

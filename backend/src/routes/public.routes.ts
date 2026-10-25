@@ -12,16 +12,16 @@ import {
   suppliers,
   trackOrder,
   uploadPrescription,
-  uploadTemporaryPrescription
+  uploadTemporaryPrescription,
+  downloadOrderInvoice
 } from '../controllers/public.controller.js';
 import { validateDiscountCode } from '../controllers/discounts.controller.js';
 import { getUploadsDir } from '../utils.js';
 import { authenticate, authenticateCustomer, authorize, authorizeStaffOrCustomer, optionalAuthenticateCustomer } from '../middleware/auth.js';
 import { ORDER_READ_ROLES, WAREHOUSE_ROLES } from '../utils/permissions.js';
 
- 
 // CONFIGURACIÓN DE MULTER PARA CARGA DE RECETAS MÉDICAS
- 
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, getUploadsDir());
@@ -29,32 +29,30 @@ const storage = multer.diskStorage({
   filename: (_req, file, cb) => {
     const ext = extname(file.originalname).toLowerCase() || '.jpg';
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, `rx-${uniqueSuffix}${ext}`);
+    cb(null, 'rx-' + uniqueSuffix + ext);
   }
 });
 const upload = multer({ storage });
 
 export const publicRouter = Router();
 
- 
 // CONSULTAS PÚBLICAS Y CATÁLOGO
- 
+
 publicRouter.get('/branches', branches);
 publicRouter.get('/categories', categories);
 publicRouter.get('/suppliers', authenticate, authorize(...WAREHOUSE_ROLES), suppliers);
 publicRouter.get('/catalog', catalog);
 publicRouter.post('/discounts/validate', validateDiscountCode);
 
- 
 // CHECKOUT Y SEGUIMIENTO DE COMPRAS
- 
+
 publicRouter.post('/checkout', optionalAuthenticateCustomer, checkout);
 publicRouter.get('/customer/orders', authenticateCustomer, customerOrders);
 publicRouter.get('/orders/:id', authorizeStaffOrCustomer(...ORDER_READ_ROLES), getOrder);
+publicRouter.get('/orders/:id/invoice', authenticateCustomer, downloadOrderInvoice);
 publicRouter.get('/pos-payment/:paymentIntentId', getPosPayment);
 publicRouter.get('/orders/code/:code', authorizeStaffOrCustomer(...ORDER_READ_ROLES), trackOrder);
 
- 
 // SUBIDA DE RECETAS MÉDICAS
 
 publicRouter.post('/prescriptions/temp', upload.single('recipe'), uploadTemporaryPrescription);

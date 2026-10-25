@@ -2,26 +2,26 @@
  * ============================================================================
  * PROYECTO FARMACIA - CAPA DE PERSISTENCIA Y ACCESO A DATOS (POSTGRESQL)
  * ============================================================================
- * Este módulo implementa la interacción con la base de datos relacional PostgreSQL:
+ * Este mÃ³dulo implementa la interacciÃ³n con la base de datos relacional PostgreSQL:
  * 1. Conectividad y Pool de Conexiones:
- *    - Inicialización de `pg.Pool` con soporte SSL y límite de conexiones concurrentes.
- *    - Detección automática de variables de entorno (DATABASE_URL o PGHOST/PGUSER/etc.).
- * 2. Cuentas de Clientes y Telemetría:
- *    - Creación y autenticación de cuentas e-commerce con hash bcrypt.
- *    - Tabla `pharmacy_delivery_tracking` para seguimiento geográfico en tiempo real.
- * 3. Gestión de Personal (Empleados):
- *    - Consulta con filtros, creación, actualización y baja lógica (`deactivateDatabaseEmployee`).
- * 4. Catálogos Maestros (CRUDs):
- *    - Sucursales, Categorías jerárquicas y Proveedores.
+ *    - InicializaciÃ³n de `pg.Pool` con soporte SSL y lÃ­mite de conexiones concurrentes.
+ *    - DetecciÃ³n automÃ¡tica de variables de entorno (DATABASE_URL o PGHOST/PGUSER/etc.).
+ * 2. Cuentas de Clientes y TelemetrÃ­a:
+ *    - CreaciÃ³n y autenticaciÃ³n de cuentas e-commerce con hash bcrypt.
+ *    - Tabla `pharmacy_delivery_tracking` para seguimiento geogrÃ¡fico en tiempo real.
+ * 3. GestiÃ³n de Personal (Empleados):
+ *    - Consulta con filtros, creaciÃ³n, actualizaciÃ³n y baja lÃ³gica (`deactivateDatabaseEmployee`).
+ * 4. CatÃ¡logos Maestros (CRUDs):
+ *    - Sucursales, CategorÃ­as jerÃ¡rquicas y Proveedores.
  * 5. Control de Medicamentos e Inventario FEFO:
- *    - Catálogo con búsqueda textual (`ILIKE`), cálculo de existencias en tiempo real.
+ *    - CatÃ¡logo con bÃºsqueda textual (`ILIKE`), cÃ¡lculo de existencias en tiempo real.
  *    - Alta transaccional de productos con lote inicial opcional.
- *    - Recepción formal de lotes (`receiveDatabaseLot`) y registro de kardex / movimientos.
- *    - Eliminación inteligente: borrado físico si no tiene historial; baja lógica (soft delete) si tiene ventas.
- * 6. Checkout y Facturación Transaccional:
- *    - Operación atómica (`BEGIN ... COMMIT / ROLLBACK`) que reserva stock según caducidad (FEFO),
+ *    - RecepciÃ³n formal de lotes (`receiveDatabaseLot`) y registro de kardex / movimientos.
+ *    - EliminaciÃ³n inteligente: borrado fÃ­sico si no tiene historial; baja lÃ³gica (soft delete) si tiene ventas.
+ * 6. Checkout y FacturaciÃ³n Transaccional:
+ *    - OperaciÃ³n atÃ³mica (`BEGIN ... COMMIT / ROLLBACK`) que reserva stock segÃºn caducidad (FEFO),
  *      registra el cliente, emite factura legal y asocia detalle de lotes.
- * 7. Inicialización y Respaldo (Fallback State):
+ * 7. InicializaciÃ³n y Respaldo (Fallback State):
  *    - Tablas de estado `pharmacy_state` para snapshots JSONB sincronizados.
  * ============================================================================
  */
@@ -38,12 +38,12 @@ dotenv.config();
 dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../.env') });
 
 // ============================================================================
-// CONFIGURACIÓN DEL POOL DE CONEXIONES POSTGRESQL
+// CONFIGURACIÃ“N DEL POOL DE CONEXIONES POSTGRESQL
 // ============================================================================
 
 /**
- * Construye la cadena de conexión de PostgreSQL a partir de variables de entorno.
- * Soporta DATABASE_URL completa o variables individuales estándar de PG.
+ * Construye la cadena de conexiÃ³n de PostgreSQL a partir de variables de entorno.
+ * Soporta DATABASE_URL completa o variables individuales estÃ¡ndar de PG.
  */
 function connectionString(): string | null {
   if (process.env.DATABASE_URL?.trim()) {
@@ -64,7 +64,7 @@ function connectionString(): string | null {
 
 const url = connectionString();
 
-/** Bandera que indica si la base de datos PostgreSQL está habilitada y configurada */
+/** Bandera que indica si la base de datos PostgreSQL estÃ¡ habilitada y configurada */
 export const databaseEnabled = Boolean(url);
 
 /** Instancia del pool de conexiones `pg.Pool` */
@@ -77,16 +77,16 @@ const pool = url
   : null;
 
 /**
- * Asegura que el pool esté disponible antes de ejecutar una consulta obligatoria.
- * Lanza un error si PostgreSQL no está configurado.
+ * Asegura que el pool estÃ© disponible antes de ejecutar una consulta obligatoria.
+ * Lanza un error si PostgreSQL no estÃ¡ configurado.
  */
 function requirePool(): Pool {
-  if (!pool) throw new Error('PostgreSQL no está configurado');
+  if (!pool) throw new Error('PostgreSQL no estÃ¡ configurado');
   return pool;
 }
 
 // ============================================================================
-// MODELOS Y MAPEADORES DE CLIENTES Y TELEMETRÍA
+// MODELOS Y MAPEADORES DE CLIENTES Y TELEMETRÃA
 // ============================================================================
 
 export interface DatabaseEmployee {
@@ -120,7 +120,7 @@ function mapCustomerAccount(row: Record<string, unknown>): DatabaseCustomerAccou
   };
 }
 
-/** Crea una nueva cuenta de cliente con contraseña encriptada (bcrypt 12 rondas) */
+/** Crea una nueva cuenta de cliente con contraseÃ±a encriptada (bcrypt 12 rondas) */
 export async function createDatabaseCustomerAccount(input: { fullName: string; email: string; password: string; phone: string; nit: string }) {
   const database = requirePool();
   const result = await database.query(
@@ -132,7 +132,7 @@ export async function createDatabaseCustomerAccount(input: { fullName: string; e
   return mapCustomerAccount(result.rows[0]);
 }
 
-/** Busca una cuenta de cliente por correo y valida opcionalmente la contraseña con bcrypt */
+/** Busca una cuenta de cliente por correo y valida opcionalmente la contraseÃ±a con bcrypt */
 export async function findDatabaseCustomerAccount(email: string, password?: string) {
   const database = requirePool();
   const result = await database.query(
@@ -152,7 +152,7 @@ export async function findDatabaseCustomerAccountById(id: number) {
   return result.rows[0] ? mapCustomerAccount(result.rows[0]) : null;
 }
 
-/** Actualiza los datos fiscales y de dirección de un cliente */
+/** Actualiza los datos fiscales y de direcciÃ³n de un cliente */
 export async function updateDatabaseCustomerAccount(id: number, input: { fullName: string; phone: string; nit: string; address: string }) {
   const database = requirePool();
   const result = await database.query(
@@ -166,7 +166,7 @@ export async function updateDatabaseCustomerAccount(id: number, input: { fullNam
   return mapCustomerAccount(result.rows[0]);
 }
 
-/** Registra el seguimiento GPS y telemetría de una orden de entrega a domicilio */
+/** Registra el seguimiento GPS y telemetrÃ­a de una orden de entrega a domicilio */
 export async function createDatabaseDeliveryTracking(input: { orderCode: string; customerId: number | null; branchId: number; address: string; latitude: number | null; longitude: number | null; deliveryMode: string }) {
   if (input.deliveryMode !== 'DELIVERY') return;
   const database = requirePool();
@@ -182,7 +182,7 @@ export async function createDatabaseDeliveryTracking(input: { orderCode: string;
 export async function listDatabaseCustomerOrders(customerId: number) {
   const database = requirePool();
   const result = await database.query(
-    `SELECT order_code AS code, branch_id AS "branchId", address, status,
+    `SELECT id, order_code AS code, branch_id AS "branchId", address, status,
             latitude, longitude, updated_at AS "updatedAt"
        FROM pharmacy_delivery_tracking
       WHERE customer_account_id = $1
@@ -263,7 +263,7 @@ export async function updateDatabaseDeliveryTracking(id: number, input: { status
 }
 
 // ============================================================================
-// GESTIÓN DE EMPLEADOS (PERSONAL DE FARMACIA)
+// GESTIÃ“N DE EMPLEADOS (PERSONAL DE FARMACIA)
 // ============================================================================
 
 function mapEmployee(row: Record<string, unknown>): DatabaseEmployee {
@@ -278,7 +278,7 @@ function mapEmployee(row: Record<string, unknown>): DatabaseEmployee {
   };
 }
 
-/** Busca un empleado activo por correo electrónico para autenticación */
+/** Busca un empleado activo por correo electrÃ³nico para autenticaciÃ³n */
 export async function findDatabaseEmployeeByEmail(email: string) {
   if (!pool) return null;
   const result = await pool.query(
@@ -320,7 +320,7 @@ function mapEmployeeForAdmin(row: Record<string, unknown>) {
   };
 }
 
-/** Lista todos los empleados para el panel de administración */
+/** Lista todos los empleados para el panel de administraciÃ³n */
 export async function listDatabaseEmployees() {
   if (!pool) return null;
   const result = await pool.query(
@@ -332,7 +332,7 @@ export async function listDatabaseEmployees() {
   return result.rows.map(mapEmployeeForAdmin);
 }
 
-/** Crea un nuevo empleado en la base de datos con contraseña encriptada con bcrypt */
+/** Crea un nuevo empleado en la base de datos con contraseÃ±a encriptada con bcrypt */
 export async function createDatabaseEmployee(input: {
   fullName: string;
   email: string;
@@ -391,7 +391,7 @@ export async function updateDatabaseEmployee(id: number, input: Record<string, u
   return mapEmployeeForAdmin(result.rows[0]);
 }
 
-/** Desactiva a un empleado removiendo su contraseña de acceso */
+/** Desactiva a un empleado removiendo su contraseÃ±a de acceso */
 export async function deactivateDatabaseEmployee(id: number) {
   const database = requirePool();
   const result = await database.query(
@@ -407,7 +407,7 @@ export async function deactivateDatabaseEmployee(id: number) {
 }
 
 // ============================================================================
-// GESTIÓN DE SUCURSALES (SUCURSALES)
+// GESTIÃ“N DE SUCURSALES (SUCURSALES)
 // ============================================================================
 
 export async function getDatabaseBranches() {
@@ -461,7 +461,7 @@ export async function deleteDatabaseBranch(id: number) {
 }
 
 // ============================================================================
-// GESTIÓN DE CATEGORÍAS (CATEGORIAS)
+// GESTIÃ“N DE CATEGORÃAS (CATEGORIAS)
 // ============================================================================
 
 export async function getDatabaseCategories() {
@@ -501,7 +501,7 @@ export async function updateDatabaseCategory(id: number, input: { name?: string;
       RETURNING id_categoria AS id, nombre_categoria AS name, id_categoria_padre AS "parentId"`,
     [id, ...fields.map(([, value]) => value)]
   );
-  if (!result.rows[0]) throw new Error(`Categoría #${id} no encontrada`);
+  if (!result.rows[0]) throw new Error(`CategorÃ­a #${id} no encontrada`);
   return result.rows[0];
 }
 
@@ -513,18 +513,18 @@ export async function deleteDatabaseCategory(id: number) {
     [id]
   );
   if (used.rows[0]?.product_used || used.rows[0]?.child_used) {
-    throw new Error('No se puede eliminar una categoría que tiene productos o subcategorías');
+    throw new Error('No se puede eliminar una categorÃ­a que tiene productos o subcategorÃ­as');
   }
   const result = await database.query(
     'DELETE FROM Categorias WHERE id_categoria = $1 RETURNING id_categoria AS id, nombre_categoria AS name, id_categoria_padre AS "parentId"',
     [id]
   );
-  if (!result.rows[0]) throw new Error(`Categoría #${id} no encontrada`);
+  if (!result.rows[0]) throw new Error(`CategorÃ­a #${id} no encontrada`);
   return result.rows[0];
 }
 
 // ============================================================================
-// GESTIÓN DE PROVEEDORES (PROVEEDORES)
+// GESTIÃ“N DE PROVEEDORES (PROVEEDORES)
 // ============================================================================
 
 export async function getDatabaseSuppliers() {
@@ -686,11 +686,11 @@ export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
 }
 
 // ============================================================================
-// CATÁLOGO DE PRODUCTOS Y BÚSQUEDA AVANZADA CON LOTES
+// CATÃLOGO DE PRODUCTOS Y BÃšSQUEDA AVANZADA CON LOTES
 // ============================================================================
 
 /**
- * Realiza búsqueda en catálogo consolidando lotes disponibles en sucursal mediante `jsonb_agg`.
+ * Realiza bÃºsqueda en catÃ¡logo consolidando lotes disponibles en sucursal mediante `jsonb_agg`.
  */
 export async function searchDatabaseCatalog(query: string, branchId?: number, categoryId?: number, minPrice?: number, maxPrice?: number) {
   if (!pool) return null;
@@ -811,7 +811,7 @@ export async function listDatabaseLots(branchId?: number, productId?: number) {
 }
 
 /**
- * Registra la recepción formal de un lote de medicamentos con transacción ACID.
+ * Registra la recepciÃ³n formal de un lote de medicamentos con transacciÃ³n ACID.
  * Inserta en `Lotes`, actualiza `Stock_Sucursal` y registra en `MovimientoInventario`.
  */
 export async function receiveDatabaseLot(input: {
@@ -846,20 +846,20 @@ export async function receiveDatabaseLot(input: {
     );
     await client.query(
       `INSERT INTO MovimientoInventario (id_lote, tipo_movimiento, cantidad, id_usuario, motivo)
-       VALUES ($1, 'ENTRADA', $2, $3, 'Recepción de lote')`,
+       VALUES ($1, 'ENTRADA', $2, $3, 'RecepciÃ³n de lote')`,
       [lotId, input.quantity, input.employeeId]
     );
     await client.query('COMMIT');
-    return { 
-      id: lotId, 
-      productId: input.productId, 
-      branchId: input.branchId, 
-      supplierId: input.supplierId, 
-      batchCode: input.batchCode, 
-      expirationDate: input.expirationDate, 
-      quantityAvailable: input.quantity, 
-      costPrice: input.costPrice, 
-      salePrice: input.salePrice 
+    return {
+      id: lotId,
+      productId: input.productId,
+      branchId: input.branchId,
+      supplierId: input.supplierId,
+      batchCode: input.batchCode,
+      expirationDate: input.expirationDate,
+      quantityAvailable: input.quantity,
+      costPrice: input.costPrice,
+      salePrice: input.salePrice
     };
   } catch (error) {
     await client.query('ROLLBACK');
@@ -930,40 +930,40 @@ export async function createDatabaseProduct(input: CreateProductInput) {
          VALUES ($1, $2, $3)`,
         [Number(input.initialStock.branchId), lotId, Number(input.initialStock.quantity)]
       );
-      initialLot = { 
-        id: lotId, 
-        productId, 
-        branchId: Number(input.initialStock.branchId), 
-        supplierId: Number(input.initialStock.supplierId), 
-        batchCode: input.initialStock.batchCode, 
-        expirationDate: input.initialStock.expirationDate, 
-        productionDate: input.initialStock.productionDate, 
-        costPrice: Number(input.cost), 
-        salePrice: Number(input.price), 
-        quantityAvailable: Number(input.initialStock.quantity) 
+      initialLot = {
+        id: lotId,
+        productId,
+        branchId: Number(input.initialStock.branchId),
+        supplierId: Number(input.initialStock.supplierId),
+        batchCode: input.initialStock.batchCode,
+        expirationDate: input.initialStock.expirationDate,
+        productionDate: input.initialStock.productionDate,
+        costPrice: Number(input.cost),
+        salePrice: Number(input.price),
+        quantityAvailable: Number(input.initialStock.quantity)
       };
     }
 
     await client.query('COMMIT');
-    return { 
-      product: { 
-        id: productId, 
-        sku: input.sku.trim().toUpperCase(), 
-        name: input.name.trim(), 
-        categoryId: input.categoryId == null ? 0 : Number(input.categoryId), 
-        brand: input.brand.trim(), 
-        laboratory: input.laboratory.trim(), 
-        presentation: input.presentation.trim(), 
-        unitMeasure: input.unitMeasure.trim(), 
-        sanitaryRegistry: input.sanitaryRegistry.trim(), 
-        requiresPrescription: Boolean(input.requiresPrescription), 
-        active: true, 
-        description: (input.description || '').trim(), 
-        price: Number(input.price), 
-        cost: Number(input.cost), 
-        imageUrl: input.imageUrl?.trim() || null 
-      }, 
-      initialLot 
+    return {
+      product: {
+        id: productId,
+        sku: input.sku.trim().toUpperCase(),
+        name: input.name.trim(),
+        categoryId: input.categoryId == null ? 0 : Number(input.categoryId),
+        brand: input.brand.trim(),
+        laboratory: input.laboratory.trim(),
+        presentation: input.presentation.trim(),
+        unitMeasure: input.unitMeasure.trim(),
+        sanitaryRegistry: input.sanitaryRegistry.trim(),
+        requiresPrescription: Boolean(input.requiresPrescription),
+        active: true,
+        description: (input.description || '').trim(),
+        price: Number(input.price),
+        cost: Number(input.cost),
+        imageUrl: input.imageUrl?.trim() || null
+      },
+      initialLot
     };
   } catch (error) {
     await client.query('ROLLBACK');
@@ -1010,7 +1010,7 @@ export async function setDatabaseDiscountCodeActive(id: number, active: boolean)
     'UPDATE pharmacy_discount_codes SET active = $2 WHERE id = $1 RETURNING *',
     [id, active]
   );
-  if (!result.rows[0]) throw new Error('Código de descuento no encontrado');
+  if (!result.rows[0]) throw new Error('CÃ³digo de descuento no encontrado');
   return mapDatabaseDiscountCode(result.rows[0]);
 }
 
@@ -1023,7 +1023,7 @@ export async function quoteDatabaseDiscountCode(input: {
   const database = requirePool();
   const codeResult = await database.query('SELECT * FROM pharmacy_discount_codes WHERE code = $1', [input.code.trim().toUpperCase()]);
   const row = codeResult.rows[0];
-  if (!row) throw new Error('El código de descuento no existe');
+  if (!row) throw new Error('El cÃ³digo de descuento no existe');
   const discount = mapDatabaseDiscountCode(row);
   const redemptionResult = await database.query(
     `SELECT discount_code_id AS "discountCodeId", order_id AS "orderId", customer_email AS "customerEmail",
@@ -1067,14 +1067,14 @@ export async function quoteDatabaseDiscountCode(input: {
     }
     subtotal += productSubtotal;
   }
-  if (subtotal <= 0) throw new Error('El carrito está vacío');
+  if (subtotal <= 0) throw new Error('El carrito estÃ¡ vacÃ­o');
   const discountAmount = calculateDiscountAmount(subtotal, discount.type, discount.value);
   return { code: discount.code, subtotal, discountAmount, total: subtotal - discountAmount };
 }
 
 /**
- * Elimina un producto. Si ya posee historial de ventas registradas, aplica una baja lógica
- * marcándolo como inactivo y poniendo su stock a cero para preservar la integridad referencial.
+ * Elimina un producto. Si ya posee historial de ventas registradas, aplica una baja lÃ³gica
+ * marcÃ¡ndolo como inactivo y poniendo su stock a cero para preservar la integridad referencial.
  */
 export async function deleteDatabaseProduct(id: number) {
   const database = requirePool();
@@ -1243,15 +1243,15 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
 }
 
 // ============================================================================
-// CHECKOUT Y PROCESAMIENTO DE COMPRAS (TRANSACCIÓN ATÓMICA FEFO)
+// CHECKOUT Y PROCESAMIENTO DE COMPRAS (TRANSACCIÃ“N ATÃ“MICA FEFO)
 // ============================================================================
 
 /**
- * Realiza el proceso de compra completo dentro de una transacción PostgreSQL aislada:
+ * Realiza el proceso de compra completo dentro de una transacciÃ³n PostgreSQL aislada:
  * 1. Upsert del cliente por NIT.
- * 2. Deducción de inventario respetando FEFO (`ORDER BY fecha_vencimiento ASC`).
- * 3. Inserción de movimientos de kardex.
- * 4. Generación de factura fiscal electrónica y sus partidas detalladas.
+ * 2. DeducciÃ³n de inventario respetando FEFO (`ORDER BY fecha_vencimiento ASC`).
+ * 3. InserciÃ³n de movimientos de kardex.
+ * 4. GeneraciÃ³n de factura fiscal electrÃ³nica y sus partidas detalladas.
  */
 export async function createDatabaseCheckout(input: PublicCheckoutInput) {
   const database = requirePool();
@@ -1265,7 +1265,7 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
         'SELECT * FROM pharmacy_discount_codes WHERE code = $1 FOR UPDATE',
         [normalizedDiscountCode]
       );
-      if (!discountResult.rows[0]) throw new Error('El código de descuento no existe');
+      if (!discountResult.rows[0]) throw new Error('El cÃ³digo de descuento no existe');
       discount = mapDatabaseDiscountCode(discountResult.rows[0]);
       const redemptionsResult = await client.query(
         `SELECT discount_code_id AS "discountCodeId", order_id AS "orderId", customer_email AS "customerEmail",
@@ -1293,7 +1293,7 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
     );
     const customer = customerResult.rows[0];
     const items: Array<{ product: Record<string, unknown>; quantity: number; subtotal: number; lots: Array<{ id: number; quantity: number; price: number }> }> = [];
-    
+
     for (const item of input.items) {
       const productResult = await client.query(
         `SELECT id_producto, sku_codigo, nombre_producto, requiere_receta, COALESCE(marca, '') AS marca,
@@ -1303,8 +1303,8 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
       );
       const product = productResult.rows[0];
       if (!product) throw new Error(`Producto no encontrado: ${item.productId}`);
-      
-      // Consulta de lotes disponibles ordenados por vencimiento más próximo (FEFO)
+
+      // Consulta de lotes disponibles ordenados por vencimiento mÃ¡s prÃ³ximo (FEFO)
       const stockResult = await client.query(
         `SELECT l.id_lote, l.precio_venta, ss.cantidad_disponible
            FROM Lotes l JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
@@ -1314,7 +1314,7 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
       );
       const available = stockResult.rows.reduce((sum: number, row: { cantidad_disponible: number }) => sum + Number(row.cantidad_disponible), 0);
       if (available < item.quantity) throw new Error(`Stock insuficiente para ${product.nombre_producto}`);
-      
+
       let remaining = item.quantity;
       const lots: Array<{ id: number; quantity: number; price: number }> = [];
       for (const row of stockResult.rows) {
@@ -1328,7 +1328,7 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
       const itemSubtotal = lots.reduce((sum, lot) => sum + lot.price * lot.quantity, 0);
       items.push({ product, quantity: item.quantity, subtotal: itemSubtotal, lots });
     }
-    
+
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
     const discountAmount = discount ? calculateDiscountAmount(subtotal, discount.type, discount.value) : 0;
     const total = subtotal - discountAmount;
@@ -1352,29 +1352,29 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
       }
     }
     await client.query('COMMIT');
-    return { 
-      order: { 
-        id: invoiceId, 
-        code: `WEB-${String(invoiceId).padStart(6, '0')}`, 
+    return {
+      order: {
+        id: invoiceId,
+        code: `WEB-${String(invoiceId).padStart(6, '0')}`,
         subtotal,
         discountAmount,
         discountCode: discount?.code ?? null,
-        total, 
-        deliveryMode: input.deliveryMode, 
-        status: 'AWAITING_PAYMENT', 
-        paymentStatus: 'PENDING' 
-      }, 
-      customer, 
-      items: items.map((item) => ({ 
-        product: { 
-          id: Number(item.product.id_producto), 
-          name: String(item.product.nombre_producto), 
-          description: `${String(item.product.marca)} ${String(item.product.presentacion)}`, 
-          price: item.subtotal / item.quantity 
-        }, 
-        quantity: item.quantity, 
-        subtotal: item.subtotal 
-      })) 
+        total,
+        deliveryMode: input.deliveryMode,
+        status: 'AWAITING_PAYMENT',
+        paymentStatus: 'PENDING'
+      },
+      customer,
+      items: items.map((item) => ({
+        product: {
+          id: Number(item.product.id_producto),
+          name: String(item.product.nombre_producto),
+          description: `${String(item.product.marca)} ${String(item.product.presentacion)}`,
+          price: item.subtotal / item.quantity
+        },
+        quantity: item.quantity,
+        subtotal: item.subtotal
+      }))
     };
   } catch (error) {
     await client.query('ROLLBACK');
@@ -1384,16 +1384,29 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
   }
 }
 
-/** Registra el comprobante de pago vinculado a una factura */
+/** Registra el comprobante de pago vinculado a una factura (idempotente por transactionId) */
 export async function registerDatabasePayment(invoiceId: number, transactionId: string, amount: number) {
   const database = requirePool();
   const method = await database.query(`INSERT INTO MetodosPago (nombre_metodo) VALUES ('Stripe') ON CONFLICT DO NOTHING RETURNING id_metodo_pago`);
   let methodId = method.rows[0]?.id_metodo_pago;
   if (!methodId) methodId = (await database.query(`SELECT id_metodo_pago FROM MetodosPago WHERE LOWER(nombre_metodo) = 'stripe' LIMIT 1`)).rows[0]?.id_metodo_pago;
-  await database.query(`INSERT INTO Pagos (id_factura, id_metodo_pago, transaccion_pasarela_id, monto_pagado) VALUES ($1, $2, $3, $4)`, [invoiceId, methodId, transactionId, amount]);
+  // Idempotencia: evita pagos duplicados por mismo transactionId (reintentos de webhook Stripe)
+  await database.query(
+    `INSERT INTO Pagos (id_factura, id_metodo_pago, transaccion_pasarela_id, monto_pagado)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (transaccion_pasarela_id) DO NOTHING`,
+    [invoiceId, methodId, transactionId, amount]
+  );
+  // Marcar redenciones de descuento como REDEEMED (idempotente por WHERE status=RESERVED)
   await database.query(
     `UPDATE pharmacy_discount_redemptions SET status = 'REDEEMED'
       WHERE order_id = $1 AND status = 'RESERVED'`,
+    [invoiceId]
+  );
+  // Actualizar estado de pago en tracking de delivery (para órdenes web)
+  await database.query(
+    `UPDATE pharmacy_delivery_tracking SET payment_status = 'PAID', updated_at = NOW()
+      WHERE order_code = (SELECT CONCAT('WEB-', LPAD(id_factura::text, 6, '0')) FROM Facturas WHERE id_factura = $1)`,
     [invoiceId]
   );
 }
@@ -1416,8 +1429,339 @@ export async function markDatabaseDiscountRedeemed(invoiceId: number) {
   );
 }
 
+/**
+ * Reserva el envío de correo (transición atómica PENDING/FAILED → SENDING).
+ * Retorna true solo si la factura estaba en PENDING (primer envío) o FAILED (reintento).
+ * Bloquea envíos concurrentes para la misma factura.
+ */
+export async function reserveDatabaseInvoiceEmailSend(invoiceId: number): Promise<boolean> {
+  const database = requirePool();
+  const result = await database.query(
+    `UPDATE pharmacy_delivery_tracking
+       SET email_status = 'SENDING', email_attempt_at = NOW(), email_error = NULL, updated_at = NOW()
+     WHERE order_code = (SELECT CONCAT('WEB-', LPAD(id_factura::text, 6, '0')) FROM Facturas WHERE id_factura = $1)
+       AND email_status IN ('PENDING', 'FAILED')
+     RETURNING id`,
+    [invoiceId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Marca el envío como exitoso (transición SENDING → SENT).
+ * Solo tiene efecto si estaba en SENDING.
+ */
+export async function markDatabaseInvoiceEmailSent(invoiceId: number): Promise<boolean> {
+  const database = requirePool();
+  const result = await database.query(
+    `UPDATE pharmacy_delivery_tracking
+       SET email_status = 'SENT', email_sent_at = NOW(), email_error = NULL, updated_at = NOW()
+     WHERE order_code = (SELECT CONCAT('WEB-', LPAD(id_factura::text, 6, '0')) FROM Facturas WHERE id_factura = $1)
+       AND email_status = 'SENDING'
+     RETURNING id`,
+    [invoiceId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Marca el envío como fallido (transición SENDING → FAILED).
+ * Guarda el error para diagnóstico y permite reintentos.
+ */
+export async function markDatabaseInvoiceEmailFailed(invoiceId: number, error: string): Promise<boolean> {
+  const database = requirePool();
+  const result = await database.query(
+    `UPDATE pharmacy_delivery_tracking
+       SET email_status = 'FAILED', email_error = $2, updated_at = NOW()
+     WHERE order_code = (SELECT CONCAT('WEB-', LPAD(id_factura::text, 6, '0')) FROM Facturas WHERE id_factura = $1)
+       AND email_status = 'SENDING'
+     RETURNING id`,
+    [invoiceId, error.slice(0, 500)]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Obtiene el estado de envío de correo de una factura.
+ */
+export async function getDatabaseInvoiceEmailStatus(invoiceId: number): Promise<{ email_status: string; email_error: string | null; email_attempt_at: string | null } | null> {
+  const database = requirePool();
+  const result = await database.query(
+    `SELECT email_status, email_error, email_attempt_at
+       FROM pharmacy_delivery_tracking
+      WHERE order_code = (SELECT CONCAT('WEB-', LPAD(id_factura::text, 6, '0')) FROM Facturas WHERE id_factura = $1)
+      LIMIT 1`,
+    [invoiceId]
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Recupera correos atascados en estado SENDING por más de 10 minutos (versión PostgreSQL).
+ * Operación atómica con UPDATE ... WHERE email_status = 'SENDING' AND email_attempt_at < NOW() - interval.
+ * Retorna el número de facturas recuperadas.
+ *
+ * En PostgreSQL, esta operación es atómica y segura para múltiples instancias concurrentes.
+ * Se recomienda ejecutar periódicamente (ej. cron job cada 5-10 min) o vía pg_cron.
+ */
+export async function recoverDatabaseStuckSendingEmails(maxAgeMinutes: number = 10): Promise<number> {
+  const database = requirePool();
+  const result = await database.query(
+    `UPDATE pharmacy_delivery_tracking
+       SET email_status = 'FAILED',
+           email_error = 'Recuperado automáticamente: envío SENDING por más de $1 minutos (último intento: ' || email_attempt_at || ')',
+           updated_at = NOW()
+     WHERE email_status = 'SENDING'
+       AND email_attempt_at < NOW() - ($1 || ' minutes')::interval
+     RETURNING id`,
+    [maxAgeMinutes]
+  );
+  const recovered = result.rowCount ?? 0;
+  if (recovered > 0) {
+    console.log(`[DB] Recuperados ${recovered} correos atascados en SENDING (>${maxAgeMinutes} min) → FAILED`);
+  }
+  return recovered;
+}
+
+/**
+ * Reintenta el envío de correos en estado FAILED (versión PostgreSQL).
+ * Implementa límite de intentos y espera progresiva usando email_attempt_count.
+ * Requiere que la tabla tenga columna email_attempt_count (añadir migración si no existe).
+ * Retorna { attempted: number, succeeded: number, failed: number }.
+ *
+ * NOTA: Para producción completa, añadir columna email_attempt_count INTEGER DEFAULT 0 a pharmacy_delivery_tracking
+ * y usar advisory locks (pg_advisory_xact_lock) para evitar reintentos concurrentes en múltiples instancias.
+ */
+export async function retryDatabaseFailedEmails(
+  maxAttempts: number = 3,
+  baseDelayMs: number = 60000,
+  sendFn: (params: { customerEmail: string; customerName: string; orderCode: string; invoiceNumber: string; total: number; pdfBuffer: Buffer; isOnline: boolean }) => Promise<{ success: boolean; messageId?: string; error?: string }>
+): Promise<{ attempted: number; succeeded: number; failed: number }> {
+  const database = requirePool();
+
+  // Asegurar columna de contador de intentos (idempotente)
+  await database.query(`ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS email_attempt_count INTEGER NOT NULL DEFAULT 0`);
+
+  // Obtener facturas FAILED con intentos < maxAttempts
+  const result = await database.query(
+    `SELECT dt.id, dt.order_code, dt.email_attempt_count, dt.email_error,
+            f.id_factura AS invoice_id, f.invoice_number, f.total_neto AS total,
+            c.email AS customer_email, c.full_name AS customer_name,
+            f.id_cliente
+       FROM pharmacy_delivery_tracking dt
+       JOIN Facturas f ON f.id_factura = (SELECT id_factura FROM Facturas WHERE CONCAT('WEB-', LPAD(id_factura::text, 6, '0')) = dt.order_code LIMIT 1)
+       JOIN Clientes c ON c.id_cliente = f.id_cliente
+      WHERE dt.email_status = 'FAILED'
+        AND dt.email_attempt_count < $1
+      ORDER BY dt.email_attempt_at ASC`,
+    [maxAttempts]
+  );
+
+  let attempted = 0, succeeded = 0, failed = 0;
+
+  for (const row of result.rows) {
+    const invoiceId = Number(row.invoice_id);
+    const attemptCount = Number(row.email_attempt_count);
+
+    // Bloqueo por factura para evitar reintentos concurrentes (advisory lock)
+    const lockResult = await database.query('SELECT pg_try_advisory_xact_lock($1) AS locked', [invoiceId]);
+    if (!lockResult.rows[0]?.locked) {
+      console.log(`[DB] Reintento omitido: no se pudo obtener lock para factura ${invoiceId}`);
+      continue;
+    }
+
+    // Verificar estado actual bajo lock
+    const statusCheck = await database.query(
+      `SELECT email_status, email_attempt_count FROM pharmacy_delivery_tracking WHERE id = $1`,
+      [row.id]
+    );
+    if (statusCheck.rows[0]?.email_status !== 'FAILED') {
+      console.log(`[DB] Reintento omitido: factura ${invoiceId} ya no en FAILED`);
+      continue;
+    }
+
+    attempted++;
+
+    try {
+      // Reservar atómicamente (FAILED → SENDING) e incrementar contador
+      const reserveResult = await database.query(
+        `UPDATE pharmacy_delivery_tracking
+           SET email_status = 'SENDING', email_attempt_at = NOW(), email_error = NULL, email_attempt_count = email_attempt_count + 1, updated_at = NOW()
+         WHERE id = $1 AND email_status = 'FAILED'
+         RETURNING id`,
+        [row.id]
+      );
+      if (reserveResult.rowCount === 0) {
+        console.log(`[DB] Reintento omitido: factura ${invoiceId} estado cambiado concurrentemente`);
+        attempted--;
+        continue;
+      }
+
+      // Generar PDF (usar función del store en memoria para consistencia, o implementar versión DB)
+      // Aquí asumimos que el llamador pasa una función que genera el PDF
+      // En implementación completa, generar PDF desde datos DB
+
+      // Espera progresiva (backoff exponencial)
+      const delay = baseDelayMs * Math.pow(2, attemptCount);
+      if (delay > 0) await new Promise(r => setTimeout(r, delay));
+
+      // Enviar correo - requiere que sendFn genere el PDF internamente o se pase pdfBuffer
+      // Por simplicidad, delegamos al llamador la generación de PDF
+      const pdfBuffer = Buffer.from(''); // Placeholder - en uso real se genera
+
+      const result = await sendFn({
+        customerEmail: String(row.customer_email),
+        customerName: String(row.customer_name),
+        orderCode: String(row.order_code),
+        invoiceNumber: String(row.invoice_number),
+        total: Number(row.total),
+        pdfBuffer,
+        isOnline: true
+      });
+
+      if (result.success) {
+        await database.query(
+          `UPDATE pharmacy_delivery_tracking
+             SET email_status = 'SENT', email_sent_at = NOW(), email_error = NULL, updated_at = NOW()
+           WHERE id = $1`,
+          [row.id]
+        );
+        succeeded++;
+        console.log(`[DB] Reintento exitoso: factura ${invoiceId} → SENT (MessageID: ${result.messageId})`);
+      } else {
+        await database.query(
+          `UPDATE pharmacy_delivery_tracking
+             SET email_status = 'FAILED', email_error = $2, updated_at = NOW()
+           WHERE id = $1`,
+          [row.id, (result.error ?? 'Error SMTP en reintento').slice(0, 500)]
+        );
+        failed++;
+        console.error(`[DB] Reintento fallido: factura ${invoiceId} → FAILED (${result.error})`);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Error desconocido en reintento';
+      await database.query(
+        `UPDATE pharmacy_delivery_tracking
+           SET email_status = 'FAILED', email_error = $2, updated_at = NOW()
+         WHERE id = $1`,
+        [row.id, errorMsg.slice(0, 500)]
+      );
+      failed++;
+      console.error(`[DB] Excepción en reintento factura ${invoiceId}:`, errorMsg);
+    }
+  }
+
+  return { attempted, succeeded, failed };
+}
+
 // ============================================================================
-// INICIALIZACIÓN, MIGRACIONES DINÁMICAS Y PERSISTENCIA DE ESTADO
+// IDEMPOTENCIA POS - VERSIÓN POSTGRESQL (PERSISTENTE)
+// ============================================================================
+
+/**
+ * Verifica y reserva una clave de idempotencia POS en PostgreSQL.
+ * Operación atómica: INSERT ... ON CONFLICT DO NOTHING + SELECT.
+ * Retorna { isDuplicate: boolean, existingOrderId?: number, fingerprintMatch?: boolean }.
+ * Si la clave existe y la huella coincide → replay idempotente.
+ * Si la clave existe pero la huella NO coincide → conflicto (409).
+ * Si la clave no existe → permite nueva venta.
+ */
+export async function checkAndReserveDatabasePosIdempotency(
+  keyHash: string,
+  employeeId: number,
+  branchId: number,
+  requestFingerprint: string,
+  ttlMinutes: number = 5
+): Promise<{ isDuplicate: boolean; existingOrderId?: number; fingerprintMatch?: boolean }> {
+  const database = requirePool();
+  const client = await database.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Limpiar claves expiradas
+    await client.query('DELETE FROM pharmacy_pos_idempotency_keys WHERE expires_at < NOW()');
+
+    // Intentar insertar la clave (reserva atómica)
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+    const insertResult = await client.query(
+      `INSERT INTO pharmacy_pos_idempotency_keys (key_hash, employee_id, branch_id, order_id, request_fingerprint, expires_at)
+       VALUES ($1, $2, $3, 0, $4, $5)
+       ON CONFLICT (key_hash) DO NOTHING
+       RETURNING id, order_id, request_fingerprint`,
+      [keyHash, employeeId, branchId, requestFingerprint, expiresAt]
+    );
+
+    if (insertResult.rowCount && insertResult.rowCount > 0) {
+      // Clave nueva insertada - no es duplicado
+      await client.query('COMMIT');
+      return { isDuplicate: false };
+    }
+
+    // La clave ya existía - verificar huella y order_id
+    const selectResult = await client.query(
+      `SELECT order_id, request_fingerprint FROM pharmacy_pos_idempotency_keys WHERE key_hash = $1`,
+      [keyHash]
+    );
+
+    await client.query('COMMIT');
+
+    if (!selectResult.rows[0]) {
+      return { isDuplicate: false }; // Caso borde: eliminada entre INSERT y SELECT
+    }
+
+    const existing = selectResult.rows[0];
+    const fingerprintMatch = existing.request_fingerprint === requestFingerprint;
+    return {
+      isDuplicate: true,
+      existingOrderId: Number(existing.order_id),
+      fingerprintMatch
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Confirma la clave de idempotencia POS asociándola al orderId real.
+ * Debe llamarse SOLO tras crear la venta exitosamente.
+ * Actualiza order_id de 0 al ID real.
+ */
+export async function confirmDatabasePosIdempotency(keyHash: string, orderId: number): Promise<boolean> {
+  const database = requirePool();
+  const result = await database.query(
+    `UPDATE pharmacy_pos_idempotency_keys SET order_id = $2 WHERE key_hash = $1 AND order_id = 0`,
+    [keyHash, orderId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Limpia claves de idempotencia POS expiradas.
+ * Retorna número de claves eliminadas.
+ */
+export async function cleanupExpiredDatabasePosIdempotencyKeys(): Promise<number> {
+  const database = requirePool();
+  const result = await database.query('DELETE FROM pharmacy_pos_idempotency_keys WHERE expires_at < NOW()');
+  return result.rowCount ?? 0;
+}
+
+/**
+ * Obtiene el orderId asociado a una clave de idempotencia (para replay).
+ */
+export async function getDatabasePosIdempotencyOrderId(keyHash: string): Promise<number | null> {
+  const database = requirePool();
+  const result = await database.query(
+    `SELECT order_id FROM pharmacy_pos_idempotency_keys WHERE key_hash = $1 AND expires_at > NOW()`,
+    [keyHash]
+  );
+  return result.rows[0] ? Number(result.rows[0].order_id) : null;
+}
+
+// ============================================================================
+// INICIALIZACIÃ“N, MIGRACIONES DINÃMICAS Y PERSISTENCIA DE ESTADO
 // ============================================================================
 
 /**
@@ -1490,6 +1834,11 @@ export async function initializeDatabase() {
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS latitude NUMERIC');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS longitude NUMERIC');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS assigned_employee_id INTEGER');
+  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT \'PENDING\'');
+  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS email_status TEXT NOT NULL DEFAULT \'PENDING\'');
+  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ');
+  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS email_error TEXT');
+  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS email_attempt_at TIMESTAMPTZ');
   await pool.query('CREATE INDEX IF NOT EXISTS pharmacy_delivery_tracking_assignee_idx ON pharmacy_delivery_tracking (branch_id, assigned_employee_id)');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS pharmacy_discount_codes (
@@ -1518,6 +1867,25 @@ export async function initializeDatabase() {
       ON pharmacy_discount_redemptions (discount_code_id, LOWER(customer_email))
       WHERE status IN ('RESERVED', 'REDEEMED');
   `);
+
+  // Tabla de claves de idempotencia POS (persistente, sobrevive a reinicios)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pharmacy_pos_idempotency_keys (
+      id BIGSERIAL PRIMARY KEY,
+      key_hash TEXT NOT NULL UNIQUE,
+      employee_id INTEGER NOT NULL,
+      branch_id INTEGER NOT NULL,
+      order_id BIGINT NOT NULL,
+      request_fingerprint TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS pharmacy_pos_idempotency_keys_expires_idx
+      ON pharmacy_pos_idempotency_keys (expires_at);
+  `);
+
+  // Asegurar columna email_attempt_count en pharmacy_delivery_tracking
+  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS email_attempt_count INTEGER NOT NULL DEFAULT 0');
 }
 
 /** Carga el snapshot de estado en formato JSONB de la base de datos */
@@ -1527,7 +1895,7 @@ export async function loadDatabaseSnapshot(): Promise<DataSnapshot | null> {
   return result.rows[0]?.snapshot ?? null;
 }
 
-/** Guarda el snapshot de estado en formato JSONB para sincronización */
+/** Guarda el snapshot de estado en formato JSONB para sincronizaciÃ³n */
 export async function saveDatabaseSnapshot(snapshot: DataSnapshot) {
   if (!pool) return;
   await pool.query(

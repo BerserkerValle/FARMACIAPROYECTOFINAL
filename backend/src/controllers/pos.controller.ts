@@ -14,6 +14,8 @@
  *    - Listado de órdenes asignadas para entrega motorizada.
  *    - Actualización de telemetría y coordenadas GPS (latitud/longitud).
  *    - Transición de estados de envío: PACKING -> IN_ROUTE -> NEARBY -> DELIVERED.
+ * 4. Descarga de Facturas POS:
+ *    - Generación y descarga de factura PDF para ventas en mostrador.
  *
  * MÉTODOS Y LIBRERÍAS:
  * - Zod: Validación de coordenadas y estructuras de venta.
@@ -23,15 +25,20 @@
 
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import {
   claimDatabaseDelivery,
   createDatabaseCheckout,
   databaseEnabled,
   findDatabaseDeliveryOwnership,
   listDatabaseDeliveries,
-  updateDatabaseDeliveryTracking
+  updateDatabaseDeliveryTracking,
+  checkAndReserveDatabasePosIdempotency,
+  confirmDatabasePosIdempotency,
+  getDatabasePosIdempotencyOrderId
 } from '../db.js';
 import { stripeClient } from './public.controller.js';
+import { generarFacturaDesdeOrden } from '../services/invoice.service.js';
 import { store } from '../store.js';
 import { fiscalNitSchema } from '../utils.js';
 import {
@@ -115,12 +122,22 @@ export function pickupOrders(req: Request, res: Response) {
 /**
  * Procesa y registra una venta directa de mostrador en el Punto de Venta.
  * POST /api/pos/sale
- * 
+ *
  * ¿CÓMO FUNCIONA?
- * 1. Valida los datos con `saleSchema`.
+ * 1. Valida los datos con 'saleSchema'.
  * 2. Verifica el inventario disponible en la sucursal del cajero.
  * 3. Aplica FEFO para descontar de los lotes más próximos a caducar.
  * 4. Genera la orden, el registro de pago en efectivo/tarjeta y la factura legal.
+ * 5. Requiere Idempotency-Key para evitar duplicados por doble clic / reintento red.
+ *    - La clave debe ser única por intento de venta (generada por frontend).
+ *    - En reintentos, el frontend reutiliza la misma clave.
+ *    - Se valida la huella (X-Request-Fingerprint) para detectar colisiones.
+ *
+ * IDEMPOTENCIA ATÓMICA:
+ * - En PostgreSQL: checkAndReserveDatabasePosIdempotency usa INSERT ... ON CONFLICT
+ *   dentro de una transacción para reservar la clave ANTES de crear la venta.
+ * - En memoria: checkPosIdempotency + createPosSale + registerPosIdempotency
+ *   (riesgo teórico de duplicado si el proceso muere entre create y register).
  */
 export function createSale(req: Request, res: Response) {
   if (!req.user) {
@@ -131,7 +148,147 @@ export function createSale(req: Request, res: Response) {
   if (!branchId) {
     return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
   }
+
+  // Idempotencia obligatoria: requerir header 'Idempotency-Key' y 'X-Request-Fingerprint'
+  const idempotencyKey = req.header('Idempotency-Key')?.trim();
+  const requestFingerprint = req.header('X-Request-Fingerprint')?.trim();
+
+  if (!idempotencyKey) {
+    return res.status(400).json({
+      success: false,
+      message: 'Falta header Idempotency-Key. Genere una clave única por intento de venta.'
+    });
+  }
+  if (!requestFingerprint) {
+    return res.status(400).json({
+      success: false,
+      message: 'Falta header X-Request-Fingerprint. Incluya huella de la solicitud.'
+    });
+  }
+
+  // Hash de la clave para no almacenar el valor crudo en logs/BD
+  const keyHash = createHash('sha256').update(`pos:${req.user.employeeId}:${branchId}:${idempotencyKey}`).digest('hex');
+
+  if (databaseEnabled) {
+    // MODO POSTGRESQL: Reserva atómica de la clave ANTES de crear la venta
+    return handlePosSaleDatabase(req, res, payload, branchId, keyHash, requestFingerprint);
+  }
+
+  // MODO MEMORIA (JSON): Verificar duplicado, crear venta, registrar clave
+  return handlePosSaleMemory(req, res, payload, branchId, keyHash, idempotencyKey, requestFingerprint);
+}
+
+async function handlePosSaleDatabase(
+  req: Request,
+  res: Response,
+  payload: z.infer<typeof saleSchema>,
+  branchId: number,
+  keyHash: string,
+  requestFingerprint: string
+) {
+  if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' });
+
+  try {
+    // PASO 1: Reserva atómica de la clave de idempotencia
+    // Esto evita que dos requests concurrentes creen la misma venta
+    const check = await checkAndReserveDatabasePosIdempotency(
+      keyHash,
+      req.user.employeeId,
+      branchId,
+      requestFingerprint,
+      5 // TTL 5 minutos
+    );
+
+    if (check.isDuplicate) {
+      if (check.fingerprintMatch === false) {
+        return res.status(409).json({
+          success: false,
+          message: 'Conflicto de idempotencia: misma clave con contenido de venta diferente. Genere una nueva clave para esta venta.',
+          code: 'IDEMPOTENCY_CONFLICT'
+        });
+      }
+      // Misma clave y misma huella → replay idempotente
+      if (check.existingOrderId && check.existingOrderId > 0) {
+        const existingSale = store.getOrderById(check.existingOrderId);
+        if (existingSale) {
+          return res.json({
+            success: true,
+            data: existingSale,
+            idempotentReplay: true
+          });
+        }
+      }
+      // Clave reservada pero sin orderId aún (creación en progreso por otro request)
+      // Esperar brevemente y reintentar lectura
+      await new Promise(r => setTimeout(r, 100));
+      const orderId = await getDatabasePosIdempotencyOrderId(keyHash);
+      if (orderId) {
+        const existingSale = store.getOrderById(orderId);
+        if (existingSale) {
+          return res.json({ success: true, data: existingSale, idempotentReplay: true });
+        }
+      }
+      return res.status(409).json({
+        success: false,
+        message: 'Venta en proceso con esta clave. Intente de nuevo en unos segundos.',
+        code: 'IDEMPOTENCY_IN_PROGRESS'
+      });
+    }
+
+    // PASO 2: Crear la venta (la clave ya está reservada con order_id = 0)
+    const sale = store.createPosSale({ ...payload, branchId }, req.user.employeeId);
+
+    // PASO 3: Confirmar la clave con el orderId real
+    await confirmDatabasePosIdempotency(keyHash, sale.order.id);
+
+    return res.json({ success: true, data: sale });
+  } catch (error) {
+    // Si falla la creación, la clave expira en 5 min y permite reintento
+    const message = error instanceof Error ? error.message : 'No se pudo crear la venta';
+    return res.status(400).json({ success: false, message });
+  }
+}
+
+function handlePosSaleMemory(
+  req: Request,
+  res: Response,
+  payload: z.infer<typeof saleSchema>,
+  branchId: number,
+  keyHash: string,
+  idempotencyKey: string,
+  requestFingerprint: string
+) {
+  if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' });
+
+  const key = `pos:${req.user.employeeId}:${branchId}:${idempotencyKey}`;
+  const check = store.checkPosIdempotency(key, requestFingerprint);
+
+  if (check.isDuplicate) {
+    if (check.fingerprintMatch === false) {
+      return res.status(409).json({
+        success: false,
+        message: 'Conflicto de idempotencia: misma clave con contenido de venta diferente. Genere una nueva clave para esta venta.',
+        code: 'IDEMPOTENCY_CONFLICT'
+      });
+    }
+    if (check.existingOrderId) {
+      const existingSale = store.getOrderById(check.existingOrderId);
+      if (existingSale) {
+        return res.json({
+          success: true,
+          data: existingSale,
+          idempotentReplay: true
+        });
+      }
+    }
+  }
+
+  // Crear la venta
   const sale = store.createPosSale({ ...payload, branchId }, req.user.employeeId);
+
+  // Registrar clave de idempotencia con huella SOLO tras éxito
+  store.registerPosIdempotency(key, sale.order.id, requestFingerprint);
+
   return res.json({ success: true, data: sale });
 }
 
@@ -163,7 +320,7 @@ export async function createQrPayment(req: Request, res: Response) {
       currency: process.env.STRIPE_CURRENCY?.trim().toLowerCase() || 'gtq',
       automatic_payment_methods: { enabled: true },
       receipt_email: created.customer.email,
-      description: `Venta POS ${created.order.code}`,
+      description: 'Venta POS ' + created.order.code,
       metadata: {
         orderId: String(created.order.id),
         orderCode: created.order.code,
@@ -176,7 +333,7 @@ export async function createQrPayment(req: Request, res: Response) {
       data: {
         order: created.order,
         paymentIntentId: paymentIntent.id,
-        paymentUrl: `${appUrl}/?posPayment=${encodeURIComponent(paymentIntent.id)}`
+        paymentUrl: appUrl + '/?posPayment=' + encodeURIComponent(paymentIntent.id)
       }
     });
   } catch (error) {
@@ -238,7 +395,7 @@ export async function deliveries(req: Request, res: Response) {
 /**
  * Actualiza el estado del despacho y/o la ubicación GPS del repartidor en ruta.
  * PATCH /api/pos/deliveries/:id
- * 
+ *
  * Permite que los clientes sigan el avance de su pedido en el mapa interactivo.
  */
 export async function updateDelivery(req: Request, res: Response) {
@@ -276,5 +433,65 @@ export async function updateDelivery(req: Request, res: Response) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'No se pudo actualizar la entrega';
     return res.status(400).json({ success: false, message });
+  }
+}
+
+// ============================================================================
+// SECCIÓN 3: DESCARGA DE FACTURAS POS
+// ============================================================================
+
+/**
+ * Descarga la factura PDF de una venta POS completada.
+ * GET /api/pos/sales/:id/invoice
+ * Solo personal autorizado (cajeros, gerentes, administradores) de la misma sucursal.
+ */
+export async function downloadPosInvoice(req: Request, res: Response) {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'No autenticado' });
+  }
+
+  const orderId = Number(req.params.id);
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({ success: false, message: 'ID de venta inválido' });
+  }
+
+  // Verificar que la orden existe y es una venta POS
+  const order = store.getOrderById(orderId);
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Venta no encontrada' });
+  }
+
+  if (order.source !== 'POS') {
+    return res.status(400).json({ success: false, message: 'Esta orden no es una venta de mostrador' });
+  }
+
+  // Verificar permisos: cajero de la misma sucursal o supervisor
+  const actorBranchId = req.user.branchId;
+  const actorRole = req.user.role;
+  const isSupervisor = actorRole === 'Administrador' || actorRole === 'Gerente';
+
+  if (!isSupervisor && actorBranchId !== order.branchId) {
+    return res.status(403).json({ success: false, message: 'No tiene permisos para acceder a esta factura' });
+  }
+
+  // Verificar que la venta está pagada
+  if (order.paymentStatus !== 'PAID') {
+    return res.status(400).json({ success: false, message: 'La venta no está pagada, no se puede generar factura' });
+  }
+
+  try {
+    const { pdfBuffer } = await generarFacturaDesdeOrden(orderId, false);
+
+    const invoice = store.getInvoiceByOrderId(orderId);
+    const filename = invoice ? 'factura-' + invoice.invoiceNumber + '.pdf' : 'factura-' + order.code + '.pdf';
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=\"' + filename + '\"');
+    res.setHeader('Content-Length', pdfBuffer.length);
+    return res.send(pdfBuffer);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error generando la factura';
+    console.error('[POS] Error generando factura:', error);
+    return res.status(500).json({ success: false, message });
   }
 }

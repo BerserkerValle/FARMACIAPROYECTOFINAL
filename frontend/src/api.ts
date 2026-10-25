@@ -24,7 +24,7 @@ import { translateApiError } from './lib/errorTranslator';
 
 /**
  * Limpia y normaliza la URL de la API asegurando protocolo y eliminando diagonales finales.
- * 
+ *
  * @param {string | undefined} value URL configurada en el entorno.
  * @returns {string} URL formateada (ej: 'https://farmaciaproyectofinalweb.onrender.com').
  */
@@ -103,7 +103,7 @@ export interface ApiRequestOptions extends RequestInit {
 
 /**
  * Ejecuta una petición HTTP genérica hacia los endpoints de la API.
- * 
+ *
  * ¿CÓMO FUNCIONA?
  * 1. Clona o inicializa los encabezados (`Headers`).
  * 2. Si se proporciona `token` (JWT de sesión), agrega el header `Authorization: Bearer`.
@@ -122,11 +122,11 @@ export interface ApiRequestOptions extends RequestInit {
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}, token?: string | null): Promise<T> {
   const { silent, ...fetchOptions } = options;
   const headers = new Headers(fetchOptions.headers ?? {});
-  
+
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  
+
   if (!(fetchOptions.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
@@ -142,7 +142,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     const errorMessage = API_URL
       ? `No se pudo conectar con la API en ${API_URL}. Revisa que el backend esté activo y que VITE_API_URL sea correcto.`
       : 'La API no está configurada. Define VITE_API_URL en las variables del frontend y vuelve a desplegar.';
-    
+
     if (!silent) {
       triggerGlobalError(translateApiError(networkError));
     }
@@ -150,21 +150,21 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   }
 
   const payload = await response.json().catch(() => ({ success: false, message: 'Respuesta inválida' }));
-  
+
   if (!response.ok || payload.success === false) {
     if (response.status === 401 && token) {
       triggerUnauthorized(token);
     }
-    
+
     const apiError = new ApiError(payload.message || 'No se pudo completar la operación', response.status);
-    
+
     if (!silent) {
       triggerGlobalError(translateApiError(apiError));
     }
-    
+
     throw apiError;
   }
-  
+
   return payload.data as T;
 }
 
@@ -182,6 +182,9 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
  * @param {string | null} [token] Token de sesión en caso de ser subida por repartidor/cajero.
  */
 export async function uploadPrescription(file: File, orderId: number, kind: 'web' | 'delivery', token?: string | null) {
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    throw new Error('ID de orden inválido: debe ser un número entero positivo');
+  }
   const formData = new FormData();
   formData.append('recipe', file);
   formData.append('orderId', String(orderId));
