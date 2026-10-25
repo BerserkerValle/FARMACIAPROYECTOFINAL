@@ -877,6 +877,12 @@ export async function createDatabaseProduct(input: CreateProductInput) {
   const client = await database.connect();
   try {
     await client.query('BEGIN');
+    const normalizedSku = input.sku.trim().toUpperCase();
+    const duplicateSku = await client.query(
+      'SELECT 1 FROM Productos WHERE UPPER(TRIM(sku_codigo)) = $1 LIMIT 1',
+      [normalizedSku]
+    );
+    if (duplicateSku.rowCount) throw new Error(`Ya existe un medicamento con el SKU ${normalizedSku}`);
     const duplicate = await client.query('SELECT 1 FROM Productos WHERE registro_sanitario = $1 LIMIT 1', [input.sanitaryRegistry.trim()]);
     if (duplicate.rowCount) throw new Error('Ya existe un medicamento con ese registro sanitario');
     const productResult = await client.query(
@@ -887,7 +893,7 @@ export async function createDatabaseProduct(input: CreateProductInput) {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING id_producto`,
       [
-        input.sku.trim().toUpperCase(),
+         normalizedSku,
         input.name.trim(),
         input.categoryId == null ? null : Number(input.categoryId),
         Boolean(input.requiresPrescription),
@@ -1791,6 +1797,32 @@ export async function initializeDatabase() {
       concentration TEXT NOT NULL DEFAULT '',
       principal BOOLEAN NOT NULL DEFAULT false
     )
+  `);
+  await pool.query(`
+    DO $$
+    DECLARE duplicate RECORD;
+    BEGIN
+      FOR duplicate IN
+        SELECT p.id_producto AS duplicate_id, canonical.canonical_id
+          FROM Productos p
+          JOIN (
+            SELECT UPPER(TRIM(sku_codigo)) AS normalized_sku, MIN(id_producto) AS canonical_id
+              FROM Productos
+             WHERE COALESCE(TRIM(sku_codigo), '') <> ''
+             GROUP BY UPPER(TRIM(sku_codigo))
+            HAVING COUNT(*) > 1
+          ) canonical ON canonical.normalized_sku = UPPER(TRIM(p.sku_codigo))
+         WHERE p.id_producto <> canonical.canonical_id
+      LOOP
+        UPDATE Lotes SET id_producto = duplicate.canonical_id WHERE id_producto = duplicate.duplicate_id;
+        DELETE FROM Productos WHERE id_producto = duplicate.duplicate_id;
+      END LOOP;
+    END $$;
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_productos_sku_codigo
+      ON Productos (UPPER(TRIM(sku_codigo)))
+      WHERE COALESCE(TRIM(sku_codigo), '') <> ''
   `);
   await pool.query(`
     WITH duplicates AS (

@@ -465,6 +465,10 @@ export class PharmacyStore {
 
   addProduct(input: CreateProductInput) {
     this.assertReady();
+    const normalizedSku = input.sku.trim().toUpperCase();
+    if (this.snapshot.products.some((candidate) => candidate.sku.trim().toUpperCase() === normalizedSku)) {
+      throw new Error(`Ya existe un medicamento con el SKU ${normalizedSku}`);
+    }
     if (!this.snapshot.counters.product) {
       this.snapshot.counters.product = Math.max(0, ...this.snapshot.products.map((p) => p.id));
     }
@@ -473,7 +477,7 @@ export class PharmacyStore {
     }
     const product: Product = {
       id: ++this.snapshot.counters.product,
-      sku: input.sku.trim().toUpperCase(),
+      sku: normalizedSku,
       name: input.name.trim(),
       categoryId: Number(input.categoryId),
       brand: input.brand.trim(),
