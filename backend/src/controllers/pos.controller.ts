@@ -54,7 +54,7 @@ function branchScope(req: Request, requested?: unknown): number | null {
   const fromQuery = requested === undefined || requested === null || requested === ''
     ? null
     : Number(requested);
-  return resolveBranchScope(req.user?.branchId ?? null, Number.isInteger(fromQuery) && fromQuery! > 0 ? fromQuery : null);
+  return resolveBranchScope(req.user?.role, req.user?.branchId ?? null, Number.isInteger(fromQuery) && fromQuery! > 0 ? fromQuery : null);
 }
 
 function forbidden(res: Response) {
@@ -144,7 +144,7 @@ export function createSale(req: Request, res: Response) {
     return res.status(401).json({ success: false, message: 'No autenticado' });
   }
   const payload = saleSchema.parse(req.body);
-  const branchId = resolveBranchScope(req.user.branchId, payload.branchId);
+  const branchId = resolveBranchScope(req.user.role, req.user.branchId, payload.branchId);
   if (!branchId) {
     return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
   }
@@ -297,7 +297,7 @@ export async function createQrPayment(req: Request, res: Response) {
     const stripe = stripeClient();
     if (!stripe) return res.status(503).json({ success: false, message: 'Stripe no está configurado' });
     const payload = saleSchema.parse(req.body);
-    const branchId = resolveBranchScope(req.user?.branchId ?? null, payload.branchId);
+    const branchId = resolveBranchScope(req.user?.role, req.user?.branchId ?? null, payload.branchId);
     if (!branchId) {
       return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
     }

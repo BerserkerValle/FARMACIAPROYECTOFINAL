@@ -80,7 +80,8 @@ export function canClaimDelivery(actor: DeliveryActor, delivery: DeliveryOwnersh
   return delivery.branchId != null && actor.branchId != null && delivery.branchId === actor.branchId;
 }
 
-export function resolveBranchScope(actorBranchId: number | null, requestedBranchId: number | null): number | null {
+export function resolveBranchScope(actorRole: Role | string | null | undefined, actorBranchId: number | null, requestedBranchId: number | null): number | null {
+  if (actorRole === 'Administrador' || actorRole === 'Gerente') return requestedBranchId ?? actorBranchId;
   if (actorBranchId != null) return actorBranchId;
   return requestedBranchId;
 }
