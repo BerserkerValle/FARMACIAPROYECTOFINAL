@@ -18,6 +18,7 @@ import PDFDocument from 'pdfkit';
 import { PassThrough } from 'node:stream';
 import type { Order, OrderItem, Customer, Branch, Invoice, Product } from '../domain.js';
 import { store } from '../store.js';
+import { databaseEnabled, getDatabaseInvoiceDataForEmail } from '../db.js';
 
 // ============================================================================
 // CONFIGURACIÓN Y CONSTANTES
@@ -561,38 +562,39 @@ export async function generarFacturaDesdeOrden(
   orderId: number,
   isOnline: boolean
 ): Promise<{ pdfBuffer: Buffer; facturaData: FacturaCompleta }> {
-  // Obtener datos de la orden
-  const order = store.getOrderById(orderId);
+  const databaseData = databaseEnabled ? await getDatabaseInvoiceDataForEmail(orderId) : null;
+  if (databaseEnabled && !databaseData) throw new Error('No se encontraron datos de factura para la orden #' + orderId);
+  const order = databaseData?.order ?? store.getOrderById(orderId);
   if (!order) {
     throw new Error('Orden #' + orderId + ' no encontrada');
   }
 
   // Obtener items de la orden con productos
-  const items = store.getOrderItems(orderId);
+  const items = databaseData?.items ?? store.getOrderItems(orderId);
   if (!items.length) {
     throw new Error('La orden #' + orderId + ' no tiene items');
   }
 
   // Obtener cliente
-  const customer = store.getCustomerById(order.customerId);
+  const customer = databaseData?.customer ?? store.getCustomerById(order.customerId);
   if (!customer) {
     throw new Error('Cliente #' + order.customerId + ' no encontrado');
   }
 
   // Obtener sucursal
-  const branch = store.getBranchById(order.branchId);
+  const branch = databaseData?.branch ?? store.getBranchById(order.branchId);
   if (!branch) {
     throw new Error('Sucursal #' + order.branchId + ' no encontrada');
   }
 
   // Obtener factura asociada
-  const invoice = store.getInvoiceByOrderId(orderId);
+  const invoice = databaseData?.invoice ?? store.getInvoiceByOrderId(orderId);
   if (!invoice) {
     throw new Error('No se encontró factura para la orden #' + orderId);
   }
 
   // Determinar método de pago
-  const payment = store.getPaymentByOrderId(orderId);
+  const payment = databaseData?.payment ?? store.getPaymentByOrderId(orderId);
   const paymentMethod = payment?.provider
     ? payment.provider === 'stripe' ? 'Tarjeta (Stripe)'
       : payment.provider === 'cash' ? 'Efectivo'

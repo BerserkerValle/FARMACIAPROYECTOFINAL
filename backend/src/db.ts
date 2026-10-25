@@ -31,7 +31,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
-import type { CreateProductInput, DashboardMetrics, DataSnapshot, DiscountCode, DiscountRedemption, PublicCheckoutInput, Supplier } from './domain.js';
+import type { Branch, CreateProductInput, Customer, DashboardMetrics, DataSnapshot, DiscountCode, DiscountRedemption, Invoice, Order, OrderItem, Payment, Product, PublicCheckoutInput, Supplier } from './domain.js';
 import { assertDiscountCodeUsable, calculateDiscountAmount } from './discounts.js';
 
 dotenv.config();
@@ -1415,6 +1415,118 @@ export async function registerDatabasePayment(invoiceId: number, transactionId: 
       WHERE order_code = (SELECT CONCAT('WEB-', LPAD(id_factura::text, 6, '0')) FROM Facturas WHERE id_factura = $1)`,
     [invoiceId]
   );
+}
+
+export interface DatabaseInvoiceDataForEmail {
+  invoice: Invoice;
+  order: Order;
+  items: Array<OrderItem & { product: Product }>;
+  customer: Customer;
+  branch: Branch;
+  payment: Payment | null;
+  paymentMethod: string;
+}
+
+/** Recupera desde PostgreSQL todos los datos que necesita el PDF de una factura web. */
+export async function getDatabaseInvoiceDataForEmail(invoiceId: number): Promise<DatabaseInvoiceDataForEmail | null> {
+  const database = requirePool();
+  const invoiceResult = await database.query(
+    `SELECT f.id_factura, f.id_cliente, f.id_sucursal, f.fecha_emision, f.correlativo_sat,
+            f.total_neto, f.subtotal_bruto, f.descuento_aplicado, f.codigo_descuento,
+            c.nombre AS customer_name, c.correo AS customer_email, c.nit AS customer_nit,
+            c.telefono AS customer_phone, s.nombre_sucursal
+       FROM Facturas f
+       JOIN Clientes c ON c.id_cliente = f.id_cliente
+       JOIN Sucursales s ON s.id_sucursal = f.id_sucursal
+      WHERE f.id_factura = $1
+      LIMIT 1`,
+    [invoiceId]
+  );
+  const row = invoiceResult.rows[0];
+  if (!row) return null;
+
+  const detailResult = await database.query(
+    `SELECT df.id_detalle_factura, df.id_lote, l.id_producto, df.cantidad_vendida,
+            df.precio_venta_aplicado, df.subtotal,
+            p.sku_codigo, p.nombre_producto, p.id_categoria,
+            COALESCE(p.marca, '') AS marca, COALESCE(p.laboratorio, '') AS laboratorio,
+            COALESCE(p.presentacion, '') AS presentacion, COALESCE(p.unidad_medida, '') AS unidad_medida,
+            COALESCE(p.registro_sanitario, '') AS registro_sanitario,
+            COALESCE(p.requiere_receta, false) AS requiere_receta,
+            COALESCE(p.producto_controlado, false) AS producto_controlado,
+            COALESCE(p.uso_cronico, false) AS uso_cronico,
+            COALESCE(p.evitar_embarazo, false) AS evitar_embarazo,
+            COALESCE(p.requiere_refrigeracion, false) AS requiere_refrigeracion,
+            p.imagen_url
+       FROM Detalle_Facturas df
+       JOIN Lotes l ON l.id_lote = df.id_lote
+       JOIN Productos p ON p.id_producto = l.id_producto
+      WHERE df.id_factura = $1
+      ORDER BY df.id_detalle_factura`,
+    [invoiceId]
+  );
+  if (!detailResult.rows.length) return null;
+
+  const paymentResult = await database.query(
+    `SELECT p.id_pago, p.id_factura, p.transaccion_pasarela_id, p.monto_pagado,
+            p.fecha_pago, mp.nombre_metodo
+       FROM Pagos p
+       LEFT JOIN MetodosPago mp ON mp.id_metodo_pago = p.id_metodo_pago
+      WHERE p.id_factura = $1
+      ORDER BY p.id_pago DESC
+      LIMIT 1`,
+    [invoiceId]
+  );
+  const paymentRow = paymentResult.rows[0];
+  const trackingResult = await database.query(
+    `SELECT email_status, email_sent_at, email_error, email_attempt_at
+       FROM pharmacy_delivery_tracking
+      WHERE order_code = $1
+      LIMIT 1`,
+    [`WEB-${String(invoiceId).padStart(6, '0')}`]
+  );
+  const tracking = trackingResult.rows[0];
+  const issuedAt = new Date(String(row.fecha_emision)).toISOString();
+  const total = Number(row.total_neto ?? 0);
+  const subtotal = Number(row.subtotal_bruto ?? total);
+  const discountAmount = Number(row.descuento_aplicado ?? 0);
+  const customer: Customer = {
+    id: Number(row.id_cliente), name: String(row.customer_name ?? ''), nit: String(row.customer_nit ?? ''),
+    email: String(row.customer_email ?? ''), phone: String(row.customer_phone ?? ''), address: '',
+    createdAt: issuedAt, updatedAt: issuedAt
+  };
+  const invoice: Invoice = {
+    id: invoiceId, orderId: invoiceId, invoiceNumber: `WEB-${String(invoiceId).padStart(6, '0')}`,
+    satCorrelative: String(row.correlativo_sat ?? ''), issuedAt, total, subtotal, discountAmount,
+    discountCode: row.codigo_descuento == null ? null : String(row.codigo_descuento),
+    emailStatus: tracking?.email_status, emailSentAt: tracking?.email_sent_at ? new Date(tracking.email_sent_at).toISOString() : null,
+    emailError: tracking?.email_error ?? null, emailAttemptAt: tracking?.email_attempt_at ? new Date(tracking.email_attempt_at).toISOString() : null
+  };
+  const order: Order = {
+    id: invoiceId, code: invoice.invoiceNumber, source: 'WEB', branchId: Number(row.id_sucursal), customerId: customer.id,
+    customerEmail: customer.email, employeeId: null, deliveryMode: 'PICKUP', address: null, assignedEmployeeId: null,
+    deliveryLatitude: null, deliveryLongitude: null, status: paymentRow ? 'PAID' : 'AWAITING_PAYMENT',
+    paymentStatus: paymentRow ? 'PAID' : 'PENDING', requiresPrescription: false, prescriptionWebUrl: null,
+    prescriptionDeliveryUrl: null, subtotal, discountAmount, discountCode: invoice.discountCode, total,
+    createdAt: issuedAt, paidAt: paymentRow?.fecha_pago ? new Date(paymentRow.fecha_pago).toISOString() : null, releasedAt: null
+  };
+  const items = detailResult.rows.map((item): OrderItem & { product: Product } => ({
+    id: Number(item.id_detalle_factura), orderId: invoiceId, productId: Number(item.id_producto),
+    quantity: Number(item.cantidad_vendida), unitPrice: Number(item.precio_venta_aplicado), subtotal: Number(item.subtotal), assignedLotIds: [Number(item.id_lote)],
+    product: {
+      id: Number(item.id_producto), sku: String(item.sku_codigo ?? ''), name: String(item.nombre_producto ?? ''), categoryId: item.id_categoria == null ? null : Number(item.id_categoria),
+      brand: String(item.marca), laboratory: String(item.laboratorio), presentation: String(item.presentacion), unitMeasure: String(item.unidad_medida),
+      sanitaryRegistry: String(item.registro_sanitario), requiresPrescription: Boolean(item.requiere_receta), controlledProduct: Boolean(item.producto_controlado),
+      chronicUse: Boolean(item.uso_cronico), avoidPregnancy: Boolean(item.evitar_embarazo), requiresRefrigeration: Boolean(item.requiere_refrigeracion),
+      ingredients: [], active: true, description: '', price: Number(item.precio_venta_aplicado), cost: 0, imageUrl: item.imagen_url == null ? null : String(item.imagen_url)
+    }
+  }));
+  const payment: Payment | null = paymentRow ? {
+    id: Number(paymentRow.id_pago), orderId: invoiceId, provider: String(paymentRow.nombre_metodo ?? '').toLowerCase() === 'stripe' ? 'stripe' : 'demo',
+    transactionId: String(paymentRow.transaccion_pasarela_id ?? ''), amount: Number(paymentRow.monto_pagado ?? total), status: 'PAID',
+    createdAt: paymentRow.fecha_pago ? new Date(paymentRow.fecha_pago).toISOString() : issuedAt
+  } : null;
+  return { invoice, order, items, customer, branch: { id: Number(row.id_sucursal), name: String(row.nombre_sucursal ?? ''), city: '', address: '' }, payment, paymentMethod: String(paymentRow?.nombre_metodo ?? 'No especificado') };
 }
 
 export async function releaseDatabaseDiscountRedemption(invoiceId: number) {

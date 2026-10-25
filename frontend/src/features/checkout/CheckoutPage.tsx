@@ -8,7 +8,9 @@ const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
   ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
   : null;
 
-export function StripePaymentForm({ clientSecret }: { clientSecret: string }) {
+type StripePaymentFormProps = { clientSecret: string; onPaymentSuccess?: () => void };
+
+export function StripePaymentForm({ clientSecret, onPaymentSuccess }: StripePaymentFormProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stripeRef = useRef<any>(null);
   const elementsRef = useRef<any>(null);
@@ -47,7 +49,10 @@ export function StripePaymentForm({ clientSecret }: { clientSecret: string }) {
     setIsSubmitting(true); setStatus('Confirmando pago...');
     const { error, paymentIntent } = await stripeRef.current.confirmPayment({ elements: elementsRef.current, confirmParams: { return_url: window.location.href }, redirect: 'if_required' });
     if (error) setStatus(error.message ?? 'No se pudo confirmar el pago.');
-    else if (paymentIntent?.status === 'succeeded' || paymentIntent?.status === 'processing') setStatus(paymentIntent.status === 'succeeded' ? 'Pago confirmado correctamente.' : 'Pago en procesamiento.');
+    else if (paymentIntent?.status === 'succeeded') {
+      setStatus('Pago confirmado correctamente. La factura será enviada a tu correo.');
+      onPaymentSuccess?.();
+    } else if (paymentIntent?.status === 'processing') setStatus('Pago en procesamiento.');
     else setStatus('El pago requiere una validación adicional.');
     setIsSubmitting(false);
   }
@@ -61,10 +66,10 @@ export function StripePaymentForm({ clientSecret }: { clientSecret: string }) {
 
 type Checkout = { name: string; nit: string; email: string; phone: string; deliveryMode: 'DELIVERY' | 'PICKUP'; paymentMethod: 'STRIPE' | 'CASH'; address: string; deliveryLatitude: number | null; deliveryLongitude: number | null };
 type DiscountQuote = { code: string; subtotal: number; discountAmount: number; total: number; cartSignature: string; email: string };
-type Props = { cart: Array<{ productId: number; quantity: number }>; products: ProductCard[]; onUpdateQuantity: (productId: number, delta: number) => void; onRemoveItem: (productId: number) => void; onSelectProductForModal?: (product: ProductCard) => void; branchId: number; branches: Branch[]; recipeFile: File | null; onSetRecipeFile: (file: File | null) => void; checkout: Checkout; onUpdateCheckout: (fields: Partial<Checkout>) => void; onSubmitPayment: (discountCode?: string) => void; isSubmitting: boolean; status: string; paymentClientSecret: string; isExpanded: boolean; onToggleExpand: () => void; onClosePayment?: () => void; StripePaymentFormComponent?: typeof StripePaymentForm };
+type Props = { cart: Array<{ productId: number; quantity: number }>; products: ProductCard[]; onUpdateQuantity: (productId: number, delta: number) => void; onRemoveItem: (productId: number) => void; onSelectProductForModal?: (product: ProductCard) => void; branchId: number; branches: Branch[]; recipeFile: File | null; onSetRecipeFile: (file: File | null) => void; checkout: Checkout; onUpdateCheckout: (fields: Partial<Checkout>) => void; onSubmitPayment: (discountCode?: string) => void; isSubmitting: boolean; status: string; paymentClientSecret: string; isExpanded: boolean; onToggleExpand: () => void; onClosePayment?: () => void; onPaymentSuccess?: () => void; StripePaymentFormComponent?: typeof StripePaymentForm };
 
 export function TopPaymentBar({ StripePaymentFormComponent = StripePaymentForm, ...props }: Props) {
-  const { cart, products, branches, branchId, checkout, recipeFile, onSetRecipeFile, onUpdateCheckout, onUpdateQuantity, onRemoveItem, onSelectProductForModal, onSubmitPayment, isSubmitting, status, paymentClientSecret, isExpanded, onToggleExpand, onClosePayment } = props;
+  const { cart, products, branches, branchId, checkout, recipeFile, onSetRecipeFile, onUpdateCheckout, onUpdateQuantity, onRemoveItem, onSelectProductForModal, onSubmitPayment, isSubmitting, status, paymentClientSecret, isExpanded, onToggleExpand, onClosePayment, onPaymentSuccess } = props;
   const [couponCode, setCouponCode] = useState('');
   const [couponMessage, setCouponMessage] = useState('');
   const [isCheckingCoupon, setIsCheckingCoupon] = useState(false);
@@ -139,7 +144,7 @@ export function TopPaymentBar({ StripePaymentFormComponent = StripePaymentForm, 
            <div><span className="stripe-payment-kicker">Pago con tarjeta</span><h2 id="stripe-payment-title">Completa tu pago</h2><p>Total de la orden: {money(total)}</p></div>
            <button type="button" className="modal-close-btn" onClick={onClosePayment}>Cerrar</button>
          </div>
-         <StripePaymentFormComponent clientSecret={paymentClientSecret} />
+         <StripePaymentFormComponent clientSecret={paymentClientSecret} onPaymentSuccess={onPaymentSuccess} />
        </div>
      </div>
    )}

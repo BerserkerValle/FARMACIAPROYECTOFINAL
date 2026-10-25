@@ -35,6 +35,7 @@ import {
   findDatabaseCustomerAccountById,
   getDatabaseBranches,
   getDatabaseCategories,
+  getDatabaseInvoiceDataForEmail,
   getDatabaseSuppliers,
   listDatabaseCustomerOrders,
   markDatabaseDiscountRedeemed,
@@ -368,7 +369,8 @@ export async function stripeWebhook(req: Request, res: Response) {
 
         // Verificar amount y currency contra la orden esperada (seguridad: evita pagos por importe incorrecto)
         const expectedCurrency = (process.env.STRIPE_CURRENCY?.trim().toLowerCase() || 'gtq');
-        const order = store.getOrderById(orderId);
+        const databaseInvoiceData = databaseEnabled ? await getDatabaseInvoiceDataForEmail(orderId) : null;
+        const order = databaseInvoiceData?.order ?? store.getOrderById(orderId);
         if (!order) {
           console.error('[StripeWebhook] Orden no encontrada:', orderId);
         } else if (Math.abs(amount - order.total) > 0.01) {
@@ -389,16 +391,17 @@ export async function stripeWebhook(req: Request, res: Response) {
         }
 
         // Generar factura y enviar correo si el pago se registró correctamente (idempotente con state machine)
-        if (paymentRegistered) {
+        if (paymentRegistered && event.type === 'payment_intent.succeeded') {
           try {
             const { pdfBuffer } = await generarFacturaDesdeOrden(orderId, true);
 
             // Obtener email del cliente
-            const order = store.getOrderById(orderId);
+            const emailData = databaseInvoiceData ?? (databaseEnabled ? await getDatabaseInvoiceDataForEmail(orderId) : null);
+            const order = emailData?.order ?? store.getOrderById(orderId);
             if (order) {
-              const customer = store.getCustomerById(order.customerId);
+              const customer = emailData?.customer ?? store.getCustomerById(order.customerId);
               if (customer && customer.email) {
-                const invoice = store.getInvoiceByOrderId(orderId);
+                const invoice = emailData?.invoice ?? store.getInvoiceByOrderId(orderId);
                 if (invoice) {
                   // PASO 1: Reservar atómicamente el envío (PENDING/FAILED → SENDING)
                   // Esto evita que dos webhooks concurrentes procesen la misma factura

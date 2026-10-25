@@ -374,6 +374,15 @@ export default function AppController() {
     ? cart.find((i) => i.productId === selectedProductForGlobalModal.id)
     : null;
 
+  function handlePaymentSuccess() {
+    setPaymentClientSecret('');
+    setCart([]);
+    setStatus('Pago confirmado. La factura será enviada al correo indicado.');
+    if (new URLSearchParams(window.location.search).has('checkout') || new URLSearchParams(window.location.search).has('posPayment')) {
+      window.location.href = '/';
+    }
+  }
+
   function openCheckout() {
     localStorage.setItem('farmacia-fjk.cart', JSON.stringify(cart));
     const checkoutWindow = window.open(`${window.location.origin}/?checkout=1`, '_blank', 'noopener,noreferrer');
@@ -397,9 +406,10 @@ export default function AppController() {
       onSubmitPayment={handleCheckoutCart}
       isSubmitting={isSubmitting}
       status={status}
-       paymentClientSecret={paymentClientSecret}
-       onClosePayment={() => setPaymentClientSecret('')}
-       StripePaymentFormComponent={StripePaymentForm}
+        paymentClientSecret={paymentClientSecret}
+        onClosePayment={() => setPaymentClientSecret('')}
+        onPaymentSuccess={handlePaymentSuccess}
+        StripePaymentFormComponent={StripePaymentForm}
        isExpanded
       onToggleExpand={() => undefined}
     />
