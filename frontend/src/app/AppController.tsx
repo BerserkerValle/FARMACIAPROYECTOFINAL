@@ -425,8 +425,7 @@ function handlePaymentSuccess(orderCode: string, total: number) {
 
   function openCheckout() {
     localStorage.setItem('farmacia-fjk.cart', JSON.stringify(cart));
-    const checkoutWindow = window.open(`${window.location.origin}/?checkout=1`, '_blank', 'noopener,noreferrer');
-    if (!checkoutWindow) window.location.assign(`${window.location.origin}/?checkout=1`);
+    window.location.assign(`${window.location.origin}/?checkout=1`);
   }
 
   const checkoutOnly = ['checkout', 'posPayment'].some((key) => new URLSearchParams(window.location.search).has(key));
@@ -550,7 +549,7 @@ function handlePaymentSuccess(orderCode: string, total: number) {
       />
 
       {/* HERO CAROUSEL - Solo en portal público */}
-      {activePortal === 'public' && <HeroCarousel onNavigatePortal={setActivePortal} />}
+      {activePortal === 'public' && <HeroCarousel onNavigatePortal={setActivePortal} products={products} />}
 
       {/* MAIN PRODUCT CATALOG */}
       {activePortal === 'public' && (
