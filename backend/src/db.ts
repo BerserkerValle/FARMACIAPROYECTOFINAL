@@ -2050,6 +2050,84 @@ export async function saveDatabaseSnapshot(snapshot: DataSnapshot) {
   );
 }
 
+/** Obtiene una orden por ID desde PostgreSQL */
+export async function getDatabaseOrderById(orderId: number): Promise<Order | null> {
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT o.id_pedido AS id, o.codigo AS code, o.origen AS source, o.id_sucursal AS branchId,
+            o.id_cliente AS customerId, o.email_cliente AS customerEmail, o.id_empleado AS employeeId,
+            o.modo_entrega AS deliveryMode, o.direccion AS address, o.id_repartidor AS assignedEmployeeId,
+            o.latitud AS deliveryLatitude, o.longitud AS deliveryLongitude, o.estado AS status,
+            o.estado_pago AS paymentStatus, o.requiere_receta AS requiresPrescription,
+            o.receta_url AS prescriptionWebUrl, o.receta_entrega_url AS prescriptionDeliveryUrl,
+            o.subtotal, o.descuento AS discountAmount, o.codigo_descuento AS discountCode,
+            o.total_neto AS total, o.fecha_emision AS createdAt, o.fecha_pago AS paidAt,
+            o.fecha_liberacion AS releasedAt
+       FROM Pedidos o
+      WHERE o.id_pedido = $1
+      LIMIT 1`,
+    [orderId]
+  );
+  if (!result.rows[0]) return null;
+  const row = result.rows[0];
+  return {
+    id: Number(row.id),
+    code: row.code,
+    source: row.source,
+    branchId: Number(row.branchId),
+    customerId: Number(row.customerId),
+    customerEmail: row.customerEmail,
+    employeeId: row.employeeId ? Number(row.employeeId) : null,
+    deliveryMode: row.deliveryMode,
+    address: row.address,
+    assignedEmployeeId: row.assignedEmployeeId ? Number(row.assignedEmployeeId) : null,
+    deliveryLatitude: row.deliveryLatitude ? Number(row.deliveryLatitude) : null,
+    deliveryLongitude: row.deliveryLongitude ? Number(row.deliveryLongitude) : null,
+    status: row.status,
+    paymentStatus: row.paymentStatus,
+    requiresPrescription: Boolean(row.requiresPrescription),
+    prescriptionWebUrl: row.prescriptionWebUrl,
+    prescriptionDeliveryUrl: row.prescriptionDeliveryUrl,
+    subtotal: Number(row.subtotal ?? 0),
+    discountAmount: Number(row.discountAmount ?? 0),
+    discountCode: row.discountCode,
+    total: Number(row.total),
+    createdAt: row.createdAt,
+    paidAt: row.paidAt,
+    releasedAt: row.releasedAt
+  };
+}
+
+/** Obtiene una factura por ID de orden desde PostgreSQL */
+export async function getDatabaseInvoiceByOrderId(orderId: number): Promise<Invoice | null> {
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT f.id_factura, f.id_pedido, f.fecha_emision, f.correlativo_sat,
+            f.subtotal_bruto, f.descuento_aplicado, f.codigo_descuento, f.total_neto
+       FROM Facturas f
+      WHERE f.id_pedido = $1
+      LIMIT 1`,
+    [orderId]
+  );
+  if (!result.rows[0]) return null;
+  const row = result.rows[0];
+  return {
+    id: Number(row.id_factura),
+    orderId: Number(row.id_pedido),
+    invoiceNumber: `WEB-${String(row.id_factura).padStart(6, '0')}`,
+    satCorrelative: String(row.correlativo_sat ?? ''),
+    issuedAt: new Date(row.fecha_emision).toISOString(),
+    total: Number(row.total_neto ?? 0),
+    subtotal: Number(row.subtotal_bruto ?? 0),
+    discountAmount: Number(row.descuento_aplicado ?? 0),
+    discountCode: row.codigo_descuento == null ? null : String(row.codigo_descuento),
+    emailStatus: undefined,
+    emailSentAt: null,
+    emailError: null,
+    emailAttemptAt: null
+  };
+}
+
 /** Comprueba la salud y conectividad de la base de datos ejecutando SELECT 1 */
 export async function databaseHealth() {
   if (!pool) return { configured: false, connected: false };

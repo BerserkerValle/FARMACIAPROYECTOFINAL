@@ -111,10 +111,47 @@ export default function AppController() {
   const [paymentClientSecret, setPaymentClientSecret] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [lastOrder, setLastOrder] = useState<{ orderCode: string; total: number } | null>(null);
 
   useEffect(() => {
     localStorage.setItem('farmacia-fjk.cart', JSON.stringify(cart));
   }, [cart]);
+
+  // Download invoice function
+  const downloadInvoice = async (orderCode: string) => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/public/orders/${orderCode}/invoice`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('farmacia-fjk.customer-token') || ''}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('No se pudo descargar la factura');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `factura-${lastOrder?.orderCode || 'orden'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo descargar la factura');
+    }
+  };
+
+  function handlePaymentSuccess() {
+    setPaymentClientSecret('');
+    setCart([]);
+    setPaymentSuccess(true);
+    setStatus('Pago confirmado correctamente.');
+  }
 
   const [checkout, setCheckout] = useState({
     name: '',
@@ -294,10 +331,14 @@ export default function AppController() {
         return;
       }
       setPaymentClientSecret('');
-      setStatus(result.mode === 'cash'
-        ? `¡Pedido ${result.order.code} recibido! ${checkout.deliveryMode === 'DELIVERY' ? 'Pagarás en efectivo al recibirlo.' : 'Pagarás en efectivo al recogerlo.'}`
-        : `¡Orden ${result.order.code} generada exitosamente!`);
-      setCart([]);
+      if (result.mode === 'stripe' && result.order) {
+        handlePaymentSuccess(result.order.code, result.order.total);
+      } else {
+        setStatus(result.mode === 'cash'
+          ? `¡Pedido ${result.order.code} recibido! ${checkout.deliveryMode === 'DELIVERY' ? 'Pagarás en efectivo al recibirlo.' : 'Pagarás en efectivo al recogerlo.'}`
+          : `¡Orden ${result.order.code} generada exitosamente!`);
+        setCart([]);
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'No se pudo procesar el pago');
     } finally {
@@ -374,13 +415,12 @@ export default function AppController() {
     ? cart.find((i) => i.productId === selectedProductForGlobalModal.id)
     : null;
 
-  function handlePaymentSuccess() {
+function handlePaymentSuccess(orderCode: string, total: number) {
     setPaymentClientSecret('');
     setCart([]);
-    setStatus('Pago confirmado. La factura será enviada al correo indicado.');
-    if (new URLSearchParams(window.location.search).has('checkout') || new URLSearchParams(window.location.search).has('posPayment')) {
-      window.location.href = '/';
-    }
+    setLastOrder({ orderCode, total });
+    setPaymentSuccess(true);
+    setStatus('Pago confirmado correctamente.');
   }
 
   function openCheckout() {
@@ -416,7 +456,60 @@ export default function AppController() {
   );
 
   if (checkoutOnly) {
+// Show payment success screen
+  if (paymentSuccess && lastOrder) {
     return (
+      <div className="app-container">
+        <div className="checkout-only-page" style={{ maxWidth: '500px', margin: '0 auto', paddingTop: '2rem' }}>
+          <div className="checkout-only-header">
+            <div className="checkout-only-brand">
+              <div className="brand-icon"><span>+</span></div>
+              <div><strong>Gestión de Farmacia</strong><small>Pago completado</small></div>
+            </div>
+            <button type="button" className="btn-secondary" onClick={() => { window.location.href = '/'; }}>Volver al catálogo</button>
+          </div>
+          <div className="checkout-only-page" style={{ padding: '2rem', textAlign: 'center' }}>
+            <div className="success-icon" style={{ fontSize: '4rem', marginBottom: '1rem' }}>✅</div>
+            <h2 style={{ color: 'var(--success, #10b981)', marginBottom: '0.5rem' }}>¡Pago Confirmado!</h2>
+            <p style={{ marginBottom: '0.5rem', color: 'var(--text-main)' }}>
+              Tu pago ha sido procesado correctamente.
+            </p>
+            <div style={{ margin: '1.5rem 0', padding: '1rem', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)' }}>
+              <p style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>Detalles de la orden</p>
+              <p style={{ margin: '0 0 0.25rem' }}>Orden: <strong>{lastOrder?.orderCode}</strong></p>
+              <p style={{ margin: '0' }}>Total: <strong>{new Intl.NumberFormat('es-GT', { style: 'currency', currency: 'GTQ' }).format(lastOrder?.total || 0)}</strong></p>
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap', marginTop: '1.5rem' }}>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ padding: '0.75rem 1.5rem' }}
+                onClick={() => downloadInvoice(lastOrder?.orderCode || '')}
+              >
+                📄 Descargar Factura PDF
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ padding: '0.75rem 1.5rem' }}
+                onClick={() => {
+                  setPaymentSuccess(false);
+                  setLastOrder(null);
+                }}
+              >
+                Volver al Catálogo
+              </button>
+            </div>
+            <p style={{ marginTop: '1.5rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              La factura también será enviada a tu correo electrónico.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
       <div className="checkout-only-page">
         <div className="checkout-only-header">
           <div className="checkout-only-brand">

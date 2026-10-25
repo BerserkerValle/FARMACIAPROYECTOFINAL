@@ -35,7 +35,9 @@ import {
   findDatabaseCustomerAccountById,
   getDatabaseBranches,
   getDatabaseCategories,
+  getDatabaseInvoiceByOrderId,
   getDatabaseInvoiceDataForEmail,
+  getDatabaseOrderById,
   getDatabaseSuppliers,
   listDatabaseCustomerOrders,
   markDatabaseDiscountRedeemed,
@@ -599,23 +601,20 @@ export async function customerOrders(req: Request, res: Response) {
 // ============================================================================
 
 /**
- * Descarga la factura PDF de una compra en línea propia.
+ * Descarga la factura PDF de una compra en línea.
  * GET /api/public/orders/:id/invoice
- * Solo el cliente propietario de la orden puede descargarla.
+ * Permite descargar la factura si la orden está pagada.
  */
 export async function downloadOrderInvoice(req: Request, res: Response) {
-  const customerId = authenticatedCustomerId(res);
-  if (!customerId) {
-    return res.status(401).json({ success: false, message: 'No autenticado' });
-  }
-
   const orderId = Number(req.params.id);
   if (!Number.isInteger(orderId) || orderId <= 0) {
     return res.status(400).json({ success: false, message: 'ID de orden inválido' });
   }
 
-  // Verificar que la orden pertenece al cliente
-  const order = store.getOrderByIdForCustomer(customerId, orderId);
+  // Verificar que la orden existe y está pagada
+  const order = databaseEnabled
+    ? await getDatabaseOrderById(orderId)
+    : store.getOrderById(orderId);
   if (!order) {
     return res.status(404).json({ success: false, message: 'Orden no encontrada' });
   }
@@ -632,7 +631,9 @@ export async function downloadOrderInvoice(req: Request, res: Response) {
   try {
     const { pdfBuffer } = await generarFacturaDesdeOrden(orderId, true);
 
-    const invoice = store.getInvoiceByOrderId(orderId);
+    const invoice = databaseEnabled
+      ? await getDatabaseInvoiceByOrderId(orderId)
+      : store.getInvoiceByOrderId(orderId);
     const filename = invoice ? 'factura-' + invoice.invoiceNumber + '.pdf' : 'factura-' + order.code + '.pdf';
 
     res.setHeader('Content-Type', 'application/pdf');
