@@ -1280,6 +1280,7 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
           setSelectedProductForModal(null);
         }}
         inCartQuantity={0}
+        showInternalInfo={true}
       />
     </div>
   );

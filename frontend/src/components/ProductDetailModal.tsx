@@ -8,7 +8,8 @@ export function ProductDetailModal({
   branchName,
   onClose,
   onAddToCart,
-  inCartQuantity
+  inCartQuantity,
+  showInternalInfo = false
 }: {
   product: ProductCard | null;
   categories: Category[];
@@ -16,6 +17,7 @@ export function ProductDetailModal({
   onClose: () => void;
   onAddToCart: (productId: number, quantity: number) => void;
   inCartQuantity: number;
+  showInternalInfo?: boolean;
 }) {
   const [qty, setQty] = useState(1);
   const [activeTab, setActiveTab] = useState<'specs' | 'desc' | 'lots' | 'safety'>('specs');
@@ -61,14 +63,14 @@ export function ProductDetailModal({
       <div className="product-detail-modal" onClick={(e) => e.stopPropagation()}>
         {/* Close Button */}
         <button type="button" className="modal-close-btn" onClick={onClose} title="Cerrar (Esc)">
-          Cerrar
+          X
         </button>
 
         {/* Modal Top Badges Header */}
         <div className="modal-top-bar">
           <div className="modal-header-badges">
             <span className="modal-cat-badge">{categoryName}</span>
-            <span className="badge-sku">SKU: {product.sku}</span>
+            {showInternalInfo && <span className="badge-sku">SKU: {product.sku}</span>}
             <span className={`badge-prescription ${product.requiresPrescription ? 'rx' : 'otc'}`}>
               {product.requiresPrescription ? 'Requiere receta médica MSPAS' : 'Venta libre (OTC)'}
             </span>
@@ -192,29 +194,126 @@ export function ProductDetailModal({
               >
                 Especificaciones
               </button>
-              <button
-                type="button"
-                className={`modal-tab-btn ${activeTab === 'desc' ? 'active' : ''}`}
-                onClick={() => setActiveTab('desc')}
-              >
-                Uso Terapéutico
-              </button>
-              <button
-                type="button"
-                className={`modal-tab-btn ${activeTab === 'lots' ? 'active' : ''}`}
-                onClick={() => setActiveTab('lots')}
-              >
-                Lotes ({product.lots?.length ?? 0})
-              </button>
-              <button
-                type="button"
-                className={`modal-tab-btn ${activeTab === 'safety' ? 'active' : ''}`}
-                onClick={() => setActiveTab('safety')}
-              >
-                Normativa & Conservación
-              </button>
+              {showInternalInfo && (
+                <>
+                  <button
+                    type="button"
+                    className={`modal-tab-btn ${activeTab === 'desc' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('desc')}
+                  >
+                    Uso Terapéutico
+                  </button>
+                  <button
+                    type="button"
+                    className={`modal-tab-btn ${activeTab === 'lots' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('lots')}
+                  >
+                    Lotes ({product.lots?.length ?? 0})
+                  </button>
+                  <button
+                    type="button"
+                    className={`modal-tab-btn ${activeTab === 'safety' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('safety')}
+                  >
+                    Normativa & Conservación
+                  </button>
+                </>
+              )}
             </div>
 
+            {/* TAB CONTENT 2: Description & Therapeutic info - Admin only */}
+            {showInternalInfo && activeTab === 'desc' && (
+              <div className="modal-tab-pane">
+                <div className="modal-desc-section">
+                  <h4>Descripción Clínica e Indicaciones</h4>
+                  <p>{product.description || 'Medicamento farmacéutico certificado con control sanitario de calidad y eficacia comprobada.'}</p>
+                </div>
+                <div className="modal-feature-bullets">
+                  <div className="feature-bullet-item">
+                    <span className="bullet-icon">✓</span>
+                    <div>
+                      <strong>Calidad Farmacéutica Certificada</strong>
+                      <p>Producto original distribuido bajo estándares de Buenas Prácticas de Almacenamiento y Dispensación.</p>
+                    </div>
+                  </div>
+                  <div className="feature-bullet-item">
+                    <span className="bullet-icon">✓</span>
+                    <div>
+                      <strong>Trazabilidad y Control PEPS</strong>
+                      <p>Lotes verificados con fecha de vencimiento controlada para garantizar máxima efectividad terapéutica.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT 3: Lots & Expirations - Admin only */}
+            {showInternalInfo && activeTab === 'lots' && (
+              <div className="modal-tab-pane">
+                <div className="modal-lots-box">
+                  <div className="lots-box-header">
+                    <h4>Trazabilidad de Lotes y Fechas de Vencimiento</h4>
+                    <span>Sucursal: {branchName ?? 'Sede Central'}</span>
+                  </div>
+                  {product.lots && product.lots.length > 0 ? (
+                    <div className="lots-table-wrap">
+                      <table className="lots-table">
+                        <thead>
+                          <tr>
+                            <th>Código de Lote</th>
+                            <th>Fecha de Vencimiento</th>
+                            <th>Estado</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {product.lots.map((lot) => (
+                            <tr key={lot.id}>
+                              <td><strong>{lot.batchCode}</strong></td>
+                              <td>{lot.expirationDate}</td>
+                              <td>
+                                <span className={`lot-status-badge ${lot.quantityAvailable > 0 ? 'vigente' : 'agotado'}`}>
+                                  {lot.quantityAvailable > 0 ? 'Disponible' : 'Sin stock'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="no-lots-msg">
+                      <p>No hay lotes con existencia registrados en esta sucursal.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT 4: Safety & Storage - Admin only */}
+            {showInternalInfo && activeTab === 'safety' && (
+              <div className="modal-tab-pane">
+                <div className="modal-safety-grid">
+                  {product.requiresPrescription && (
+                    <div className="prescription-alert-box">
+                      <span>Aviso</span>
+                      <div>
+                        <strong>Medicamento Ético con Receta Obligatoria</strong>
+                        <p>De acuerdo con la legislación sanitaria del MSPAS, este medicamento requiere receta médica válida emitida por un profesional de la salud colegiado.</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="storage-card">
+                    <h5>Condiciones de Almacenamiento y Conservación</h5>
+                    <ul>
+                      <li>Conservar en su empaque original a temperatura ambiente no mayor a 30°C.</li>
+                      <li>Proteger de la luz solar directa, humedad y fuentes de calor.</li>
+                      <li>Manténgase fuera del alcance y de la vista de los niños.</li>
+                      <li>No consumir después de la fecha de vencimiento indicada en el empaque y lote.</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* TAB CONTENT 1: Full Specifications Grid */}
             {activeTab === 'specs' && (
               <div className="modal-tab-pane">
@@ -273,100 +372,6 @@ export function ProductDetailModal({
                   <div className="spec-box" style={{ gridColumn: 'span 2' }}>
                     <span className="spec-box-label">Ingredientes</span>
                     <div>{product.ingredients?.length ? product.ingredients.map((item, index) => <div key={index}><strong>{item.ingredient}</strong>{item.quantity && ` · ${item.quantity}`}{item.concentration && ` · ${item.concentration}`}{item.principal && ' · Principal'}</div>) : 'No especificados'}</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB CONTENT 2: Description & Therapeutic info */}
-            {activeTab === 'desc' && (
-              <div className="modal-tab-pane">
-                <div className="modal-desc-section">
-                  <h4>Descripción Clínica e Indicaciones</h4>
-                  <p>{product.description || 'Medicamento farmacéutico certificado con control sanitario de calidad y eficacia comprobada.'}</p>
-                </div>
-                <div className="modal-feature-bullets">
-                  <div className="feature-bullet-item">
-                    <span className="bullet-icon">✓</span>
-                    <div>
-                      <strong>Calidad Farmacéutica Certificada</strong>
-                      <p>Producto original distribuido bajo estándares de Buenas Prácticas de Almacenamiento y Dispensación.</p>
-                    </div>
-                  </div>
-                  <div className="feature-bullet-item">
-                    <span className="bullet-icon">✓</span>
-                    <div>
-                      <strong>Trazabilidad y Control PEPS</strong>
-                      <p>Lotes verificados con fecha de vencimiento controlada para garantizar máxima efectividad terapéutica.</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB CONTENT 3: Lots & Expirations */}
-            {activeTab === 'lots' && (
-              <div className="modal-tab-pane">
-                <div className="modal-lots-box">
-                  <div className="lots-box-header">
-                    <h4>Trazabilidad de Lotes y Fechas de Vencimiento</h4>
-                    <span>Sucursal: {branchName ?? 'Sede Central'}</span>
-                  </div>
-                  {product.lots && product.lots.length > 0 ? (
-                    <div className="lots-table-wrap">
-                      <table className="lots-table">
-                        <thead>
-                          <tr>
-                            <th>Código de Lote</th>
-                            <th>Fecha de Vencimiento</th>
-                            <th>Estado</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {product.lots.map((lot) => (
-                            <tr key={lot.id}>
-                              <td><strong>{lot.batchCode}</strong></td>
-                              <td>{lot.expirationDate}</td>
-                              <td>
-                                <span className={`lot-status-badge ${lot.quantityAvailable > 0 ? 'vigente' : 'agotado'}`}>
-                                  {lot.quantityAvailable > 0 ? 'Disponible' : 'Sin stock'}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="no-lots-msg">
-                      <p>No hay lotes con existencia registrados en esta sucursal.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* TAB CONTENT 4: Safety & Storage */}
-            {activeTab === 'safety' && (
-              <div className="modal-tab-pane">
-                <div className="modal-safety-grid">
-                  {product.requiresPrescription && (
-                    <div className="prescription-alert-box">
-                      <span>Aviso</span>
-                      <div>
-                        <strong>Medicamento Ético con Receta Obligatoria</strong>
-                        <p>De acuerdo con la legislación sanitaria del MSPAS, este medicamento requiere receta médica válida emitida por un profesional de la salud colegiado.</p>
-                      </div>
-                    </div>
-                  )}
-                  <div className="storage-card">
-                    <h5>Condiciones de Almacenamiento y Conservación</h5>
-                    <ul>
-                      <li>Conservar en su empaque original a temperatura ambiente no mayor a 30°C.</li>
-                      <li>Proteger de la luz solar directa, humedad y fuentes de calor.</li>
-                      <li>Manténgase fuera del alcance y de la vista de los niños.</li>
-                      <li>No consumir después de la fecha de vencimiento indicada en el empaque y lote.</li>
-                    </ul>
                   </div>
                 </div>
               </div>

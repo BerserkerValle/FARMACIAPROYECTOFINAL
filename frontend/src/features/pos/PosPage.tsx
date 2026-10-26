@@ -202,7 +202,7 @@ export function PosPage({ token, profile, categories }: { token: string | null; 
         </div>
         <div className="panel-card"><div className="panel-head"><h2>Órdenes para Retiro en Tienda</h2><span className="pill-tag">{orders.length} pendientes</span></div><div className="item-list-stack">{orders.map((order) => <div key={order.id} className="compact-list-row"><div><strong>{order.code}</strong><p style={{ fontSize: "0.84rem", color: "var(--text-muted)" }}>{order.customer?.name ?? "Cliente"}</p><small>{money(order.total)} · {order.status}</small></div><button type="button" className="btn-secondary" onClick={() => releaseOrder(order.id)}>Liberar Entrega</button></div>)}</div>{status && <div className="checkout-status-msg">{status}</div>}</div>
       </div>
-      <ProductDetailModal product={selectedProductForModal} categories={categories ?? []} branchName={"Sucursal " + branchId} onClose={() => setSelectedProductForModal(null)} onAddToCart={(productId, quantity) => { setSale((prev) => ({ ...prev, productId, quantity })); setSelectedProductForModal(null); }} inCartQuantity={0} />
+      <ProductDetailModal product={selectedProductForModal} categories={categories ?? []} branchName={"Sucursal " + branchId} onClose={() => setSelectedProductForModal(null)} onAddToCart={(productId, quantity) => { setSale((prev) => ({ ...prev, productId, quantity })); setSelectedProductForModal(null); }} inCartQuantity={0} showInternalInfo={true} />
     </div>
   );
 }

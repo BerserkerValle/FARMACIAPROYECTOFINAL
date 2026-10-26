@@ -3846,7 +3846,7 @@ button, input, select, textarea {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  max-width: 920px;
+  max-width: 100%;
   width: 100%;
   max-height: 92vh;
   overflow-y: auto;
@@ -3855,6 +3855,12 @@ button, input, select, textarea {
   animation: modalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+}
+
+.modal-title {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .modal-top-bar {
@@ -3939,8 +3945,8 @@ button, input, select, textarea {
 }
 
 .modal-product-img {
-  width: 100%;
-  height: 100%;
+  max-width: 100%;
+  height: auto;
   object-fit: cover;
   transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -5501,6 +5507,136 @@ body {
 /* Tab panel container */
 #admin-tab-panels {
   animation: fadeIn var(--transition-fast);
+}
+
+/* =========================================================================
+   RESPONSIVE FIXES - Modal de Producto & Checkout (Mobile)
+   ========================================================================= */
+
+/* Modal de Producto - Responsive */
+@media (max-width: 768px) {
+  .product-detail-modal {
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+  }
+
+  .modal-product-img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .modal-title {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .modal-top-bar {
+    padding: 1rem 3rem 0.5rem 1rem;
+  }
+
+  .modal-body-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .modal-image-wrap {
+    height: 200px;
+  }
+
+  .modal-specs-full-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .spec-box {
+    grid-column: span 1 !important;
+  }
+}
+
+/* Checkout - Responsive */
+@media (max-width: 768px) {
+  .top-payment-section {
+    padding: 0 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .top-payment-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .top-payment-body {
+    padding: 0.75rem;
+  }
+
+  .top-payment-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    flex-direction: column;
+  }
+
+  .top-form-col {
+    width: 100%;
+  }
+
+  .form-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .form-field {
+    width: 100%;
+  }
+
+  .form-field input,
+  .form-field select,
+  .form-field textarea {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .billing-type-options {
+    flex-direction: column;
+  }
+
+  .billing-type-option {
+    width: 100%;
+  }
+
+  .delivery-toggle-group {
+    grid-template-columns: 1fr;
+  }
+
+  .checkout-submit-btn {
+    width: 100%;
+  }
+
+  .custom-stripe-form {
+    padding: 0.75rem;
+  }
+
+  .stripe-payment-modal {
+    width: 100%;
+    max-width: 100%;
+    padding: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .top-payment-section {
+    padding: 0 0.25rem;
+  }
+
+  .top-payment-body {
+    padding: 0.5rem;
+  }
+
+  .modal-backdrop {
+    padding: 0.5rem;
+  }
+
+  .modal-body-grid {
+    padding: 0.75rem;
+  }
 }
 
 @keyframes fadeIn {

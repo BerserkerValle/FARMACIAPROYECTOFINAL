@@ -569,6 +569,7 @@ function handlePaymentSuccess(orderCode: string, total: number) {
           onCategorySelect={setSelectedCategoryId}
           query={query}
           onQueryChange={setQuery}
+          showInternalInfo={profile !== null}
         />
       )}
 
@@ -583,6 +584,7 @@ function handlePaymentSuccess(orderCode: string, total: number) {
           setSelectedProductForGlobalModal(null);
         }}
         inCartQuantity={activeInCartItemForGlobal?.quantity ?? 0}
+        showInternalInfo={profile !== null}
       />
 
       {/* INTERNAL PORTALS - Portales Internos FARMACIA FJK */}

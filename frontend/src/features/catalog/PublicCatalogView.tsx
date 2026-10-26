@@ -18,7 +18,8 @@ export function PublicCatalogView({
   selectedCategoryId,
   onCategorySelect,
   query,
-  onQueryChange
+  onQueryChange,
+  showInternalInfo = false
 }: {
   branches: Branch[];
   branchId: number;
@@ -35,6 +36,7 @@ export function PublicCatalogView({
   onCategorySelect: (categoryId: number | 'all') => void;
   query: string;
   onQueryChange: (query: string) => void;
+  showInternalInfo?: boolean;
 }) {
   const [recentlyAddedId, setRecentlyAddedId] = useState<number | null>(null);
   const [selectedProductForModal, setSelectedProductForModal] = useState<ProductCard | null>(null);
@@ -135,8 +137,8 @@ export function PublicCatalogView({
                     </div>
 
                     <div className="product-card-badges-overlay">
-                      <span className="badge-sku">{product.sku}</span>
-                      {productCategory && (
+                      {showInternalInfo && <span className="badge-sku">{product.sku}</span>}
+                      {showInternalInfo && productCategory && (
                         <span
                           className="badge-sku"
                           style={{ background: 'rgba(15, 23, 42, 0.75)', cursor: 'pointer' }}
@@ -206,6 +208,7 @@ export function PublicCatalogView({
         onClose={() => setSelectedProductForModal(null)}
         onAddToCart={(id, quantity) => onAddToCart(id, quantity)}
         inCartQuantity={activeInCartItem?.quantity ?? 0}
+        showInternalInfo={showInternalInfo}
       />
 
       {toastMessage && (
