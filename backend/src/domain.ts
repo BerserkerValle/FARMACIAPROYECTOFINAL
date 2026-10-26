@@ -429,6 +429,7 @@ export interface DashboardMetrics {
   pendingOrders: number;
   suppliersCount: number;
   lowStockProducts: LowStockProduct[];
+  dataSource?: 'postgres' | 'server-store';
 }
 
 export interface LowStockProduct {

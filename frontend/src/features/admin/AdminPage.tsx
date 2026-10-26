@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiRequest } from '../../api';
-import type { Category, DashboardMetrics, LowStockProduct, Supplier } from '../../types';
+import type { DashboardMetrics, LowStockProduct, Supplier } from '../../types';
 import { money } from '../../lib/catalog';
 import { PasswordInputComponent } from '../../components/PasswordInput';
 
@@ -114,13 +114,12 @@ function InventoryAlerts({ products }: { products: LowStockProduct[] }) {
   return <section className="inventory-alerts analytics-card"><div className="analytics-card-head"><div><span className="section-kicker warning-kicker">Acción requerida</span><h3>Inventario bajo</h3><p>Productos que necesitan reposición por sucursal</p></div><span className="alert-counter">{products.length}</span></div>{products.length > 0 ? <div className="inventory-alert-list">{products.map((product) => <div className="inventory-alert-row" key={`${product.productId}-${product.branchId}`}><div className="inventory-alert-icon">!</div><div className="inventory-alert-main"><strong>{product.name}</strong><span>{product.sku} · {product.branchName}</span></div><div className="inventory-alert-stock"><strong>{product.stock}</strong><span>unidades</span></div><span className={`inventory-severity ${product.severity}`}>{product.severity === 'critical' ? 'Agotado' : product.severity === 'urgent' ? 'Urgente' : 'Bajo'}</span></div>)}</div> : <div className="inventory-clear"><span>✓</span><div><strong>Inventario saludable</strong><p>No hay productos por debajo del mínimo de 10 unidades.</p></div></div>}</section>;
 }
 
-type AdminTab = 'performance' | 'lowStock' | 'newEmployee' | 'crosscheck' | 'categories' | 'suppliers' | 'discounts';
+type AdminTab = 'performance' | 'lowStock' | 'newEmployee' | 'crosscheck' | 'suppliers' | 'discounts';
 const ADMIN_TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
   { id: 'performance', label: 'Rendimiento de la farmacia', icon: <span>⌁</span> },
   { id: 'lowStock', label: 'Inventario bajo', icon: <span>▥</span> },
   { id: 'newEmployee', label: 'Alta de Colaborador', icon: <span>+</span> },
   { id: 'crosscheck', label: 'Auditoría MSPAS', icon: <span>✓</span> },
-  { id: 'categories', label: 'Categorías de medicamentos', icon: <span>▦</span> },
   { id: 'suppliers', label: 'Gestión de proveedores', icon: <span>▥</span> },
   { id: 'discounts', label: 'Códigos de descuento', icon: <span>%</span> }
 ];
@@ -132,6 +131,8 @@ function isAdminTab(hash: string, canManageDiscountCodes: boolean) {
 export function AdminPage({ token, canManageDiscountCodes }: { token: string | null; canManageDiscountCodes: boolean }) {
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [reports, setReports] = useState<AdminReports | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [discountCodes, setDiscountCodes] = useState<AdminDiscountCode[]>([]);
   const [status, setStatus] = useState('');
   const [discountForm, setDiscountForm] = useState({ code: '', type: 'PERCENTAGE' as AdminDiscountCode['type'], value: '10', maxUses: '100', startsAt: '', expiresAt: '' });
@@ -142,9 +143,6 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
   const [empBranchId, setEmpBranchId] = useState(1);
   const [empSupervisorId, setEmpSupervisorId] = useState<number | null>(null);
   const [crosscheckOrderId, setCrosscheckOrderId] = useState('1');
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [newCategoryName, setNewCategoryName] = useState('');
-  const [newCategoryParentId, setNewCategoryParentId] = useState<number | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierSearch, setSupplierSearch] = useState('');
   const [editingSupplierId, setEditingSupplierId] = useState<number | null>(null);
@@ -168,15 +166,28 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
   }, [canManageDiscountCodes]);
 
   async function loadAll() {
-    if (!token) return;
-    const [dash, rep, categoryData, supplierData, discountData] = await Promise.all([
-      apiRequest<DashboardMetrics>('/api/admin/dashboard', {}, token), apiRequest<AdminReports>('/api/admin/reports', {}, token),
-      apiRequest<Category[]>('/api/admin/categories', {}, token), apiRequest<Supplier[]>('/api/admin/suppliers', {}, token),
-      canManageDiscountCodes ? apiRequest<AdminDiscountCode[]>('/api/admin/discount-codes', {}, token) : Promise.resolve([] as AdminDiscountCode[])
-    ]);
-    setDashboard(dash); setReports(rep); setCategories(categoryData); setSuppliers(supplierData); setDiscountCodes(discountData);
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setStatus('');
+    try {
+      const [dash, rep, supplierData, discountData] = await Promise.all([
+        apiRequest<DashboardMetrics>('/api/admin/dashboard', {}, token), apiRequest<AdminReports>('/api/admin/reports', {}, token),
+        apiRequest<Supplier[]>('/api/admin/suppliers', {}, token),
+        canManageDiscountCodes ? apiRequest<AdminDiscountCode[]>('/api/admin/discount-codes', {}, token) : Promise.resolve([] as AdminDiscountCode[])
+      ]);
+      setDashboard(dash); setReports(rep); setSuppliers(supplierData); setDiscountCodes(discountData);
+      setLastUpdated(new Date());
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudieron cargar los datos del panel');
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   }
-  useEffect(() => { loadAll().catch((error) => setStatus(error.message)); }, [token, canManageDiscountCodes]);
+  useEffect(() => { void loadAll().catch(() => undefined); }, [token, canManageDiscountCodes]);
   async function createEmployee() {
     try {
       const employeeData = {
@@ -201,8 +212,6 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
     }
   }
   async function doCrosscheck() { try { await apiRequest(`/api/admin/orders/${crosscheckOrderId}/crosscheck`, { method: 'POST', body: JSON.stringify({ reviewerEmployeeId: 2, approved: true, notes: 'Receta validada y archivada' }) }, token); setStatus(`Crosscheck registrado para orden #${crosscheckOrderId}`); } catch (error) { setStatus(error instanceof Error ? error.message : 'Error en crosscheck'); } }
-  async function addCategory() { try { if (!newCategoryName.trim()) throw new Error('Escribe el nombre de la categoría'); await apiRequest('/api/admin/categories', { method: 'POST', body: JSON.stringify({ name: newCategoryName, parentId: newCategoryParentId }) }, token); setNewCategoryName(''); setNewCategoryParentId(null); setStatus('Categoría creada correctamente.'); await loadAll(); } catch (error) { setStatus(error instanceof Error ? error.message : 'No se pudo crear la categoría'); } }
-  async function removeCategory(category: Category) { if (!window.confirm(`¿Eliminar la categoría "${category.name}"?`)) return; try { await apiRequest(`/api/admin/categories/${category.id}`, { method: 'DELETE' }, token); setStatus('Categoría eliminada correctamente.'); await loadAll(); } catch (error) { setStatus(error instanceof Error ? error.message : 'No se pudo eliminar la categoría'); } }
   function resetSupplierForm() { setEditingSupplierId(null); setSupplierName(''); setSupplierContactName(''); setSupplierNit(''); setSupplierPhone(''); setSupplierEmail(''); setSupplierAddress(''); setSupplierActive(true); }
   function editSupplier(supplier: Supplier) { setEditingSupplierId(supplier.id); setSupplierName(supplier.name); setSupplierContactName(supplier.contactName ?? ''); setSupplierNit(supplier.nit); setSupplierPhone(supplier.phone); setSupplierEmail(supplier.email); setSupplierAddress(supplier.address); setSupplierActive(supplier.active); window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }
   async function saveSupplier() { try { const payload = { name: supplierName.trim(), contactName: supplierContactName.trim(), nit: supplierNit.trim(), phone: supplierPhone.trim(), email: supplierEmail.trim(), address: supplierAddress.trim(), active: supplierActive }; if (!payload.name || !payload.contactName || !payload.nit || !payload.phone || !payload.email || !payload.address) throw new Error('Completa todos los campos del proveedor'); const path = editingSupplierId ? `/api/admin/suppliers/${editingSupplierId}` : '/api/admin/suppliers'; await apiRequest(path, { method: editingSupplierId ? 'PUT' : 'POST', body: JSON.stringify(payload) }, token); setStatus(editingSupplierId ? 'Proveedor actualizado correctamente.' : 'Proveedor registrado correctamente.'); resetSupplierForm(); await loadAll(); } catch (error) { setStatus(error instanceof Error ? error.message : 'No se pudo guardar el proveedor'); } }
@@ -242,11 +251,48 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
   const filteredSuppliers = suppliers.filter((supplier) => { const query = supplierSearch.trim().toLowerCase(); return !query || [supplier.name, supplier.contactName, supplier.nit, supplier.email, supplier.phone].some((value) => String(value ?? '').toLowerCase().includes(query)); });
   const SkeletonCard = () => <div className="skeleton-card"><div className="skeleton-line" style={{ width: '60%' }} /><div className="skeleton-line" style={{ width: '40%', marginTop: '0.5rem' }} /><div className="skeleton-line" style={{ width: '30%', marginTop: '0.5rem' }} /></div>;
   const SkeletonChart = () => <div className="skeleton-chart"><div className="skeleton-line" style={{ width: '100%', height: '200px' }} /></div>;
-  const PerformanceTab = () => <><div className="stats-grid-4">{[['Ventas del Día', dashboard?.salesToday, 'Cajas POS + En Línea'], ['Ventas del Mes', dashboard?.salesMonth, 'Total acumulado'], ['Stock Bajo', dashboard?.lowStockCount, 'Medicamentos críticos'], ['Pedidos Pendientes', dashboard?.pendingOrders, 'Empaque o entrega'], ['Proveedores', dashboard?.suppliersCount, 'Registrados en el sistema']].map(([label, value, hint]) => <div className="stat-metric-card" key={String(label)}><p>{label}</p><strong>{dashboard ? (typeof value === 'number' && (label === 'Ventas del Día' || label === 'Ventas del Mes') ? money(value) : String(value)) : <span className="skeleton-text" />}</strong><span>{hint}</span></div>)}</div>{dashboard && reports ? <><AdminCharts reports={reports} /><InventoryAlerts products={dashboard.lowStockProducts ?? []} /></> : <>SkeletonChart()SkeletonCard()</> }</>;
+  const PerformanceTab = () => {
+    const metrics = [
+      { label: 'Ventas de hoy', value: dashboard?.salesToday, hint: 'Facturación confirmada', icon: '↗', tone: 'green', isMoney: true },
+      { label: 'Ventas del mes', value: dashboard?.salesMonth, hint: 'Acumulado mensual', icon: '$', tone: 'blue', isMoney: true },
+      { label: 'Inventario crítico', value: dashboard?.lowStockCount, hint: 'Productos con stock bajo', icon: '!', tone: 'amber', isMoney: false },
+      { label: 'Pedidos pendientes', value: dashboard?.pendingOrders, hint: 'Requieren seguimiento', icon: '≡', tone: 'violet', isMoney: false },
+      { label: 'Proveedores', value: dashboard?.suppliersCount, hint: 'Registrados en el sistema', icon: '＋', tone: 'teal', isMoney: false }
+    ];
+    const sourceLabel = dashboard?.dataSource === 'postgres' ? 'PostgreSQL' : dashboard?.dataSource === 'server-store' ? 'Almacén local del servidor' : 'Conectando';
+
+    return <>
+      <section className="admin-dashboard-hero">
+        <div>
+          <span className="admin-dashboard-eyebrow">Panel ejecutivo</span>
+          <h1>Resumen de operaciones</h1>
+          <p>Indicadores clave para supervisar ventas, inventario y actividad de la farmacia.</p>
+        </div>
+        <div className="admin-dashboard-tools">
+          <div className="admin-data-source">
+            <span className={`admin-source-dot ${dashboard?.dataSource === 'postgres' ? 'connected' : ''}`} />
+            <span><strong>{sourceLabel}</strong><small>{lastUpdated ? `Actualizado ${new Intl.DateTimeFormat('es-GT', { hour: '2-digit', minute: '2-digit' }).format(lastUpdated)}` : 'Origen de datos'}</small></span>
+          </div>
+          <button type="button" className="admin-refresh-button" onClick={() => { void loadAll().catch(() => undefined); }} disabled={isLoading}>
+            <span aria-hidden="true">{isLoading ? '…' : '↻'}</span>{isLoading ? 'Cargando' : 'Actualizar'}
+          </button>
+        </div>
+      </section>
+      {status && <div className="admin-dashboard-message" role="alert">{status}</div>}
+      <div className="stats-grid-4 admin-metrics-grid">
+        {metrics.map((metric) => <article className="stat-metric-card admin-metric-card" key={metric.label}>
+          <div className={`admin-metric-icon ${metric.tone}`} aria-hidden="true">{metric.icon}</div>
+          <p>{metric.label}</p>
+          <strong>{dashboard ? metric.isMoney ? money(metric.value ?? 0) : String(metric.value ?? 0) : <span className="skeleton-text" />}</strong>
+          <span>{metric.hint}</span>
+        </article>)}
+      </div>
+      {dashboard && reports ? <><AdminCharts reports={reports} /><InventoryAlerts products={dashboard.lowStockProducts ?? []} /></> : isLoading ? <div className="admin-dashboard-loading"><SkeletonChart /><SkeletonCard /></div> : <div className="admin-dashboard-error"><strong>No se pudieron mostrar las métricas.</strong><span>Revisa la conexión con la API y vuelve a intentarlo.</span></div>}
+    </>;
+  };
   const LowStockTab = () => dashboard ? <InventoryAlerts products={dashboard.lowStockProducts ?? []} /> : <SkeletonCard />;
   const NewEmployeeTab = () => <div className="two-col-grid"><div className="panel-card"><div className="panel-head"><h2>Alta de Colaborador</h2><span className="pill-tag">Control RBAC</span></div><div className="form-grid-2"><div className="form-field"><label>Nombre</label><input value={empFullName} onChange={(e) => setEmpFullName(e.target.value)} /></div><div className="form-field"><label>Correo</label><input value={empEmail} onChange={(e) => setEmpEmail(e.target.value)} /></div></div><div className="form-grid-2"><div className="form-field"><label>Rol</label><select value={empRole} onChange={(e) => setEmpRole(e.target.value as 'Administrador' | 'Gerente' | 'Cajero' | 'Bodeguero' | 'Repartidor')}><option>Administrador</option><option>Gerente</option><option>Cajero</option><option>Bodeguero</option><option>Repartidor</option></select></div><PasswordInputComponent label="Contraseña" value={empPassword} onChange={(e) => setEmpPassword(e.target.value)} required /></div><button type="button" className="btn-primary" onClick={createEmployee}>Crear Usuario</button></div>CrosscheckPanel()</div>;
   const CrosscheckPanel = () => <div className="panel-card"><div className="panel-head"><h2>Auditoría MSPAS</h2><span className="pill-tag">Validación Sanitaria</span></div><div className="form-field"><label>ID de Orden a Validar</label><input value={crosscheckOrderId} onChange={(e) => setCrosscheckOrderId(e.target.value)} /></div><button type="button" className="btn-primary" onClick={doCrosscheck}>Registrar Validación de Receta</button><div className="reports-summary-grid"><div className="report-summary-box"><strong>{reports?.monthlySales?.length ?? 0}</strong><span>Períodos analizados</span></div><div className="report-summary-box"><strong>{reports?.topProducts?.length ?? 0}</strong><span>Productos con ventas</span></div></div>{status && <div className="checkout-status-msg">{status}</div>}</div>;
-  const CategoriesTab = () => <div className="panel-card" style={{ marginTop: '1rem' }}><div className="panel-head"><h2>Categorías de medicamentos</h2><span className="pill-tag">Administrador / Gerente</span></div><div className="form-grid-2"><div className="form-field"><label>Nombre de categoría</label><input value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="Ej. Vitaminas" /></div><div className="form-field"><label>Categoría principal</label><select value={newCategoryParentId ?? ''} onChange={(e) => setNewCategoryParentId(e.target.value ? Number(e.target.value) : null)}><option value="">Sin categoría principal</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></div></div><button type="button" className="btn-primary" onClick={addCategory}>Agregar categoría</button><div className="item-list-stack" style={{ marginTop: '0.75rem' }}>{categories.map((category) => <div className="compact-list-row" key={category.id}><strong>{category.name}</strong><button type="button" className="btn-secondary" onClick={() => removeCategory(category)}>Eliminar</button></div>)}</div></div>;
   const SuppliersTab = () => <div className="panel-card admin-suppliers-panel" style={{ marginTop: '1rem' }}><div className="panel-head"><div><h2>Gestión de proveedores</h2><span className="panel-subtitle">Contactos, compras y estado operativo</span></div><span className="pill-tag">Administrador / Gerente</span></div><div className="supplier-toolbar"><div className="form-field supplier-search-field"><label>Buscar proveedor</label><input value={supplierSearch} onChange={(e) => setSupplierSearch(e.target.value)} placeholder="Nombre, NIT, correo o teléfono" /></div>{editingSupplierId && <button type="button" className="btn-secondary" onClick={resetSupplierForm}>Cancelar edición</button>}</div><div className="form-grid-2 supplier-form-grid">
   <div className="form-field"><label>Empresa o proveedor</label><input type="text" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} /></div>
   <div className="form-field"><label>Nombre del contacto</label><input type="text" value={supplierContactName} onChange={(e) => setSupplierContactName(e.target.value)} /></div>
@@ -256,7 +302,7 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
   <div className="form-field"><label>Dirección</label><input type="text" value={supplierAddress} onChange={(e) => setSupplierAddress(e.target.value)} /></div>
 </div><div className="supplier-form-actions"><label className="checkbox-field"><input type="checkbox" checked={supplierActive} onChange={(e) => setSupplierActive(e.target.checked)} /> Proveedor activo</label><button type="button" className="btn-primary" onClick={saveSupplier}>{editingSupplierId ? 'Guardar cambios' : 'Registrar proveedor'}</button></div><div className="lots-table-wrap"><table className="lots-table suppliers-table"><thead><tr><th>Proveedor</th><th>Contacto</th><th>NIT</th><th>Comunicación</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{filteredSuppliers.map((supplier) => <tr key={supplier.id}><td><strong>{supplier.name}</strong><small>{supplier.address}</small></td><td>{supplier.contactName || 'Sin contacto'}</td><td>{supplier.nit}</td><td><span>{supplier.email}</span><small>{supplier.phone}</small></td><td><span className={`supplier-status ${supplier.active ? 'active' : 'inactive'}`}>{supplier.active ? 'Activo' : 'Inactivo'}</span></td><td><div className="supplier-actions"><button type="button" className="btn-secondary" onClick={() => editSupplier(supplier)}>Editar</button><button type="button" className="btn-secondary" onClick={() => toggleSupplier(supplier)}>{supplier.active ? 'Desactivar' : 'Activar'}</button></div></td></tr>)}{filteredSuppliers.length === 0 && <tr><td colSpan={6} className="no-lots-msg">No hay proveedores que coincidan con la búsqueda.</td></tr>}</tbody></table></div></div>;
   const DiscountCodesTab = () => <div className="panel-card" style={{ marginTop: '1rem' }}><div className="panel-head"><div><h2>Códigos de descuento</h2><span className="panel-subtitle">Aplican a toda la compra; un código por pedido y un uso por correo.</span></div><span className="pill-tag">Máximo 50% · 100 usos por defecto</span></div><div className="form-grid-2"><div className="form-field"><label>Código</label><input value={discountForm.code} maxLength={32} onChange={(event) => setDiscountForm({ ...discountForm, code: event.target.value.toUpperCase() })} placeholder="EJ. BIENVENIDA10" /></div><div className="form-field"><label>Tipo</label><select value={discountForm.type} onChange={(event) => setDiscountForm({ ...discountForm, type: event.target.value as AdminDiscountCode['type'] })}><option value="PERCENTAGE">Porcentaje</option><option value="FIXED">Monto fijo (Q)</option></select></div><div className="form-field"><label>{discountForm.type === 'PERCENTAGE' ? 'Porcentaje (máximo 50)' : 'Monto en quetzales'}</label><input type="number" min="0.01" max={discountForm.type === 'PERCENTAGE' ? 50 : undefined} step="0.01" value={discountForm.value} onChange={(event) => setDiscountForm({ ...discountForm, value: event.target.value })} /></div><div className="form-field"><label>Usos máximos (por defecto 100)</label><input type="number" min="1" max="10000" step="1" value={discountForm.maxUses} onChange={(event) => setDiscountForm({ ...discountForm, maxUses: event.target.value })} /></div><div className="form-field"><label>Válido desde (opcional)</label><input type="datetime-local" value={discountForm.startsAt} onChange={(event) => setDiscountForm({ ...discountForm, startsAt: event.target.value })} /></div><div className="form-field"><label>Vence (opcional)</label><input type="datetime-local" value={discountForm.expiresAt} onChange={(event) => setDiscountForm({ ...discountForm, expiresAt: event.target.value })} /></div></div><button type="button" className="btn-primary" onClick={saveDiscountCode}>Crear código</button><div className="lots-table-wrap" style={{ marginTop: '1rem' }}><table className="lots-table suppliers-table"><thead><tr><th>Código</th><th>Descuento</th><th>Vigencia</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{discountCodes.map((discount) => <tr key={discount.id}><td><strong>{discount.code}</strong><small>Máximo {discount.maxUses} usos</small></td><td>{discount.type === 'PERCENTAGE' ? `${discount.value}%` : money(discount.value)}</td><td><small>{discount.startsAt ? new Date(discount.startsAt).toLocaleString() : 'Desde ahora'}</small><small>{discount.expiresAt ? `Hasta ${new Date(discount.expiresAt).toLocaleString()}` : 'Sin vencimiento'}</small></td><td><span className={`supplier-status ${discount.active ? 'active' : 'inactive'}`}>{discount.active ? 'Activo' : 'Inactivo'}</span></td><td><button type="button" className="btn-secondary" onClick={() => toggleDiscountCode(discount)}>{discount.active ? 'Desactivar' : 'Activar'}</button></td></tr>)}{discountCodes.length === 0 && <tr><td colSpan={5} className="no-lots-msg">Todavía no hay códigos de descuento.</td></tr>}</tbody></table></div>{status && <div className="checkout-status-msg">{status}</div>}</div>;
-  function renderPanel(tab: AdminTab): React.ReactNode { switch (tab) { case "performance": return PerformanceTab(); case "lowStock": return LowStockTab(); case "newEmployee": return NewEmployeeTab(); case "crosscheck": return CrosscheckPanel(); case "categories": return CategoriesTab(); case "suppliers": return SuppliersTab(); case "discounts": return DiscountCodesTab(); default: return null; } }
+  function renderPanel(tab: AdminTab): React.ReactNode { switch (tab) { case "performance": return PerformanceTab(); case "lowStock": return LowStockTab(); case "newEmployee": return NewEmployeeTab(); case "crosscheck": return CrosscheckPanel(); case "suppliers": return SuppliersTab(); case "discounts": return DiscountCodesTab(); default: return null; } }
   const visibleTabs = ADMIN_TABS.filter((tab) => tab.id !== 'discounts' || canManageDiscountCodes);
   return <div className="internal-page-container"><div className="admin-tab-bar"><div className="admin-tab-bar-desktop" role="tablist" aria-label="Secciones de administración">{visibleTabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} id={`tab-${tab.id}`} className={`admin-tab-btn ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}><span className="admin-tab-icon">{tab.icon}</span><span className="admin-tab-label">{tab.label}</span></button>)}</div><div className="admin-tab-bar-mobile"><select value={activeTab} onChange={(e) => setActiveTab(e.target.value as AdminTab)} className="admin-tab-select" aria-label="Seleccionar sección de administración">{visibleTabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}</select></div></div><div id="admin-tab-panels" role="tabpanel" aria-labelledby={`tab-${activeTab}`}>{renderPanel(activeTab)}</div></div>;
 }

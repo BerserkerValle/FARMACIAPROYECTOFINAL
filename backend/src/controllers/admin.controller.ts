@@ -14,6 +14,7 @@ import {
   getDatabaseBranches,
   getDatabaseCategories,
   getDatabaseDashboard,
+  getDatabaseReports,
   getDatabaseSuppliers,
   listDatabaseEmployees,
   updateDatabaseBranch,
@@ -86,7 +87,10 @@ function assertLocalSupplierUnique(input: Partial<{ id: number; nit: string; ema
 export async function dashboard(_req: Request, res: Response) {
   try {
     const data = databaseEnabled ? await getDatabaseDashboard() : store.getDashboard();
-    return res.json({ success: true, data });
+    return res.json({
+      success: true,
+      data: { ...data, dataSource: databaseEnabled ? 'postgres' : 'server-store' }
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo cargar el dashboard' });
   }
@@ -96,8 +100,13 @@ export async function dashboard(_req: Request, res: Response) {
  * Genera reportes de ventas, productos más vendidos y rendimiento por sucursal.
  * GET /api/admin/reports
  */
-export function reports(_req: Request, res: Response) {
-  return res.json({ success: true, data: store.getReports() });
+export async function reports(_req: Request, res: Response) {
+  try {
+    const data = databaseEnabled ? await getDatabaseReports() : store.getReports();
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'No se pudieron cargar los reportes' });
+  }
 }
 export async function branches(_req: Request, res: Response) {
   const data = databaseEnabled ? await getDatabaseBranches() : store.getBranches();

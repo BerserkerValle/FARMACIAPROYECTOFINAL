@@ -26,4 +26,5 @@ export interface DashboardMetrics {
   salesToday: number; salesMonth: number; lowStockCount: number; expiringLotsCount: number;
   registeredCustomers: number; pendingOrders: number; suppliersCount: number;
   lowStockProducts: LowStockProduct[];
+  dataSource?: 'postgres' | 'server-store';
 }

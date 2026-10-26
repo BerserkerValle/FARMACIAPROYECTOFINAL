@@ -39,13 +39,13 @@ export function TopHeader({ branches, branchId, onSelectBranch, cartCount, cartT
         <div className="user-menu">{token && profile ? <button type="button" className="user-btn" onClick={onLogout}>{profile.fullName} <small>{profile.role}</small></button> : customer ? <button type="button" className="user-btn" onClick={() => onNavigatePortal('customer')}>{customer.fullName} <small>Mi cuenta</small></button> : <button type="button" className="user-btn login-btn" onClick={() => onNavigatePortal('customer')}>Iniciar Sesión</button>}</div>
       </div>
     </div></div>
-    <nav className="header-subnav" aria-label="Navegación principal"><div className="subnav-inner">
+    {activePortal !== 'login' && !(activePortal === 'customer' && !customer) && <nav className="header-subnav" aria-label="Navegación principal"><div className="subnav-inner">
       <div className="subnav-dropdown"><button type="button" className="subnav-item" onClick={() => setShowCategories(!showCategories)} aria-expanded={showCategories}>Categorías</button>{showCategories && <div className="category-dropdown-menu"><button type="button" className="category-dropdown-item" onClick={() => { onCategorySelect('all'); setShowCategories(false); onNavigatePortal('public'); }}>Todas las categorías</button>{categories.map((category) => <button key={category.id} type="button" className="category-dropdown-item" onClick={() => { onCategorySelect(category.id); setShowCategories(false); onNavigatePortal('public'); }}>{category.name}</button>)}</div>}</div>
       {isClientPortal && <button type="button" className="subnav-item batres-accent" onClick={() => onNavigatePortal('public')}>Descuentos</button>}
       {!token && !profile && <button type="button" className="subnav-item" onClick={() => setShowContact(true)}>Contáctenos</button>}
       {isClientPortal && <div className="subnav-price-filter-desktop"><label>Precio:</label><input type="number" placeholder="Mín" value={minPrice} onChange={(event) => onMinPriceChange(event.target.value ? Number(event.target.value) : '')} /><span>-</span><input type="number" placeholder="Máx" value={maxPrice} onChange={(event) => onMaxPriceChange(event.target.value ? Number(event.target.value) : '')} /></div>}
       {activePortal === 'public' && branches.length > 0 && <select className="subnav-branch-dropdown" value={branchId} onChange={(event) => onSelectBranch(Number(event.target.value))}>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name} ({branch.city})</option>)}</select>}
-    </div></nav>
+    </div></nav>}
     {showContact && <div className="modal-backdrop" onClick={() => setShowContact(false)}><div className="contact-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close-btn" onClick={() => setShowContact(false)}>Cerrar</button><h2>Contáctenos</h2><p>Sucursal Jocotenango: +502 4693 2765</p><p>Sucursal Antigua: +502 4893 8771</p><p>Sucursal Ciudad Vieja: +502 3104 3531</p><p>Sucursal Xela: Parqueo Interplaza Xela</p></div></div>}
   </header>;
 }

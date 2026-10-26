@@ -685,6 +685,55 @@ export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
   };
 }
 
+export async function getDatabaseReports() {
+  const database = requirePool();
+  const [monthlyResult, branchResult, productResult] = await Promise.all([
+    database.query(`
+      SELECT TO_CHAR(DATE_TRUNC('month', f.fecha_emision), 'YYYY-MM') AS month,
+             COALESCE(SUM(f.total_neto), 0) AS total
+        FROM Facturas f
+       WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)
+       GROUP BY DATE_TRUNC('month', f.fecha_emision)
+       ORDER BY DATE_TRUNC('month', f.fecha_emision)
+    `),
+    database.query(`
+      SELECT COALESCE(s.nombre_sucursal, CONCAT('Sucursal #', f.id_sucursal)) AS branch,
+             COALESCE(SUM(f.total_neto), 0) AS total
+        FROM Facturas f
+        LEFT JOIN Sucursales s ON s.id_sucursal = f.id_sucursal
+       WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)
+       GROUP BY f.id_sucursal, s.nombre_sucursal
+       ORDER BY total DESC
+    `),
+    database.query(`
+      SELECT p.nombre_producto AS name,
+             COALESCE(SUM(df.cantidad_vendida), 0) AS quantity,
+             COALESCE(SUM(df.subtotal), 0) AS total
+        FROM Detalle_Facturas df
+        JOIN Facturas f ON f.id_factura = df.id_factura
+        JOIN Lotes l ON l.id_lote = df.id_lote
+        JOIN Productos p ON p.id_producto = l.id_producto
+       WHERE EXISTS (SELECT 1 FROM Pagos pago WHERE pago.id_factura = f.id_factura)
+       GROUP BY p.id_producto, p.nombre_producto
+       ORDER BY total DESC
+       LIMIT 10
+    `)
+  ]);
+
+  return {
+    monthlySales: monthlyResult.rows.map((row) => ({ month: String(row.month), total: Number(row.total) })),
+    salesByBranch: branchResult.rows.map((row) => ({ branch: String(row.branch), total: Number(row.total) })),
+    topProducts: productResult.rows.map((row) => ({
+      name: String(row.name),
+      quantity: Number(row.quantity),
+      total: Number(row.total)
+    })),
+    salesByEmployee: [],
+    profitMonthly: [],
+    purchasesBySupplier: []
+  };
+}
+
 // ============================================================================
 // CATÃLOGO DE PRODUCTOS Y BÃšSQUEDA AVANZADA CON LOTES
 // ============================================================================
