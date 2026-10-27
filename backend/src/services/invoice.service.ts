@@ -26,7 +26,7 @@ import { databaseEnabled, getDatabaseInvoiceDataForEmail } from '../db.js';
 
 const FARMACIA_NOMBRE = process.env.FARMACIA_NOMBRE ?? 'FARMACIA FJK';
 const FARMACIA_DIRECCION = process.env.FARMACIA_DIRECCION ?? 'Antigua Guatemala, Guatemala';
-const FARMACIA_TELEFONO = process.env.FARMACIA_TELEFONO ?? '+502 2345-6789';
+const FARMACIA_TELEFONO = process.env.FARMACIA_TELEFONO ?? '+502 4693-2765';
 const FARMACIA_EMAIL = process.env.FARMACIA_EMAIL ?? 'ventas@farmaciafjk.com';
 const FARMACIA_NIT = process.env.FARMACIA_NIT ?? '12345678-9';
 

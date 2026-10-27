@@ -489,16 +489,13 @@ export default function AppController() {
                 style={{ padding: '0.75rem 1.5rem' }}
                 onClick={() => downloadInvoice(lastOrder?.orderCode || '', lastOrder?.invoiceDownloadToken || '')}
               >
-                📄 Descargar Factura PDF
+                Descargar Factura PDF
               </button>
               <button
                 type="button"
                 className="btn-secondary"
                 style={{ padding: '0.75rem 1.5rem' }}
-                onClick={() => {
-                  setPaymentSuccess(false);
-                  setLastOrder(null);
-                }}
+                onClick={() => { window.location.href = '/'; }}
               >
                 Volver al Catálogo
               </button>

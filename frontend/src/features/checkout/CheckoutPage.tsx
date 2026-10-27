@@ -50,7 +50,7 @@ export function StripePaymentForm({ clientSecret, onPaymentSuccess }: StripePaym
     const { error, paymentIntent } = await stripeRef.current.confirmPayment({ elements: elementsRef.current, confirmParams: { return_url: window.location.href }, redirect: 'if_required' });
     if (error) setStatus(error.message ?? 'No se pudo confirmar el pago.');
     else if (paymentIntent?.status === 'succeeded') {
-      setStatus('Pago confirmado correctamente. La factura será enviada a tu correo.');
+      setStatus('Pago confirmado correctamente.');
       onPaymentSuccess?.();
     } else if (paymentIntent?.status === 'processing') setStatus('Pago en procesamiento.');
     else setStatus('El pago requiere una validación adicional.');

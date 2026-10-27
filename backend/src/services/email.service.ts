@@ -230,7 +230,7 @@ export async function sendInvoiceEmail(params: {
     '---\n' +
     'FARMACIA FJK\n' +
     'Antigua Guatemala, Guatemala\n' +
-    'Tel: +502 2345-6789 | ventas@farmaciafjk.com';
+    'Tel: +502 4693-2765 | ventas@farmaciafjk.com';
 
   return sendEmail({
     to: params.customerEmail,
