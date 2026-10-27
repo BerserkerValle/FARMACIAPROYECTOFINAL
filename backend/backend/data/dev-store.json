@@ -153,8 +153,8 @@
       "branchId": 1,
       "supplierId": 1,
       "batchCode": "LOT-TEST-01",
-      "expirationDate": "2027-10-25",
-      "productionDate": "2026-10-25",
+      "expirationDate": "2027-10-27",
+      "productionDate": "2026-10-27",
       "costPrice": 30,
       "salePrice": 50,
       "quantityAvailable": 1000
@@ -167,8 +167,8 @@
       "nit": "CF",
       "email": "cliente@test.com",
       "phone": "12345678",
-      "createdAt": "2026-10-25T04:29:13.356Z",
-      "updatedAt": "2026-10-25T04:29:13.356Z"
+      "createdAt": "2026-10-27T06:29:34.978Z",
+      "updatedAt": "2026-10-27T06:29:34.978Z"
     },
     {
       "id": 1,
@@ -176,8 +176,8 @@
       "nit": "CF",
       "email": "cliente@test.com",
       "phone": "12345678",
-      "createdAt": "2026-10-25T04:29:13.357Z",
-      "updatedAt": "2026-10-25T04:29:13.357Z"
+      "createdAt": "2026-10-27T06:29:34.979Z",
+      "updatedAt": "2026-10-27T06:29:34.979Z"
     },
     {
       "id": 51,
@@ -185,8 +185,8 @@
       "nit": "CF",
       "email": "pospdf@test.com",
       "phone": "12345678",
-      "createdAt": "2026-10-25T04:29:13.358Z",
-      "updatedAt": "2026-10-25T04:29:13.358Z"
+      "createdAt": "2026-10-27T06:29:34.980Z",
+      "updatedAt": "2026-10-27T06:29:34.980Z"
     }
   ],
   "employees": [
@@ -249,6 +249,46 @@
       "branchId": null,
       "supervisorId": null,
       "active": true
+    },
+    {
+      "id": 1,
+      "fullName": "kcajero",
+      "email": "kcajero@gmail.com",
+      "password": "$2b$12$Vjf6ak5PdVLbxT5EcrRiHOzkoowPegAChVn7UpwzTFSOsZpx4DN1K",
+      "role": "Cajero",
+      "branchId": 1,
+      "supervisorId": null,
+      "active": true
+    },
+    {
+      "id": 1,
+      "fullName": "bodega",
+      "email": "bodega@gmail.com",
+      "password": "$2b$12$nhHU4n8laRmp.GjZE8qHo.gdLR37i5BjVQO3Z5JxkKTLztJNxaR2G",
+      "role": "Bodeguero",
+      "branchId": 1,
+      "supervisorId": null,
+      "active": true
+    },
+    {
+      "id": 2,
+      "fullName": "cajero",
+      "email": "cajero@gmail.com",
+      "password": "$2b$12$5RCZHiArrfrg.zRqI0sCnuaBBX7HbW8VIkJZHFaVSQuHXS.eZRk.a",
+      "role": "Cajero",
+      "branchId": 1,
+      "supervisorId": null,
+      "active": true
+    },
+    {
+      "id": 3,
+      "fullName": "repartidor",
+      "email": "repartidor@gmail.com",
+      "password": "$2b$12$I4c8tzyRiPKtKI4nHbMDh.uaa3osw3EF9j0soFcruhU/4pJ2DkWGu",
+      "role": "Repartidor",
+      "branchId": 1,
+      "supervisorId": null,
+      "active": true
     }
   ],
   "orders": [
@@ -274,8 +314,8 @@
       "discountAmount": 0,
       "discountCode": null,
       "total": 200,
-      "createdAt": "2026-10-25T04:29:13.358Z",
-      "paidAt": "2026-10-25T04:29:13.358Z",
+      "createdAt": "2026-10-27T06:29:34.980Z",
+      "paidAt": "2026-10-27T06:29:34.980Z",
       "releasedAt": null
     }
   ],
@@ -319,7 +359,7 @@
       "orderId": 51,
       "invoiceNumber": "FAC-000001",
       "satCorrelative": "SAT-00000001",
-      "issuedAt": "2026-10-25T04:29:13.358Z",
+      "issuedAt": "2026-10-27T06:29:34.980Z",
       "total": 200,
       "subtotal": 100,
       "discountAmount": 0,
@@ -334,7 +374,7 @@
   "crosschecks": [],
   "counters": {
     "customer": 1,
-    "employee": 0,
+    "employee": 3,
     "order": 0,
     "orderItem": 0,
     "payment": 0,

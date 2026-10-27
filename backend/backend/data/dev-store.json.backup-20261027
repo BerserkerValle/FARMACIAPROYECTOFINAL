@@ -1,0 +1,361 @@
+{
+  "branches": [
+    {
+      "id": 1,
+      "name": "Sucursal Test",
+      "city": "Ciudad Test",
+      "address": "Dirección test"
+    },
+    {
+      "id": 1,
+      "name": "Sucursal Test",
+      "city": "Ciudad Test",
+      "address": "Dirección test"
+    },
+    {
+      "id": 1,
+      "name": "Sucursal Test",
+      "city": "Ciudad Test",
+      "address": "Dirección test"
+    }
+  ],
+  "categories": [
+    {
+      "id": 1,
+      "name": "Medicamentos",
+      "parentId": null
+    },
+    {
+      "id": 2,
+      "name": "Analgésicos",
+      "parentId": 1
+    },
+    {
+      "id": 3,
+      "name": "Antibióticos",
+      "parentId": 1
+    },
+    {
+      "id": 4,
+      "name": "Línea Pediátrica",
+      "parentId": 1
+    },
+    {
+      "id": 5,
+      "name": "Controlados",
+      "parentId": 1
+    }
+  ],
+  "products": [
+    {
+      "id": 1,
+      "sku": "SKU-TEST",
+      "name": "Producto Test",
+      "categoryId": 1,
+      "brand": "Marca Test",
+      "laboratory": "Lab Test",
+      "presentation": "Caja x 10",
+      "unitMeasure": "unidad",
+      "sanitaryRegistry": "MSPAS-TEST",
+      "requiresPrescription": false,
+      "controlledProduct": false,
+      "chronicUse": false,
+      "avoidPregnancy": false,
+      "requiresRefrigeration": false,
+      "ingredients": [],
+      "active": true,
+      "description": "Descripción test",
+      "price": 50,
+      "cost": 30,
+      "imageUrl": null
+    },
+    {
+      "id": 1,
+      "sku": "SKU-TEST",
+      "name": "Producto Test",
+      "categoryId": 1,
+      "brand": "Marca Test",
+      "laboratory": "Lab Test",
+      "presentation": "Caja x 10",
+      "unitMeasure": "unidad",
+      "sanitaryRegistry": "MSPAS-TEST",
+      "requiresPrescription": false,
+      "controlledProduct": false,
+      "chronicUse": false,
+      "avoidPregnancy": false,
+      "requiresRefrigeration": false,
+      "ingredients": [],
+      "active": true,
+      "description": "Descripción test",
+      "price": 50,
+      "cost": 30,
+      "imageUrl": null
+    },
+    {
+      "id": 51,
+      "sku": "SKU-POSPDF",
+      "name": "Producto Test",
+      "categoryId": 1,
+      "brand": "Marca Test",
+      "laboratory": "Lab Test",
+      "presentation": "Caja x 10",
+      "unitMeasure": "unidad",
+      "sanitaryRegistry": "MSPAS-TEST",
+      "requiresPrescription": false,
+      "controlledProduct": false,
+      "chronicUse": false,
+      "avoidPregnancy": false,
+      "requiresRefrigeration": false,
+      "ingredients": [],
+      "active": true,
+      "description": "Descripción test",
+      "price": 100,
+      "cost": 30,
+      "imageUrl": null
+    }
+  ],
+  "suppliers": [
+    {
+      "id": 1,
+      "name": "Laboratorios Genfar",
+      "contactName": "Compras Genfar",
+      "nit": "5489321-4",
+      "email": "compras@genfar.com",
+      "phone": "2299-0011",
+      "address": "Zona 10, Ciudad de Guatemala",
+      "active": true
+    },
+    {
+      "id": 2,
+      "name": "Laboratorios MK",
+      "contactName": "Ventas MK",
+      "nit": "1458992-7",
+      "email": "ventas@mk.com",
+      "phone": "2233-7788",
+      "address": "Zona 4, Ciudad de Guatemala",
+      "active": true
+    },
+    {
+      "id": 3,
+      "name": "PediaLife S.A.",
+      "contactName": "Pedidos PediaLife",
+      "nit": "7744211-3",
+      "email": "pedidos@pedialife.com",
+      "phone": "2255-8811",
+      "address": "Mixco, Guatemala",
+      "active": true
+    }
+  ],
+  "lots": [
+    {
+      "id": 1,
+      "productId": 1,
+      "branchId": 1,
+      "supplierId": 1,
+      "batchCode": "LOT-TEST-01",
+      "expirationDate": "2027-10-27",
+      "productionDate": "2026-10-27",
+      "costPrice": 30,
+      "salePrice": 50,
+      "quantityAvailable": 1000
+    }
+  ],
+  "customers": [
+    {
+      "id": 1,
+      "name": "Cliente Test",
+      "nit": "CF",
+      "email": "cliente@test.com",
+      "phone": "12345678",
+      "createdAt": "2026-10-27T06:00:35.222Z",
+      "updatedAt": "2026-10-27T06:00:35.222Z"
+    },
+    {
+      "id": 1,
+      "name": "Cliente Test",
+      "nit": "CF",
+      "email": "cliente@test.com",
+      "phone": "12345678",
+      "createdAt": "2026-10-27T06:00:35.224Z",
+      "updatedAt": "2026-10-27T06:00:35.224Z"
+    },
+    {
+      "id": 51,
+      "name": "Cliente Test",
+      "nit": "CF",
+      "email": "pospdf@test.com",
+      "phone": "12345678",
+      "createdAt": "2026-10-27T06:00:35.226Z",
+      "updatedAt": "2026-10-27T06:00:35.226Z"
+    }
+  ],
+  "employees": [
+    {
+      "id": 1,
+      "fullName": "Admin Central",
+      "email": "admin@derkas.com",
+      "password": "$2b$12$tNmX4aCXb1BTsOgpBLLVRe/XMn6PqgPRZBnSXVPbNPJUyTSQt0H9m",
+      "role": "Administrador",
+      "branchId": null,
+      "supervisorId": null,
+      "active": true
+    },
+    {
+      "id": 2,
+      "fullName": "Gerente General",
+      "email": "gerente@derkas.com",
+      "password": "$2b$12$P3eEC5FikEFrhsFVi3WFeuQeVeIKuXF2.K.coGSp8Hak0JcZARVJ2",
+      "role": "Gerente",
+      "branchId": null,
+      "supervisorId": 1,
+      "active": true
+    },
+    {
+      "id": 3,
+      "fullName": "Cajero Vendedor 01",
+      "email": "cajero1@derkas.com",
+      "password": "$2b$12$WA.XyKmK8F6Plcj5f2791eVr4mfrcPmVEkQOGWxnQkmdvj1/58CSy",
+      "role": "Cajero",
+      "branchId": 1,
+      "supervisorId": 2,
+      "active": true
+    },
+    {
+      "id": 4,
+      "fullName": "Bodeguero Antigua",
+      "email": "bodega1@derkas.com",
+      "password": "$2b$12$5cJbtlE4lyHhuk80bk9b9eYCHxbgyOforzro9g6Nt.IkGqjdpdxS.",
+      "role": "Bodeguero",
+      "branchId": 1,
+      "supervisorId": 2,
+      "active": true
+    },
+    {
+      "id": 5,
+      "fullName": "Repartidor Antigua 01",
+      "email": "rider1@derkas.com",
+      "password": "$2b$12$Gw9qx3/X9ybnqc3SJ5Jn5eTqrUdoxLprzeGaLfCWUJ1a0CKlM5dQi",
+      "role": "Repartidor",
+      "branchId": 1,
+      "supervisorId": 2,
+      "active": true
+    },
+    {
+      "id": 6,
+      "fullName": "Proveedor Genfar",
+      "email": "proveedor@genfar.com",
+      "password": "$2b$12$ZxdA5y0dqnXPmVR07kvcRe6CWcTNpukE2hlZ.V18RKLo0i1.pXXGS",
+      "role": "Proveedor",
+      "branchId": null,
+      "supervisorId": null,
+      "active": true
+    },
+    {
+      "id": 1,
+      "fullName": "kcajero",
+      "email": "kcajero@gmail.com",
+      "password": "$2b$12$Vjf6ak5PdVLbxT5EcrRiHOzkoowPegAChVn7UpwzTFSOsZpx4DN1K",
+      "role": "Cajero",
+      "branchId": 1,
+      "supervisorId": null,
+      "active": true
+    }
+  ],
+  "orders": [
+    {
+      "id": 51,
+      "code": "POS-00001",
+      "source": "POS",
+      "branchId": 1,
+      "customerId": 1,
+      "customerEmail": "cliente@test.com",
+      "employeeId": null,
+      "deliveryMode": "DELIVERY",
+      "address": "Dirección test",
+      "assignedEmployeeId": null,
+      "deliveryLatitude": null,
+      "deliveryLongitude": null,
+      "status": "PAID",
+      "paymentStatus": "PAID",
+      "requiresPrescription": false,
+      "prescriptionWebUrl": null,
+      "prescriptionDeliveryUrl": null,
+      "subtotal": 100,
+      "discountAmount": 0,
+      "discountCode": null,
+      "total": 200,
+      "createdAt": "2026-10-27T06:00:35.226Z",
+      "paidAt": "2026-10-27T06:00:35.226Z",
+      "releasedAt": null
+    }
+  ],
+  "orderItems": [
+    {
+      "id": 51,
+      "orderId": 51,
+      "productId": 51,
+      "quantity": 2,
+      "unitPrice": 100,
+      "subtotal": 200,
+      "assignedLotIds": [],
+      "product": {
+        "id": 1,
+        "sku": "SKU-TEST",
+        "name": "Producto Test",
+        "categoryId": 1,
+        "brand": "Marca Test",
+        "laboratory": "Lab Test",
+        "presentation": "Caja x 10",
+        "unitMeasure": "unidad",
+        "sanitaryRegistry": "MSPAS-TEST",
+        "requiresPrescription": false,
+        "controlledProduct": false,
+        "chronicUse": false,
+        "avoidPregnancy": false,
+        "requiresRefrigeration": false,
+        "ingredients": [],
+        "active": true,
+        "description": "Descripción test",
+        "price": 50,
+        "cost": 30,
+        "imageUrl": null
+      }
+    }
+  ],
+  "payments": [],
+  "invoices": [
+    {
+      "id": 51,
+      "orderId": 51,
+      "invoiceNumber": "FAC-000001",
+      "satCorrelative": "SAT-00000001",
+      "issuedAt": "2026-10-27T06:00:35.226Z",
+      "total": 200,
+      "subtotal": 100,
+      "discountAmount": 0,
+      "discountCode": null,
+      "emailStatus": "PENDING",
+      "emailSentAt": null,
+      "emailError": null,
+      "emailAttemptAt": null
+    }
+  ],
+  "returns": [],
+  "crosschecks": [],
+  "counters": {
+    "customer": 1,
+    "employee": 0,
+    "order": 0,
+    "orderItem": 0,
+    "payment": 0,
+    "invoice": 0,
+    "return": 0,
+    "crosscheck": 0,
+    "lot": 1,
+    "product": 1,
+    "discountCode": 0,
+    "branch": 1
+  },
+  "discountCodes": [],
+  "discountRedemptions": []
+}
