@@ -229,7 +229,10 @@ export async function checkout(req: Request, res: Response) {
     if (customerAccountId) {
       const account = await resolveAuthenticatedCustomer(customerAccountId);
       if (!account) throw new Error('Cuenta de cliente no encontrada');
-      payload.customer = account;
+      payload.customer = {
+        ...account,
+        email: payload.customer.email.trim().toLowerCase()
+      };
     }
 
     const created = databaseEnabled ? await createDatabaseCheckout(payload) : store.createWebCheckout(payload);
