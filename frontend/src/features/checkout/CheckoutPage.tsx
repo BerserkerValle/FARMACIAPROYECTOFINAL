@@ -52,8 +52,6 @@ export function StripePaymentForm({ clientSecret, onPaymentSuccess }: StripePaym
     else if (paymentIntent?.status === 'succeeded') {
       setStatus('Pago confirmado correctamente. La factura será enviada a tu correo.');
       onPaymentSuccess?.();
-      // Cerrar modal y redirigir al catálogo principal
-      setTimeout(() => { window.location.href = '/'; }, 800);
     } else if (paymentIntent?.status === 'processing') setStatus('Pago en procesamiento.');
     else setStatus('El pago requiere una validación adicional.');
     setIsSubmitting(false);

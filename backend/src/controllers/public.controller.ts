@@ -35,9 +35,7 @@ import {
   findDatabaseCustomerAccountById,
   getDatabaseBranches,
   getDatabaseCategories,
-  getDatabaseInvoiceByOrderId,
   getDatabaseInvoiceDataForEmail,
-  getDatabaseOrderById,
   getDatabaseSuppliers,
   listDatabaseCustomerOrders,
   markDatabaseDiscountRedeemed,
@@ -50,6 +48,7 @@ import {
 } from '../db.js';
 import { store } from '../store.js';
 import { fiscalNitSchema } from '../utils.js';
+import { createInvoiceDownloadToken, getInvoiceIdFromDownloadToken } from '../utils/jwt.js';
 import { FORBIDDEN_MESSAGE } from '../utils/permissions.js';
 import { generarFacturaDesdeOrden } from '../services/invoice.service.js';
 import { initializeEmailService, isEmailServiceReady, sendInvoiceEmail } from '../services/email.service.js';
@@ -260,6 +259,7 @@ export async function checkout(req: Request, res: Response) {
         success: true,
         data: {
           order: created.order,
+          invoiceDownloadToken: createInvoiceDownloadToken(created.order.id),
           paymentUrl: null,
           mode: 'cash',
           message: payload.deliveryMode === 'DELIVERY'
@@ -281,6 +281,7 @@ export async function checkout(req: Request, res: Response) {
         success: true,
         data: {
           order: created.order,
+          invoiceDownloadToken: createInvoiceDownloadToken(created.order.id),
           paymentUrl: (process.env.APP_BASE_URL?.trim() || 'http://localhost:5173') + '/?payment=success&order=' + created.order.code,
           mode: 'demo'
         }
@@ -307,6 +308,7 @@ export async function checkout(req: Request, res: Response) {
         order: created.order,
         customer: created.customer,
         clientSecret: paymentIntent.client_secret,
+        invoiceDownloadToken: createInvoiceDownloadToken(created.order.id),
         mode: 'stripe'
       }
     });
@@ -603,20 +605,43 @@ export async function customerOrders(req: Request, res: Response) {
 /**
  * Descarga la factura PDF de una compra en línea.
  * GET /api/public/orders/:id/invoice
- * Permite descargar la factura si la orden está pagada.
+ * Permite descargar la factura si la orden está pagada y el token de descarga es válido.
  */
 export async function downloadOrderInvoice(req: Request, res: Response) {
-  const orderId = Number(req.params.id);
-  if (!Number.isInteger(orderId) || orderId <= 0) {
-    return res.status(400).json({ success: false, message: 'ID de orden inválido' });
+  const orderCode = String(req.params.id ?? '').trim();
+  const token = String(req.query.token ?? '').trim();
+  const tokenOrderId = token ? getInvoiceIdFromDownloadToken(token) : null;
+  let orderId: number;
+  let authenticatedId: number | null = null;
+  if (tokenOrderId !== null) {
+    orderId = tokenOrderId;
+  } else {
+    const customerId = authenticatedCustomerId(res);
+    const requestedOrderId = Number(orderCode);
+    if (!customerId || !Number.isInteger(requestedOrderId) || requestedOrderId <= 0) {
+      return res.status(401).json({ success: false, message: 'Token de factura inválido o expirado' });
+    }
+    authenticatedId = customerId;
+    orderId = requestedOrderId;
   }
 
   // Verificar que la orden existe y está pagada
-  const order = databaseEnabled
-    ? await getDatabaseOrderById(orderId)
-    : store.getOrderById(orderId);
+  const databaseInvoiceData = databaseEnabled ? await getDatabaseInvoiceDataForEmail(orderId) : null;
+  let order = databaseInvoiceData?.order ?? store.getOrderById(orderId);
   if (!order) {
     return res.status(404).json({ success: false, message: 'Orden no encontrada' });
+  }
+
+  if (authenticatedId !== null) {
+    if (databaseEnabled) {
+      const account = await findDatabaseCustomerAccountById(authenticatedId);
+      if (!account || account.email.toLowerCase() !== String(order.customerEmail ?? '').toLowerCase()) {
+        return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+      }
+    } else {
+      order = store.getOrderByIdForCustomer(authenticatedId, orderId);
+      if (!order) return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
   }
 
   // Verificar que la orden es una compra en línea y está pagada
@@ -628,12 +653,14 @@ export async function downloadOrderInvoice(req: Request, res: Response) {
     return res.status(400).json({ success: false, message: 'La orden no está pagada, no se puede descargar la factura' });
   }
 
+  if (tokenOrderId !== null && order.code !== orderCode) {
+    return res.status(403).json({ success: false, message: 'El token no corresponde a la orden' });
+  }
+
   try {
     const { pdfBuffer } = await generarFacturaDesdeOrden(orderId, true);
 
-    const invoice = databaseEnabled
-      ? await getDatabaseInvoiceByOrderId(orderId)
-      : store.getInvoiceByOrderId(orderId);
+    const invoice = databaseInvoiceData?.invoice ?? store.getInvoiceByOrderId(orderId);
     const filename = invoice ? 'factura-' + invoice.invoiceNumber + '.pdf' : 'factura-' + order.code + '.pdf';
 
     res.setHeader('Content-Type', 'application/pdf');

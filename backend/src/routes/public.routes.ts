@@ -49,7 +49,7 @@ publicRouter.post('/discounts/validate', validateDiscountCode);
 publicRouter.post('/checkout', optionalAuthenticateCustomer, checkout);
 publicRouter.get('/customer/orders', authenticateCustomer, customerOrders);
 publicRouter.get('/orders/:id', authorizeStaffOrCustomer(...ORDER_READ_ROLES), getOrder);
-publicRouter.get('/orders/:id/invoice', authenticateCustomer, downloadOrderInvoice);
+publicRouter.get('/orders/:id/invoice', downloadOrderInvoice);
 publicRouter.get('/pos-payment/:paymentIntentId', getPosPayment);
 publicRouter.get('/orders/code/:code', authorizeStaffOrCustomer(...ORDER_READ_ROLES), trackOrder);
 

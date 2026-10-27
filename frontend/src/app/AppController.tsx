@@ -112,21 +112,18 @@ export default function AppController() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
-  const [lastOrder, setLastOrder] = useState<{ orderCode: string; total: number } | null>(null);
+  const [pendingPaymentOrder, setPendingPaymentOrder] = useState<{ orderCode: string; total: number; invoiceDownloadToken: string } | null>(null);
+  const [lastOrder, setLastOrder] = useState<{ orderCode: string; total: number; invoiceDownloadToken: string } | null>(null);
 
   useEffect(() => {
     localStorage.setItem('farmacia-fjk.cart', JSON.stringify(cart));
   }, [cart]);
 
   // Download invoice function
-  const downloadInvoice = async (orderCode: string) => {
+  const downloadInvoice = async (orderCode: string, invoiceDownloadToken: string) => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/public/orders/${orderCode}/invoice`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('farmacia-fjk.customer-token') || ''}`
-        }
-      });
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const response = await fetch(`${apiUrl}/api/public/orders/${encodeURIComponent(orderCode)}/invoice?token=${encodeURIComponent(invoiceDownloadToken)}`);
 
       if (!response.ok) {
         throw new Error('No se pudo descargar la factura');
@@ -146,9 +143,13 @@ export default function AppController() {
     }
   };
 
-  function handlePaymentSuccess() {
+  function handlePaymentSuccess(orderOverride?: { orderCode: string; total: number; invoiceDownloadToken: string }) {
+    const completedOrder = orderOverride ?? pendingPaymentOrder;
+    if (!completedOrder) return;
     setPaymentClientSecret('');
     setCart([]);
+    setLastOrder(completedOrder);
+    setPendingPaymentOrder(null);
     setPaymentSuccess(true);
     setStatus('Pago confirmado correctamente.');
   }
@@ -301,7 +302,7 @@ export default function AppController() {
         prescriptionWebUrl = uploaded.url;
       }
 
-      const result = await apiRequest<{ clientSecret?: string | null; mode: string; order: { code: string; total: number } }>(
+      const result = await apiRequest<{ clientSecret?: string | null; invoiceDownloadToken?: string; mode: string; order: { id: number; code: string; total: number } }>(
         '/api/public/checkout',
         {
           method: 'POST',
@@ -326,13 +327,15 @@ export default function AppController() {
       );
 
       if (result.mode === 'stripe' && result.clientSecret) {
+        if (!result.invoiceDownloadToken) throw new Error('No se pudo preparar la descarga de la factura.');
+        setPendingPaymentOrder({ orderCode: result.order.code, total: result.order.total, invoiceDownloadToken: result.invoiceDownloadToken });
         setPaymentClientSecret(result.clientSecret);
         setStatus('Completa el pago en el formulario seguro de Stripe.');
         return;
       }
       setPaymentClientSecret('');
-      if (result.mode === 'stripe' && result.order) {
-        handlePaymentSuccess(result.order.code, result.order.total);
+      if (result.order && result.invoiceDownloadToken) {
+        handlePaymentSuccess({ orderCode: result.order.code, total: result.order.total, invoiceDownloadToken: result.invoiceDownloadToken });
       } else {
         setStatus(result.mode === 'cash'
           ? `¡Pedido ${result.order.code} recibido! ${checkout.deliveryMode === 'DELIVERY' ? 'Pagarás en efectivo al recibirlo.' : 'Pagarás en efectivo al recogerlo.'}`
@@ -415,14 +418,6 @@ export default function AppController() {
     ? cart.find((i) => i.productId === selectedProductForGlobalModal.id)
     : null;
 
-function handlePaymentSuccess(orderCode: string, total: number) {
-    setPaymentClientSecret('');
-    setCart([]);
-    setLastOrder({ orderCode, total });
-    setPaymentSuccess(true);
-    setStatus('Pago confirmado correctamente.');
-  }
-
   function openCheckout() {
     localStorage.setItem('farmacia-fjk.cart', JSON.stringify(cart));
     window.location.assign(`${window.location.origin}/?checkout=1`);
@@ -483,7 +478,7 @@ function handlePaymentSuccess(orderCode: string, total: number) {
                 type="button"
                 className="btn-primary"
                 style={{ padding: '0.75rem 1.5rem' }}
-                onClick={() => downloadInvoice(lastOrder?.orderCode || '')}
+                onClick={() => downloadInvoice(lastOrder?.orderCode || '', lastOrder?.invoiceDownloadToken || '')}
               >
                 📄 Descargar Factura PDF
               </button>

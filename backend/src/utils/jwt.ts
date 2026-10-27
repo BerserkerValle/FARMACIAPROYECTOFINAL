@@ -54,3 +54,23 @@ export function getCustomerIdFromToken(token: string) {
     return null;
   }
 }
+
+export function createInvoiceDownloadToken(invoiceId: number) {
+  return jwt.sign({ tokenType: 'invoice' }, getJwtSecret(), {
+    subject: String(invoiceId),
+    issuer: JWT_ISSUER,
+    expiresIn: '30m',
+    algorithm: 'HS256'
+  });
+}
+
+export function getInvoiceIdFromDownloadToken(token: string) {
+  try {
+    const payload = jwt.verify(token, getJwtSecret(), { issuer: JWT_ISSUER, algorithms: ['HS256'] });
+    if (typeof payload === 'string' || payload.tokenType !== 'invoice' || !payload.sub || typeof payload.exp !== 'number') return null;
+    const invoiceId = Number(payload.sub);
+    return Number.isInteger(invoiceId) && invoiceId > 0 ? invoiceId : null;
+  } catch {
+    return null;
+  }
+}
