@@ -428,6 +428,13 @@ export interface DashboardMetrics {
   pendingOrders: number;
   suppliersCount: number;
   lowStockProducts: LowStockProduct[];
+  salesYesterday?: number;
+  activeProducts?: number;
+  outOfStockCount?: number;
+  activeEmployees?: number;
+  activeBranches?: number;
+  inventoryCost?: number;
+  inventoryRetailValue?: number;
   dataSource?: 'postgres' | 'server-store';
 }
 

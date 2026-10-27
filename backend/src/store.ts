@@ -1587,6 +1587,15 @@ export class PharmacyStore {
       .filter((order) => order.paymentStatus === 'PAID')
       .filter((order) => new Date(order.paidAt ?? order.createdAt) >= month)
       .reduce((sum, order) => sum + order.total, 0);
+    const yesterdayStart = new Date(today);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    const salesYesterday = this.snapshot.orders
+      .filter((order) => order.paymentStatus === 'PAID')
+      .filter((order) => {
+        const paidAt = new Date(order.paidAt ?? order.createdAt);
+        return paidAt >= yesterdayStart && paidAt < today;
+      })
+      .reduce((sum, order) => sum + order.total, 0);
     const lowStockProducts = this.snapshot.products.flatMap((product) => this.snapshot.branches.flatMap((branch) => {
       if (!this.snapshot.lots.some((lot) => lot.productId === product.id && lot.branchId === branch.id)) return [];
       const stock = this.getStock(product.id, branch.id);
@@ -1607,31 +1616,54 @@ export class PharmacyStore {
       return diffDays < 90;
     }).length;
     const pendingOrders = this.snapshot.orders.filter((order) => ['AWAITING_PAYMENT', 'PAID', 'PACKING', 'READY_FOR_PICKUP', 'IN_ROUTE'].includes(order.status)).length;
+    const inventoryLots = this.snapshot.lots.filter((lot) => lot.quantityAvailable > 0);
     return {
       salesToday,
+      salesYesterday,
       salesMonth,
       lowStockCount,
       expiringLotsCount,
       registeredCustomers: this.snapshot.customers.length,
       pendingOrders,
       suppliersCount: this.snapshot.suppliers.length,
+      activeProducts: this.snapshot.products.filter((product) => product.active).length,
+      outOfStockCount: lowStockProducts.filter((item) => item.stock <= 0).length,
+      activeEmployees: this.snapshot.employees.filter((employee) => employee.active).length,
+      activeBranches: this.snapshot.branches.length,
+      inventoryCost: inventoryLots.reduce((sum, lot) => sum + lot.quantityAvailable * lot.costPrice, 0),
+      inventoryRetailValue: inventoryLots.reduce((sum, lot) => sum + lot.quantityAvailable * lot.salePrice, 0),
       lowStockProducts
     };
   }
 
-  getReports() {
+  getReports(filters?: { branchId?: number; from?: string; to?: string }) {
     this.assertReady();
     const salesByMonth = new Map<string, number>();
     const salesByBranch = new Map<number, number>();
     const salesByEmployee = new Map<number, number>();
     const salesByProduct = new Map<number, { name: string; quantity: number; total: number }>();
     const purchasesBySupplier = new Map<number, number>();
+    const dailySalesByBranch = new Map<string, { date: string; branch: string; total: number; orders: number }>();
     let grossProfit = 0;
 
-    for (const order of this.snapshot.orders.filter((candidate) => candidate.paymentStatus === 'PAID')) {
+    for (const order of this.snapshot.orders.filter((candidate) => {
+      if (candidate.paymentStatus !== 'PAID') return false;
+      if (filters?.branchId && candidate.branchId !== filters.branchId) return false;
+      const paidAt = new Date(candidate.paidAt ?? candidate.createdAt);
+      if (filters?.from && paidAt < new Date(`${filters.from}T00:00:00`)) return false;
+      if (filters?.to && paidAt >= new Date(`${filters.to}T23:59:59.999`)) return false;
+      return true;
+    })) {
       const key = monthKey(new Date(order.paidAt ?? order.createdAt));
       salesByMonth.set(key, (salesByMonth.get(key) ?? 0) + order.total);
       salesByBranch.set(order.branchId, (salesByBranch.get(order.branchId) ?? 0) + order.total);
+      const branch = this.snapshot.branches.find((item) => item.id === order.branchId);
+      const date = new Date(order.paidAt ?? order.createdAt).toISOString().slice(0, 10);
+      const dailyKey = `${date}-${order.branchId}`;
+      const daily = dailySalesByBranch.get(dailyKey) ?? { date, branch: branch?.name ?? `Sucursal #${order.branchId}`, total: 0, orders: 0 };
+      daily.total += order.total;
+      daily.orders += 1;
+      dailySalesByBranch.set(dailyKey, daily);
       if (order.employeeId) {
         salesByEmployee.set(order.employeeId, (salesByEmployee.get(order.employeeId) ?? 0) + order.total);
       }
@@ -1664,6 +1696,7 @@ export class PharmacyStore {
       salesByEmployee: employeeRows,
       profitMonthly: monthlyRows.map((row) => ({ month: row.month, total: grossProfit })),
       purchasesBySupplier: purchaseRows
+      ,dailySalesByBranch: [...dailySalesByBranch.values()].sort((left, right) => left.date.localeCompare(right.date) || left.branch.localeCompare(right.branch))
     };
   }
 

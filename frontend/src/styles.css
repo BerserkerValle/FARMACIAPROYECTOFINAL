@@ -1013,6 +1013,83 @@ button, input, select, textarea {
   }
 }
 
+/* Centro de decisiones del panel administrativo */
+.admin-decision-center {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: clamp(1.25rem, 2vw, 1.65rem);
+  border: 1px solid #dcebe1;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f8fcf9 0%, #ffffff 56%, #f4faf7 100%);
+  box-shadow: 0 10px 28px rgba(26, 65, 44, 0.06);
+}
+
+.decision-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.decision-heading h2 { margin-top: 0.3rem; color: #183728; font-family: var(--font-heading); font-size: clamp(1.25rem, 2vw, 1.6rem); letter-spacing: -0.035em; }
+.decision-heading p { margin-top: 0.35rem; color: #6d7e74; font-size: 0.84rem; }
+.decision-signal { display: grid; grid-template-columns: auto auto; column-gap: 0.4rem; align-items: center; min-width: 7.4rem; padding: 0.75rem 0.9rem; border-radius: 13px; background: #e8f6ed; color: #087a43; }
+.decision-signal.negative { background: #fff0ed; color: #b54d38; }
+.decision-signal span { grid-row: span 2; font-size: 1.25rem; font-weight: 800; }
+.decision-signal strong { font-size: 1.1rem; }
+.decision-signal small { color: currentColor; font-size: 0.68rem; opacity: 0.78; }
+.decision-grid { display: grid; grid-template-columns: 1.25fr repeat(3, 1fr); gap: 0.8rem; }
+.decision-hero-card, .decision-highlight-card { min-height: 145px; padding: 1.1rem; border: 1px solid #e3eee6; border-radius: 15px; background: rgba(255,255,255,0.9); }
+.decision-hero-card { color: #fff; background: linear-gradient(145deg, #0b8050, #075b3d); border-color: transparent; box-shadow: 0 10px 20px rgba(6, 103, 61, 0.18); }
+.decision-card-label { display: block; margin-bottom: 0.75rem; color: #789083; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.decision-hero-card .decision-card-label { color: #c7ead6; }
+.decision-hero-card > strong { display: block; font-size: clamp(1.7rem, 3vw, 2.3rem); letter-spacing: -0.05em; }
+.decision-hero-card > span { display: block; margin-top: 0.15rem; color: #d5f0df; font-size: 0.75rem; }
+.decision-hero-card > small { color: #d5f0df; font-size: 0.68rem; }
+.decision-progress { height: 0.35rem; margin: 1rem 0 0.55rem; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,0.2); }
+.decision-progress span { display: block; height: 100%; border-radius: inherit; background: #baf3ce; }
+.decision-highlight-card strong { display: block; overflow: hidden; color: #203d2d; font-size: 1.03rem; text-overflow: ellipsis; white-space: nowrap; }
+.decision-highlight-card p { min-height: 2.5rem; margin: 0.35rem 0 0.55rem; color: #6b7b72; font-size: 0.78rem; line-height: 1.45; }
+.decision-card-chip { display: inline-flex; padding: 0.25rem 0.48rem; border-radius: 999px; background: #fff4df; color: #a8640a; font-size: 0.64rem; font-weight: 800; }
+.decision-card-chip.blue-chip { background: #eaf2fc; color: #2863a8; }
+.decision-card-chip.green-chip { background: #e8f6ed; color: #087a43; }
+.action-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.65rem; }
+.action-item { display: flex; align-items: center; gap: 0.65rem; min-width: 0; padding: 0.72rem; border: 1px solid #e7eee9; border-radius: 12px; background: #fff; color: #274535; text-align: left; transition: transform 160ms ease, box-shadow 160ms ease; }
+.action-item:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(26, 65, 44, 0.08); }
+.action-icon { display: grid; width: 1.8rem; height: 1.8rem; flex: 0 0 auto; place-items: center; border-radius: 9px; background: #edf5ef; color: #087a43; font-weight: 900; }
+.action-item.warning .action-icon { background: #fff4df; color: #a8640a; }
+.action-item.danger .action-icon { background: #fff0ed; color: #b54d38; }
+.action-item.info .action-icon { background: #eaf2fc; color: #2863a8; }
+.action-item > span:nth-child(2) { display: flex; min-width: 0; flex-direction: column; gap: 0.14rem; }
+.action-item strong { overflow: hidden; font-size: 0.73rem; text-overflow: ellipsis; white-space: nowrap; }
+.action-item small { color: #849189; font-size: 0.66rem; line-height: 1.35; }
+.action-arrow { margin-left: auto; color: #087a43; font-size: 1rem; font-weight: 800; }
+.admin-metric-icon.red { color: #b54d38; background: #fff0ed; }
+.analytics-subtitle { margin-top: 0.35rem; color: var(--text-muted); font-size: 0.82rem; }
+.branch-filter-label select { min-width: 12rem; }
+.daily-branch-card { margin-top: 1rem; }
+.daily-total { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; }
+.daily-total strong { color: #087a43; font-size: 1.2rem; letter-spacing: -0.04em; }
+.daily-total span { color: var(--text-muted); font-size: 0.7rem; }
+.daily-branch-performance { display: flex; flex-direction: column; gap: 0.7rem; }
+.daily-branch-row { display: grid; grid-template-columns: 7rem minmax(0, 1fr); align-items: center; gap: 1rem; }
+.daily-branch-meta { display: flex; flex-direction: column; gap: 0.12rem; }
+.daily-branch-meta strong { color: #284b37; font-size: 0.78rem; text-transform: capitalize; }
+.daily-branch-meta span { color: var(--text-muted); font-size: 0.68rem; }
+.daily-branch-bar { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+.daily-branch-bar::before { content: ''; position: absolute; }
+.daily-branch-bar span { display: block; height: 0.7rem; min-width: 0; border-radius: 999px; background: linear-gradient(90deg, #0b8050, #60c98b); box-shadow: 0 2px 5px rgba(11, 128, 80, 0.18); }
+.daily-branch-bar strong { min-width: 5.4rem; color: #264632; font-size: 0.76rem; text-align: right; }
+
+@media (max-width: 980px) {
+  .decision-grid { grid-template-columns: repeat(2, 1fr); }
+  .action-list { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 560px) {
+  .decision-heading { flex-direction: column; }
+  .decision-signal { align-self: stretch; }
+  .decision-grid, .action-list { grid-template-columns: 1fr; }
+  .daily-branch-row { grid-template-columns: 5.4rem minmax(0, 1fr); gap: 0.55rem; }
+  .daily-branch-bar { gap: 0.45rem; }
+  .daily-branch-bar strong { min-width: 4.2rem; font-size: 0.68rem; }
+}
+
 /* =========================================================================
    HERO CAROUSEL
    ========================================================================= */

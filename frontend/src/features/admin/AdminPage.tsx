@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiRequest } from '../../api';
-import type { DashboardMetrics, LowStockProduct, Supplier } from '../../types';
+import type { Branch, DashboardMetrics, LowStockProduct, Supplier } from '../../types';
 import { money } from '../../lib/catalog';
 import { PasswordInputComponent } from '../../components/PasswordInput';
 
@@ -8,7 +8,10 @@ type AdminReports = {
   monthlySales?: Array<{ month: string; total: number }>;
   topProducts?: Array<{ name: string; quantity: number; total: number }>;
   salesByBranch?: Array<{ branch: string; total: number }>;
+  salesByEmployee?: Array<{ employee: string; total: number }>;
+  profitMonthly?: Array<{ month: string; total: number }>;
   purchasesBySupplier?: Array<{ supplier: string; total: number }>;
+  dailySalesByBranch?: Array<{ date: string; branch: string; total: number; orders: number }>;
 };
 
 type AdminDiscountCode = {
@@ -78,10 +81,52 @@ function HorizontalBars({ rows, labelKey }: { rows: Array<{ label: string; value
   </div>;
 }
 
-function AdminCharts({ reports }: { reports: AdminReports | null }) {
+function percentageChange(current: number, previous: number) {
+  if (!previous) return current > 0 ? 100 : 0;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+function AdminDecisionCenter({ dashboard, reports, onOpenLowStock }: { dashboard: DashboardMetrics; reports: AdminReports; onOpenLowStock: () => void }) {
+  const salesToday = Number(dashboard.salesToday ?? 0);
+  const salesYesterday = Number(dashboard.salesYesterday ?? 0);
+  const salesChange = percentageChange(salesToday, salesYesterday);
+  const profit = (reports.profitMonthly ?? []).reduce((sum, row) => sum + Number(row.total), 0);
+  const topProduct = reports.topProducts?.[0];
+  const topBranch = [...(reports.salesByBranch ?? [])].sort((left, right) => Number(right.total) - Number(left.total))[0];
+  const critical = (dashboard.lowStockProducts ?? []).filter((product) => product.severity === 'critical');
+  const urgent = (dashboard.lowStockProducts ?? []).filter((product) => product.severity === 'urgent');
+  const actions = [
+    { tone: critical.length ? 'danger' : 'success', icon: critical.length ? '!' : '✓', title: critical.length ? `${critical.length} producto${critical.length === 1 ? '' : 's'} agotado${critical.length === 1 ? '' : 's'}` : 'Inventario sin quiebres', detail: critical.length ? 'Reponer antes de perder ventas' : 'No hay productos agotados', action: critical.length ? onOpenLowStock : undefined },
+    { tone: urgent.length ? 'warning' : 'success', icon: urgent.length ? '↗' : '✓', title: urgent.length ? `${urgent.length} reposición${urgent.length === 1 ? '' : 'es'} urgente${urgent.length === 1 ? '' : 's'}` : 'Stock operativo estable', detail: urgent.length ? 'Revisa las existencias por sucursal' : 'No hay alertas urgentes', action: urgent.length ? onOpenLowStock : undefined },
+    { tone: Number(dashboard.expiringLotsCount ?? 0) ? 'warning' : 'success', icon: Number(dashboard.expiringLotsCount ?? 0) ? '⌛' : '✓', title: Number(dashboard.expiringLotsCount ?? 0) ? `${dashboard.expiringLotsCount} lote${dashboard.expiringLotsCount === 1 ? '' : 's'} por vencer` : 'Sin vencimientos próximos', detail: 'Ventana de control: 90 días' },
+    { tone: dashboard.pendingOrders ? 'info' : 'success', icon: dashboard.pendingOrders ? '≡' : '✓', title: dashboard.pendingOrders ? `${dashboard.pendingOrders} pedido${dashboard.pendingOrders === 1 ? '' : 's'} en seguimiento` : 'Flujo de pedidos limpio', detail: dashboard.pendingOrders ? 'Prioriza las órdenes pendientes' : 'No requiere intervención' }
+  ];
+
+  return <section className="admin-decision-center">
+    <div className="decision-heading"><div><span className="section-kicker">Centro de decisiones</span><h2>Lo que necesita tu atención hoy</h2><p>Lectura operativa basada en ventas, inventario y pedidos confirmados.</p></div><div className={`decision-signal ${salesChange >= 0 ? 'positive' : 'negative'}`}><span>{salesChange >= 0 ? '↗' : '↘'}</span><strong>{salesChange >= 0 ? '+' : ''}{salesChange}%</strong><small>ventas vs. ayer</small></div></div>
+    <div className="decision-grid">
+      <article className="decision-hero-card"><div className="decision-card-label">Pulso comercial</div><strong>{money(salesToday)}</strong><span>ventas confirmadas hoy</span><div className="decision-progress"><span style={{ width: `${Math.min(Math.max(salesYesterday ? (salesToday / salesYesterday) * 50 : salesToday ? 100 : 0, 6), 100)}%` }} /></div><small>{salesChange >= 0 ? 'El ritmo supera' : 'El ritmo está debajo de'} la venta de ayer</small></article>
+      <article className="decision-highlight-card"><span className="decision-card-label">Producto líder</span><strong>{topProduct?.name ?? 'Sin ventas registradas'}</strong><p>{topProduct ? `${topProduct.quantity} unidades · ${money(Number(topProduct.total))}` : 'Cuando existan ventas aparecerá aquí.'}</p><span className="decision-card-chip">Mayor ingreso</span></article>
+      <article className="decision-highlight-card"><span className="decision-card-label">Sucursal líder</span><strong>{topBranch?.branch ?? 'Sin datos'}</strong><p>{topBranch ? `${money(Number(topBranch.total))} vendidos` : 'No hay ventas por sucursal.'}</p><span className="decision-card-chip blue-chip">Mejor rendimiento</span></article>
+      <article className="decision-highlight-card"><span className="decision-card-label">Rentabilidad acumulada</span><strong>{profit ? money(profit) : 'No disponible'}</strong><p>{profit ? 'Utilidad bruta en periodos reportados' : 'Se mostrará cuando existan costos asociados.'}</p><span className="decision-card-chip green-chip">Control financiero</span></article>
+    </div>
+    <div className="action-list">{actions.map((item) => <button key={item.title} type="button" className={`action-item ${item.tone}`} onClick={item.action}><span className="action-icon">{item.icon}</span><span><strong>{item.title}</strong><small>{item.detail}</small></span>{item.action && <span className="action-arrow">→</span>}</button>)}</div>
+  </section>;
+}
+
+function DailyBranchPerformance({ rows, branch }: { rows: Array<{ date: string; branch: string; total: number; orders: number }>; branch: string }) {
+  const filtered = rows.filter((row) => !branch || row.branch === branch).slice(-14);
+  const max = Math.max(...filtered.map((row) => row.total), 1);
+  return <div className="daily-branch-performance">
+    {filtered.length ? filtered.map((row) => <div className="daily-branch-row" key={`${row.date}-${row.branch}`}><div className="daily-branch-meta"><strong>{new Intl.DateTimeFormat('es-GT', { day: '2-digit', month: 'short' }).format(new Date(`${row.date}T12:00:00`))}</strong><span>{row.orders} pedido{row.orders === 1 ? '' : 's'}</span></div><div className="daily-branch-bar"><span style={{ width: `${Math.max((row.total / max) * 100, row.total ? 5 : 0)}%` }} /><strong>{money(row.total)}</strong></div></div>) : <div className="chart-empty">No hay ventas diarias para la sucursal y periodo seleccionados.</div>}
+  </div>;
+}
+
+function AdminCharts({ reports, branches }: { reports: AdminReports | null; branches: Branch[] }) {
   const [period, setPeriod] = useState<'3m' | '6m' | '12m' | 'all'>('6m');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [branch, setBranch] = useState('');
   const monthlySales = reports?.monthlySales ?? [];
   const filteredMonthlySales = monthlySales.filter((row) => {
     const monthDate = `${row.month}-01`;
@@ -104,9 +149,20 @@ function AdminCharts({ reports }: { reports: AdminReports | null }) {
       : fillMonthlySales(monthlySales, Number(period.replace('m', '')));
   const branchRows = (reports?.salesByBranch ?? []).map((row) => ({ label: row.branch, value: Number(row.total) }));
   const productRows = (reports?.topProducts ?? []).map((row) => ({ label: row.name, value: Number(row.total) }));
+  const branchOptions = Array.from(new Set([...branches.map((item) => item.name), ...(reports?.dailySalesByBranch ?? []).map((row) => row.branch)])).sort();
+  const periodStart = (() => {
+    if (fromDate) return fromDate;
+    if (period === 'all') return '';
+    const date = new Date();
+    date.setMonth(date.getMonth() - Number(period.replace('m', '')));
+    return date.toISOString().slice(0, 10);
+  })();
+  const dailyRows = (reports?.dailySalesByBranch ?? []).filter((row) => (!periodStart || row.date >= periodStart) && (!toDate || row.date <= toDate));
+  const dailyTotal = dailyRows.filter((row) => !branch || row.branch === branch).reduce((sum, row) => sum + Number(row.total), 0);
   return <section className="dashboard-analytics">
-    <div className="analytics-heading"><div><span className="section-kicker">Lectura operativa</span><h2>Rendimiento de la farmacia</h2></div><div className="analytics-controls"><div className="period-switcher" role="group" aria-label="Período del gráfico">{(['3m', '6m', '12m', 'all'] as const).map((value) => <button key={value} type="button" className={period === value && !fromDate && !toDate ? 'active' : ''} onClick={() => { setPeriod(value); setFromDate(''); setToDate(''); }}>{value === 'all' ? 'Todo' : value.replace('m', ' meses')}</button>)}</div><div className="date-filter-group"><label>Desde<input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label>Hasta<input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label></div></div></div>
+    <div className="analytics-heading"><div><span className="section-kicker">Lectura operativa</span><h2>Rendimiento de la farmacia</h2><p className="analytics-subtitle">Explora ventas, sucursales y productos con filtros reales.</p></div><div className="analytics-controls"><div className="period-switcher" role="group" aria-label="Período del gráfico">{(['3m', '6m', '12m', 'all'] as const).map((value) => <button key={value} type="button" className={period === value && !fromDate && !toDate ? 'active' : ''} onClick={() => { setPeriod(value); setFromDate(''); setToDate(''); }}>{value === 'all' ? 'Todo' : value.replace('m', ' meses')}</button>)}</div><div className="date-filter-group"><label>Desde<input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label>Hasta<input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label><label className="branch-filter-label">Sucursal<select value={branch} onChange={(event) => setBranch(event.target.value)}><option value="">Todas las sucursales</option>{branchOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label></div></div></div>
     <div className="analytics-grid"><div className="analytics-card analytics-card-wide"><div className="analytics-card-head"><div><h3>Ventas mensuales</h3><p>Ingresos confirmados por período seleccionado</p></div><span className="data-freshness">{visibleMonthlySales.length} períodos</span></div><SalesTrendChart rows={visibleMonthlySales} /></div><div className="analytics-card"><div className="analytics-card-head"><div><h3>Ventas por sucursal</h3><p>Comparación acumulada</p></div><span className="chart-accent blue" /></div><HorizontalBars rows={branchRows} labelKey="branch" /></div><div className="analytics-card"><div className="analytics-card-head"><div><h3>Productos destacados</h3><p>Mayor contribución a ventas</p></div><span className="chart-accent amber" /></div><HorizontalBars rows={productRows} labelKey="product" /></div></div>
+    <div className="analytics-card daily-branch-card"><div className="analytics-card-head"><div><span className="section-kicker">Detalle por sucursal</span><h3>Ventas diarias por sucursal</h3><p>La vista que necesitas para saber qué sucursal vende cada día.</p></div><div className="daily-total"><strong>{money(dailyTotal)}</strong><span>{branch || 'Todas'} · {dailyRows.filter((row) => !branch || row.branch === branch).length} registros</span></div></div><DailyBranchPerformance rows={dailyRows} branch={branch} /></div>
   </section>;
 }
 
@@ -134,6 +190,7 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [discountCodes, setDiscountCodes] = useState<AdminDiscountCode[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [status, setStatus] = useState('');
   const [discountForm, setDiscountForm] = useState({ code: '', type: 'PERCENTAGE' as AdminDiscountCode['type'], value: '10', maxUses: '100', startsAt: '', expiresAt: '' });
   const [empFullName, setEmpFullName] = useState('');
@@ -173,12 +230,13 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
     setIsLoading(true);
     setStatus('');
     try {
-      const [dash, rep, supplierData, discountData] = await Promise.all([
+      const [dash, rep, branchData, supplierData, discountData] = await Promise.all([
         apiRequest<DashboardMetrics>('/api/admin/dashboard', {}, token), apiRequest<AdminReports>('/api/admin/reports', {}, token),
+        apiRequest<Branch[]>('/api/admin/branches', {}, token),
         apiRequest<Supplier[]>('/api/admin/suppliers', {}, token),
         canManageDiscountCodes ? apiRequest<AdminDiscountCode[]>('/api/admin/discount-codes', {}, token) : Promise.resolve([] as AdminDiscountCode[])
       ]);
-      setDashboard(dash); setReports(rep); setSuppliers(supplierData); setDiscountCodes(discountData);
+      setDashboard(dash); setReports(rep); setBranches(branchData); setSuppliers(supplierData); setDiscountCodes(discountData);
       setLastUpdated(new Date());
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'No se pudieron cargar los datos del panel');
@@ -254,10 +312,15 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
   const PerformanceTab = () => {
     const metrics = [
       { label: 'Ventas de hoy', value: dashboard?.salesToday, hint: 'Facturación confirmada', icon: '↗', tone: 'green', isMoney: true },
+      { label: 'Ventas de ayer', value: dashboard?.salesYesterday, hint: 'Base de comparación diaria', icon: '↑', tone: 'teal', isMoney: true },
       { label: 'Ventas del mes', value: dashboard?.salesMonth, hint: 'Acumulado mensual', icon: '$', tone: 'blue', isMoney: true },
       { label: 'Inventario crítico', value: dashboard?.lowStockCount, hint: 'Productos con stock bajo', icon: '!', tone: 'amber', isMoney: false },
+      { label: 'Agotados', value: dashboard?.outOfStockCount, hint: 'Requieren reposición inmediata', icon: '0', tone: 'red', isMoney: false },
       { label: 'Pedidos pendientes', value: dashboard?.pendingOrders, hint: 'Requieren seguimiento', icon: '≡', tone: 'violet', isMoney: false },
-      { label: 'Proveedores', value: dashboard?.suppliersCount, hint: 'Registrados en el sistema', icon: '＋', tone: 'teal', isMoney: false }
+      { label: 'Clientes registrados', value: dashboard?.registeredCustomers, hint: 'Cuentas disponibles', icon: '◉', tone: 'blue', isMoney: false },
+      { label: 'Lotes por vencer', value: dashboard?.expiringLotsCount, hint: 'Próximos 90 días', icon: '⚠', tone: 'amber', isMoney: false },
+      { label: 'Proveedores', value: dashboard?.suppliersCount, hint: 'Registrados en el sistema', icon: '＋', tone: 'teal', isMoney: false },
+      { label: 'Valor del inventario', value: dashboard?.inventoryCost, hint: 'Costo de existencias actuales', icon: 'Q', tone: 'violet', isMoney: true }
     ];
     const sourceLabel = dashboard?.dataSource === 'postgres' ? 'PostgreSQL' : dashboard?.dataSource === 'server-store' ? 'Almacén local del servidor' : 'Conectando';
 
@@ -287,7 +350,7 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
           <span>{metric.hint}</span>
         </article>)}
       </div>
-      {dashboard && reports ? <><AdminCharts reports={reports} /><InventoryAlerts products={dashboard.lowStockProducts ?? []} /></> : isLoading ? <div className="admin-dashboard-loading"><SkeletonChart /><SkeletonCard /></div> : <div className="admin-dashboard-error"><strong>No se pudieron mostrar las métricas.</strong><span>Revisa la conexión con la API y vuelve a intentarlo.</span></div>}
+      {dashboard && reports ? <><AdminDecisionCenter dashboard={dashboard} reports={reports} onOpenLowStock={() => setActiveTab('lowStock')} /><AdminCharts reports={reports} branches={branches} /><InventoryAlerts products={dashboard.lowStockProducts ?? []} /></> : isLoading ? <div className="admin-dashboard-loading"><SkeletonChart /><SkeletonCard /></div> : <div className="admin-dashboard-error"><strong>No se pudieron mostrar las métricas.</strong><span>Revisa la conexión con la API y vuelve a intentarlo.</span></div>}
     </>;
   };
   const LowStockTab = () => dashboard ? <InventoryAlerts products={dashboard.lowStockProducts ?? []} /> : <SkeletonCard />;

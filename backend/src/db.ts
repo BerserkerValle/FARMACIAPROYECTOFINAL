@@ -628,6 +628,7 @@ export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
   const result = await database.query(`
     WITH paid_sales AS (
       SELECT COALESCE(SUM(f.total_neto) FILTER (WHERE f.fecha_emision >= CURRENT_DATE), 0) AS total,
+             COALESCE(SUM(f.total_neto) FILTER (WHERE f.fecha_emision >= CURRENT_DATE - INTERVAL '1 day' AND f.fecha_emision < CURRENT_DATE), 0) AS yesterday_total,
              COALESCE(SUM(f.total_neto) FILTER (WHERE f.fecha_emision >= DATE_TRUNC('month', CURRENT_TIMESTAMP)), 0) AS month_total
         FROM Facturas f
        WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)
@@ -679,46 +680,84 @@ export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
              WHERE d.order_code = CONCAT('WEB-', LPAD(f.id_factura::text, 6, '0'))
                AND d.status <> 'DELIVERED'
           )
+    ),
+    expiring_lots AS (
+      SELECT COUNT(*) AS total
+        FROM Lotes l
+       WHERE l.fecha_vencimiento < CURRENT_DATE + INTERVAL '90 days'
+         AND COALESCE(l.fecha_vencimiento, CURRENT_DATE) >= CURRENT_DATE
+         AND EXISTS (SELECT 1 FROM Stock_Sucursal ss WHERE ss.id_lote = l.id_lote AND ss.cantidad_disponible > 0)
+    ),
+    inventory_value AS (
+      SELECT COALESCE(SUM(ss.cantidad_disponible * l.precio_costo), 0) AS cost,
+             COALESCE(SUM(ss.cantidad_disponible * l.precio_venta), 0) AS retail
+        FROM Lotes l
+        JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
     )
     SELECT (SELECT total FROM paid_sales) AS "salesToday",
+           (SELECT yesterday_total FROM paid_sales) AS "salesYesterday",
            (SELECT month_total FROM paid_sales) AS "salesMonth",
            (SELECT total FROM low_stock) AS "lowStockCount",
+           (SELECT COUNT(*) FROM Productos WHERE COALESCE(activo, true) = true) AS "activeProducts",
+           (SELECT COUNT(*) FROM Productos p WHERE COALESCE(p.activo, true) = true AND NOT EXISTS (
+              SELECT 1 FROM Lotes l JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+               WHERE l.id_producto = p.id_producto AND ss.cantidad_disponible > 0
+           )) AS "outOfStockCount",
+           (SELECT COUNT(*) FROM Empleados WHERE contrasena IS NOT NULL) AS "activeEmployees",
+           (SELECT COUNT(*) FROM Sucursales) AS "activeBranches",
+           (SELECT total FROM expiring_lots) AS "expiringLotsCount",
            (SELECT total FROM pending_orders) AS "pendingOrders",
            (SELECT COUNT(*) FROM Proveedores) AS "suppliersCount",
+           (SELECT COUNT(*) FROM Clientes) AS "registeredCustomers",
+           (SELECT cost FROM inventory_value) AS "inventoryCost",
+           (SELECT retail FROM inventory_value) AS "inventoryRetailValue",
            (SELECT products FROM low_stock_products) AS "lowStockProducts"
   `);
   return {
     salesToday: Number(result.rows[0]?.salesToday ?? 0),
+    salesYesterday: Number(result.rows[0]?.salesYesterday ?? 0),
     salesMonth: Number(result.rows[0]?.salesMonth ?? 0),
     lowStockCount: Number(result.rows[0]?.lowStockCount ?? 0),
-    expiringLotsCount: 0,
-    registeredCustomers: 0,
+    expiringLotsCount: Number(result.rows[0]?.expiringLotsCount ?? 0),
+    registeredCustomers: Number(result.rows[0]?.registeredCustomers ?? 0),
     pendingOrders: Number(result.rows[0]?.pendingOrders ?? 0),
     suppliersCount: Number(result.rows[0]?.suppliersCount ?? 0),
+    activeProducts: Number(result.rows[0]?.activeProducts ?? 0),
+    outOfStockCount: Number(result.rows[0]?.outOfStockCount ?? 0),
+    activeEmployees: Number(result.rows[0]?.activeEmployees ?? 0),
+    activeBranches: Number(result.rows[0]?.activeBranches ?? 0),
+    inventoryCost: Number(result.rows[0]?.inventoryCost ?? 0),
+    inventoryRetailValue: Number(result.rows[0]?.inventoryRetailValue ?? 0),
     lowStockProducts: result.rows[0]?.lowStockProducts ?? []
   };
 }
 
-export async function getDatabaseReports() {
+export async function getDatabaseReports(filters?: { branchId?: number; from?: string; to?: string }) {
   const database = requirePool();
-  const [monthlyResult, branchResult, productResult] = await Promise.all([
+  const params: Array<number | string> = [];
+  const conditions: string[] = [];
+  if (filters?.branchId) { params.push(filters.branchId); conditions.push(`f.id_sucursal = $${params.length}`); }
+  if (filters?.from) { params.push(filters.from); conditions.push(`f.fecha_emision >= $${params.length}::date`); }
+  if (filters?.to) { params.push(filters.to); conditions.push(`f.fecha_emision < ($${params.length}::date + INTERVAL '1 day')`); }
+  const reportFilter = conditions.length ? ` AND ${conditions.join(' AND ')}` : '';
+  const [monthlyResult, branchResult, productResult, profitResult, purchasesResult, dailyBranchResult] = await Promise.all([
     database.query(`
       SELECT TO_CHAR(DATE_TRUNC('month', f.fecha_emision), 'YYYY-MM') AS month,
              COALESCE(SUM(f.total_neto), 0) AS total
         FROM Facturas f
-       WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)
+       WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)${reportFilter}
        GROUP BY DATE_TRUNC('month', f.fecha_emision)
        ORDER BY DATE_TRUNC('month', f.fecha_emision)
-    `),
+    `, params),
     database.query(`
       SELECT COALESCE(s.nombre_sucursal, CONCAT('Sucursal #', f.id_sucursal)) AS branch,
              COALESCE(SUM(f.total_neto), 0) AS total
         FROM Facturas f
         LEFT JOIN Sucursales s ON s.id_sucursal = f.id_sucursal
-       WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)
-       GROUP BY f.id_sucursal, s.nombre_sucursal
+       WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)${reportFilter}
+        GROUP BY f.id_sucursal, s.nombre_sucursal
        ORDER BY total DESC
-    `),
+    `, params),
     database.query(`
       SELECT p.nombre_producto AS name,
              COALESCE(SUM(df.cantidad_vendida), 0) AS quantity,
@@ -727,11 +766,41 @@ export async function getDatabaseReports() {
         JOIN Facturas f ON f.id_factura = df.id_factura
         JOIN Lotes l ON l.id_lote = df.id_lote
         JOIN Productos p ON p.id_producto = l.id_producto
-       WHERE EXISTS (SELECT 1 FROM Pagos pago WHERE pago.id_factura = f.id_factura)
+       WHERE EXISTS (SELECT 1 FROM Pagos pago WHERE pago.id_factura = f.id_factura)${reportFilter}
        GROUP BY p.id_producto, p.nombre_producto
        ORDER BY total DESC
        LIMIT 10
-    `)
+    `, params),
+    database.query(`
+      SELECT TO_CHAR(DATE_TRUNC('month', f.fecha_emision), 'YYYY-MM') AS month,
+             COALESCE(SUM(df.subtotal - (df.cantidad_vendida * l.precio_costo)), 0) AS total
+        FROM Detalle_Facturas df
+        JOIN Facturas f ON f.id_factura = df.id_factura
+        JOIN Lotes l ON l.id_lote = df.id_lote
+       WHERE EXISTS (SELECT 1 FROM Pagos pago WHERE pago.id_factura = f.id_factura)${reportFilter}
+       GROUP BY DATE_TRUNC('month', f.fecha_emision)
+       ORDER BY DATE_TRUNC('month', f.fecha_emision)
+    `, params),
+    database.query(`
+      SELECT COALESCE(pr.nombre_proveedor, CONCAT('Proveedor #', l.id_proveedor)) AS supplier,
+             COALESCE(SUM(ss.cantidad_disponible * l.precio_costo), 0) AS total
+        FROM Lotes l
+        LEFT JOIN Proveedores pr ON pr.id_proveedor = l.id_proveedor
+        LEFT JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+        GROUP BY l.id_proveedor, pr.nombre_proveedor
+       ORDER BY total DESC
+    `),
+    database.query(`
+      SELECT TO_CHAR(DATE_TRUNC('day', f.fecha_emision), 'YYYY-MM-DD') AS date,
+             COALESCE(s.nombre_sucursal, CONCAT('Sucursal #', f.id_sucursal)) AS branch,
+             COALESCE(SUM(f.total_neto), 0) AS total,
+             COUNT(*) AS orders
+        FROM Facturas f
+        LEFT JOIN Sucursales s ON s.id_sucursal = f.id_sucursal
+       WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)${reportFilter}
+       GROUP BY DATE_TRUNC('day', f.fecha_emision), f.id_sucursal, s.nombre_sucursal
+       ORDER BY DATE_TRUNC('day', f.fecha_emision), branch
+    `, params)
   ]);
 
   return {
@@ -743,8 +812,9 @@ export async function getDatabaseReports() {
       total: Number(row.total)
     })),
     salesByEmployee: [],
-    profitMonthly: [],
-    purchasesBySupplier: []
+    profitMonthly: profitResult.rows.map((row) => ({ month: String(row.month), total: Number(row.total) })),
+    purchasesBySupplier: purchasesResult.rows.map((row) => ({ supplier: String(row.supplier), total: Number(row.total) })),
+    dailySalesByBranch: dailyBranchResult.rows.map((row) => ({ date: String(row.date), branch: String(row.branch), total: Number(row.total), orders: Number(row.orders) }))
   };
 }
 

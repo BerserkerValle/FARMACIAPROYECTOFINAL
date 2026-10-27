@@ -100,9 +100,16 @@ export async function dashboard(_req: Request, res: Response) {
  * Genera reportes de ventas, productos más vendidos y rendimiento por sucursal.
  * GET /api/admin/reports
  */
-export async function reports(_req: Request, res: Response) {
+export async function reports(req: Request, res: Response) {
   try {
-    const data = databaseEnabled ? await getDatabaseReports() : store.getReports();
+    const branchId = req.query.branchId ? Number(req.query.branchId) : undefined;
+    const from = typeof req.query.from === 'string' ? req.query.from : undefined;
+    const to = typeof req.query.to === 'string' ? req.query.to : undefined;
+    if (branchId !== undefined && (!Number.isInteger(branchId) || branchId <= 0)) {
+      return res.status(400).json({ success: false, message: 'Sucursal no válida' });
+    }
+    const filters = { branchId, from, to };
+    const data = databaseEnabled ? await getDatabaseReports(filters) : store.getReports(filters);
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'No se pudieron cargar los reportes' });
