@@ -123,10 +123,19 @@ export default function AppController() {
   const downloadInvoice = async (orderCode: string, invoiceDownloadToken: string) => {
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-      const response = await fetch(`${apiUrl}/api/public/orders/${encodeURIComponent(orderCode)}/invoice?token=${encodeURIComponent(invoiceDownloadToken)}`);
+      let response: Response | null = null;
+      let message = 'La factura todavía está siendo preparada.';
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        response = await fetch(`${apiUrl}/api/public/orders/${encodeURIComponent(orderCode)}/invoice?token=${encodeURIComponent(invoiceDownloadToken)}`);
+        if (response.ok) break;
+        const payload = await response.clone().json().catch(() => null) as { message?: string } | null;
+        message = payload?.message || message;
+        if (response.status !== 400 || !message.toLowerCase().includes('pagada')) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      }
 
-      if (!response.ok) {
-        throw new Error('No se pudo descargar la factura');
+      if (!response?.ok) {
+        throw new Error(message);
       }
 
       const blob = await response.blob();
