@@ -1575,28 +1575,28 @@ export class PharmacyStore {
   // ANALÃTICA, DASHBOARD Y REPORTES
   // ============================================================================
 
-  getDashboard(): DashboardMetrics {
+  getDashboard(filters?: { branchId?: number }): DashboardMetrics {
     this.assertReady();
     const today = startOfDay(new Date());
     const month = startOfMonth(new Date());
     const salesToday = this.snapshot.orders
-      .filter((order) => order.paymentStatus === 'PAID')
+      .filter((order) => order.paymentStatus === 'PAID' && (!filters?.branchId || order.branchId === filters.branchId))
       .filter((order) => new Date(order.paidAt ?? order.createdAt) >= today)
       .reduce((sum, order) => sum + order.total, 0);
     const salesMonth = this.snapshot.orders
-      .filter((order) => order.paymentStatus === 'PAID')
+      .filter((order) => order.paymentStatus === 'PAID' && (!filters?.branchId || order.branchId === filters.branchId))
       .filter((order) => new Date(order.paidAt ?? order.createdAt) >= month)
       .reduce((sum, order) => sum + order.total, 0);
     const yesterdayStart = new Date(today);
     yesterdayStart.setDate(yesterdayStart.getDate() - 1);
     const salesYesterday = this.snapshot.orders
-      .filter((order) => order.paymentStatus === 'PAID')
+      .filter((order) => order.paymentStatus === 'PAID' && (!filters?.branchId || order.branchId === filters.branchId))
       .filter((order) => {
         const paidAt = new Date(order.paidAt ?? order.createdAt);
         return paidAt >= yesterdayStart && paidAt < today;
       })
       .reduce((sum, order) => sum + order.total, 0);
-    const lowStockProducts = this.snapshot.products.flatMap((product) => this.snapshot.branches.flatMap((branch) => {
+    const lowStockProducts = this.snapshot.products.flatMap((product) => this.snapshot.branches.filter((branch) => !filters?.branchId || branch.id === filters.branchId).flatMap((branch) => {
       if (!this.snapshot.lots.some((lot) => lot.productId === product.id && lot.branchId === branch.id)) return [];
       const stock = this.getStock(product.id, branch.id);
       if (stock > 10) return [];
@@ -1611,12 +1611,12 @@ export class PharmacyStore {
       }];
     })).sort((left, right) => left.stock - right.stock || left.name.localeCompare(right.name));
     const lowStockCount = new Set(lowStockProducts.map((item) => item.productId)).size;
-    const expiringLotsCount = this.snapshot.lots.filter((lot) => {
+    const expiringLotsCount = this.snapshot.lots.filter((lot) => (!filters?.branchId || lot.branchId === filters.branchId) && lot.quantityAvailable > 0).filter((lot) => {
       const diffDays = Math.ceil((new Date(lot.expirationDate).getTime() - Date.now()) / 86_400_000);
       return diffDays < 90;
     }).length;
-    const pendingOrders = this.snapshot.orders.filter((order) => ['AWAITING_PAYMENT', 'PAID', 'PACKING', 'READY_FOR_PICKUP', 'IN_ROUTE'].includes(order.status)).length;
-    const inventoryLots = this.snapshot.lots.filter((lot) => lot.quantityAvailable > 0);
+    const pendingOrders = this.snapshot.orders.filter((order) => (!filters?.branchId || order.branchId === filters.branchId) && ['AWAITING_PAYMENT', 'PAID', 'PACKING', 'READY_FOR_PICKUP', 'IN_ROUTE'].includes(order.status)).length;
+    const inventoryLots = this.snapshot.lots.filter((lot) => lot.quantityAvailable > 0 && (!filters?.branchId || lot.branchId === filters.branchId));
     return {
       salesToday,
       salesYesterday,
@@ -1660,7 +1660,7 @@ export class PharmacyStore {
       const branch = this.snapshot.branches.find((item) => item.id === order.branchId);
       const date = new Date(order.paidAt ?? order.createdAt).toISOString().slice(0, 10);
       const dailyKey = `${date}-${order.branchId}`;
-      const daily = dailySalesByBranch.get(dailyKey) ?? { date, branch: branch?.name ?? `Sucursal #${order.branchId}`, total: 0, orders: 0 };
+      const daily = dailySalesByBranch.get(dailyKey) ?? { date, branch: branch?.name ?? `Sucursal #${order.branchId}`, branchId: order.branchId, total: 0, orders: 0 };
       daily.total += order.total;
       daily.orders += 1;
       dailySalesByBranch.set(dailyKey, daily);

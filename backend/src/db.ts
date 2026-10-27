@@ -623,15 +623,18 @@ export async function deleteDatabaseSupplier(id: number) {
   return result.rows[0];
 }
 
-export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
+export async function getDatabaseDashboard(filters?: { branchId?: number }): Promise<DashboardMetrics> {
   const database = requirePool();
+  const dashboardParams = filters?.branchId ? [filters.branchId] : [];
+  const branchInvoiceFilter = filters?.branchId ? ' AND f.id_sucursal = $1' : '';
+  const branchStockFilter = filters?.branchId ? ' AND ss.id_sucursal = $1' : '';
   const result = await database.query(`
     WITH paid_sales AS (
       SELECT COALESCE(SUM(f.total_neto) FILTER (WHERE f.fecha_emision >= CURRENT_DATE), 0) AS total,
              COALESCE(SUM(f.total_neto) FILTER (WHERE f.fecha_emision >= CURRENT_DATE - INTERVAL '1 day' AND f.fecha_emision < CURRENT_DATE), 0) AS yesterday_total,
              COALESCE(SUM(f.total_neto) FILTER (WHERE f.fecha_emision >= DATE_TRUNC('month', CURRENT_TIMESTAMP)), 0) AS month_total
         FROM Facturas f
-       WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)
+       WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)${branchInvoiceFilter}
     ),
     low_stock AS (
       SELECT COUNT(DISTINCT stock.product_id) AS total
@@ -640,7 +643,7 @@ export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
             FROM Lotes l
             JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
             JOIN Productos p ON p.id_producto = l.id_producto
-           WHERE COALESCE(p.activo, true) = true
+           WHERE COALESCE(p.activo, true) = true${branchStockFilter}
            GROUP BY l.id_producto, ss.id_sucursal
           HAVING COALESCE(SUM(ss.cantidad_disponible), 0) <= 10
         ) stock
@@ -666,7 +669,7 @@ export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
           JOIN Lotes l ON l.id_producto = p.id_producto
           JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
           LEFT JOIN Sucursales s ON s.id_sucursal = ss.id_sucursal
-         WHERE COALESCE(p.activo, true) = true
+         WHERE COALESCE(p.activo, true) = true${branchStockFilter}
          GROUP BY p.id_producto, p.nombre_producto, p.sku_codigo, ss.id_sucursal, s.nombre_sucursal
         HAVING COALESCE(SUM(ss.cantidad_disponible), 0) <= 10
       ) stock
@@ -674,7 +677,8 @@ export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
     pending_orders AS (
       SELECT COUNT(*) AS total
         FROM Facturas f
-       WHERE NOT EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)
+       WHERE (NOT EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)
+          AND 1 = 1${branchInvoiceFilter})
           OR EXISTS (
             SELECT 1 FROM pharmacy_delivery_tracking d
              WHERE d.order_code = CONCAT('WEB-', LPAD(f.id_factura::text, 6, '0'))
@@ -686,13 +690,14 @@ export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
         FROM Lotes l
        WHERE l.fecha_vencimiento < CURRENT_DATE + INTERVAL '90 days'
          AND COALESCE(l.fecha_vencimiento, CURRENT_DATE) >= CURRENT_DATE
-         AND EXISTS (SELECT 1 FROM Stock_Sucursal ss WHERE ss.id_lote = l.id_lote AND ss.cantidad_disponible > 0)
+         AND EXISTS (SELECT 1 FROM Stock_Sucursal ss WHERE ss.id_lote = l.id_lote AND ss.cantidad_disponible > 0${branchStockFilter})
     ),
     inventory_value AS (
       SELECT COALESCE(SUM(ss.cantidad_disponible * l.precio_costo), 0) AS cost,
              COALESCE(SUM(ss.cantidad_disponible * l.precio_venta), 0) AS retail
         FROM Lotes l
         JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+       WHERE 1 = 1${branchStockFilter}
     )
     SELECT (SELECT total FROM paid_sales) AS "salesToday",
            (SELECT yesterday_total FROM paid_sales) AS "salesYesterday",
@@ -712,7 +717,7 @@ export async function getDatabaseDashboard(): Promise<DashboardMetrics> {
            (SELECT cost FROM inventory_value) AS "inventoryCost",
            (SELECT retail FROM inventory_value) AS "inventoryRetailValue",
            (SELECT products FROM low_stock_products) AS "lowStockProducts"
-  `);
+  `, dashboardParams);
   return {
     salesToday: Number(result.rows[0]?.salesToday ?? 0),
     salesYesterday: Number(result.rows[0]?.salesYesterday ?? 0),
@@ -793,6 +798,7 @@ export async function getDatabaseReports(filters?: { branchId?: number; from?: s
     database.query(`
       SELECT TO_CHAR(DATE_TRUNC('day', f.fecha_emision), 'YYYY-MM-DD') AS date,
              COALESCE(s.nombre_sucursal, CONCAT('Sucursal #', f.id_sucursal)) AS branch,
+             f.id_sucursal AS "branchId",
              COALESCE(SUM(f.total_neto), 0) AS total,
              COUNT(*) AS orders
         FROM Facturas f
@@ -814,7 +820,7 @@ export async function getDatabaseReports(filters?: { branchId?: number; from?: s
     salesByEmployee: [],
     profitMonthly: profitResult.rows.map((row) => ({ month: String(row.month), total: Number(row.total) })),
     purchasesBySupplier: purchasesResult.rows.map((row) => ({ supplier: String(row.supplier), total: Number(row.total) })),
-    dailySalesByBranch: dailyBranchResult.rows.map((row) => ({ date: String(row.date), branch: String(row.branch), total: Number(row.total), orders: Number(row.orders) }))
+    dailySalesByBranch: dailyBranchResult.rows.map((row) => ({ date: String(row.date), branch: String(row.branch), branchId: Number(row.branchId), total: Number(row.total), orders: Number(row.orders) }))
   };
 }
 

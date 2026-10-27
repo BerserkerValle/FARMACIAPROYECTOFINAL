@@ -11,7 +11,7 @@ type AdminReports = {
   salesByEmployee?: Array<{ employee: string; total: number }>;
   profitMonthly?: Array<{ month: string; total: number }>;
   purchasesBySupplier?: Array<{ supplier: string; total: number }>;
-  dailySalesByBranch?: Array<{ date: string; branch: string; total: number; orders: number }>;
+  dailySalesByBranch?: Array<{ date: string; branch: string; branchId?: number; total: number; orders: number }>;
 };
 
 type AdminDiscountCode = {
@@ -114,7 +114,7 @@ function AdminDecisionCenter({ dashboard, reports, onOpenLowStock }: { dashboard
   </section>;
 }
 
-function DailyBranchPerformance({ rows, branch }: { rows: Array<{ date: string; branch: string; total: number; orders: number }>; branch: string }) {
+function DailyBranchPerformance({ rows, branch }: { rows: Array<{ date: string; branch: string; branchId?: number; total: number; orders: number }>; branch: string }) {
   const filtered = rows.filter((row) => !branch || row.branch === branch).slice(-14);
   const max = Math.max(...filtered.map((row) => row.total), 1);
   return <div className="daily-branch-performance">
@@ -122,11 +122,10 @@ function DailyBranchPerformance({ rows, branch }: { rows: Array<{ date: string; 
   </div>;
 }
 
-function AdminCharts({ reports, branches }: { reports: AdminReports | null; branches: Branch[] }) {
+function AdminCharts({ reports, branches, selectedBranchId, onBranchChange }: { reports: AdminReports | null; branches: Branch[]; selectedBranchId: number | null; onBranchChange: (branchId: number | null) => void }) {
   const [period, setPeriod] = useState<'3m' | '6m' | '12m' | 'all'>('6m');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [branch, setBranch] = useState('');
   const monthlySales = reports?.monthlySales ?? [];
   const filteredMonthlySales = monthlySales.filter((row) => {
     const monthDate = `${row.month}-01`;
@@ -149,7 +148,8 @@ function AdminCharts({ reports, branches }: { reports: AdminReports | null; bran
       : fillMonthlySales(monthlySales, Number(period.replace('m', '')));
   const branchRows = (reports?.salesByBranch ?? []).map((row) => ({ label: row.branch, value: Number(row.total) }));
   const productRows = (reports?.topProducts ?? []).map((row) => ({ label: row.name, value: Number(row.total) }));
-  const branchOptions = Array.from(new Set([...branches.map((item) => item.name), ...(reports?.dailySalesByBranch ?? []).map((row) => row.branch)])).sort();
+  const branch = branches.find((item) => item.id === selectedBranchId)?.name ?? '';
+  const branchOptions = branches;
   const periodStart = (() => {
     if (fromDate) return fromDate;
     if (period === 'all') return '';
@@ -160,7 +160,7 @@ function AdminCharts({ reports, branches }: { reports: AdminReports | null; bran
   const dailyRows = (reports?.dailySalesByBranch ?? []).filter((row) => (!periodStart || row.date >= periodStart) && (!toDate || row.date <= toDate));
   const dailyTotal = dailyRows.filter((row) => !branch || row.branch === branch).reduce((sum, row) => sum + Number(row.total), 0);
   return <section className="dashboard-analytics">
-    <div className="analytics-heading"><div><span className="section-kicker">Lectura operativa</span><h2>Rendimiento de la farmacia</h2><p className="analytics-subtitle">Explora ventas, sucursales y productos con filtros reales.</p></div><div className="analytics-controls"><div className="period-switcher" role="group" aria-label="Período del gráfico">{(['3m', '6m', '12m', 'all'] as const).map((value) => <button key={value} type="button" className={period === value && !fromDate && !toDate ? 'active' : ''} onClick={() => { setPeriod(value); setFromDate(''); setToDate(''); }}>{value === 'all' ? 'Todo' : value.replace('m', ' meses')}</button>)}</div><div className="date-filter-group"><label>Desde<input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label>Hasta<input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label><label className="branch-filter-label">Sucursal<select value={branch} onChange={(event) => setBranch(event.target.value)}><option value="">Todas las sucursales</option>{branchOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label></div></div></div>
+    <div className="analytics-heading"><div><span className="section-kicker">Lectura operativa</span><h2>Rendimiento {branch ? `· ${branch}` : 'de la farmacia'}</h2><p className="analytics-subtitle">Explora ventas, sucursales y productos con filtros reales.</p></div><div className="analytics-controls"><div className="period-switcher" role="group" aria-label="Período del gráfico">{(['3m', '6m', '12m', 'all'] as const).map((value) => <button key={value} type="button" className={period === value && !fromDate && !toDate ? 'active' : ''} onClick={() => { setPeriod(value); setFromDate(''); setToDate(''); }}>{value === 'all' ? 'Todo' : value.replace('m', ' meses')}</button>)}</div><div className="date-filter-group"><label>Desde<input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label>Hasta<input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label><label className="branch-filter-label">Sucursal<select value={selectedBranchId ?? ''} onChange={(event) => onBranchChange(event.target.value ? Number(event.target.value) : null)}><option value="">Todas las sucursales</option>{branchOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div></div></div>
     <div className="analytics-grid"><div className="analytics-card analytics-card-wide"><div className="analytics-card-head"><div><h3>Ventas mensuales</h3><p>Ingresos confirmados por período seleccionado</p></div><span className="data-freshness">{visibleMonthlySales.length} períodos</span></div><SalesTrendChart rows={visibleMonthlySales} /></div><div className="analytics-card"><div className="analytics-card-head"><div><h3>Ventas por sucursal</h3><p>Comparación acumulada</p></div><span className="chart-accent blue" /></div><HorizontalBars rows={branchRows} labelKey="branch" /></div><div className="analytics-card"><div className="analytics-card-head"><div><h3>Productos destacados</h3><p>Mayor contribución a ventas</p></div><span className="chart-accent amber" /></div><HorizontalBars rows={productRows} labelKey="product" /></div></div>
     <div className="analytics-card daily-branch-card"><div className="analytics-card-head"><div><span className="section-kicker">Detalle por sucursal</span><h3>Ventas diarias por sucursal</h3><p>La vista que necesitas para saber qué sucursal vende cada día.</p></div><div className="daily-total"><strong>{money(dailyTotal)}</strong><span>{branch || 'Todas'} · {dailyRows.filter((row) => !branch || row.branch === branch).length} registros</span></div></div><DailyBranchPerformance rows={dailyRows} branch={branch} /></div>
   </section>;
@@ -191,6 +191,7 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [discountCodes, setDiscountCodes] = useState<AdminDiscountCode[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
   const [status, setStatus] = useState('');
   const [discountForm, setDiscountForm] = useState({ code: '', type: 'PERCENTAGE' as AdminDiscountCode['type'], value: '10', maxUses: '100', startsAt: '', expiresAt: '' });
   const [empFullName, setEmpFullName] = useState('');
@@ -230,8 +231,9 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
     setIsLoading(true);
     setStatus('');
     try {
+      const branchQuery = selectedBranchId ? `?branchId=${selectedBranchId}` : '';
       const [dash, rep, branchData, supplierData, discountData] = await Promise.all([
-        apiRequest<DashboardMetrics>('/api/admin/dashboard', {}, token), apiRequest<AdminReports>('/api/admin/reports', {}, token),
+        apiRequest<DashboardMetrics>(`/api/admin/dashboard${branchQuery}`, {}, token), apiRequest<AdminReports>(`/api/admin/reports${branchQuery}`, {}, token),
         apiRequest<Branch[]>('/api/admin/branches', {}, token),
         apiRequest<Supplier[]>('/api/admin/suppliers', {}, token),
         canManageDiscountCodes ? apiRequest<AdminDiscountCode[]>('/api/admin/discount-codes', {}, token) : Promise.resolve([] as AdminDiscountCode[])
@@ -245,7 +247,7 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
       setIsLoading(false);
     }
   }
-  useEffect(() => { void loadAll().catch(() => undefined); }, [token, canManageDiscountCodes]);
+  useEffect(() => { void loadAll().catch(() => undefined); }, [token, canManageDiscountCodes, selectedBranchId]);
   async function createEmployee() {
     try {
       const employeeData = {
@@ -350,7 +352,7 @@ export function AdminPage({ token, canManageDiscountCodes }: { token: string | n
           <span>{metric.hint}</span>
         </article>)}
       </div>
-      {dashboard && reports ? <><AdminDecisionCenter dashboard={dashboard} reports={reports} onOpenLowStock={() => setActiveTab('lowStock')} /><AdminCharts reports={reports} branches={branches} /><InventoryAlerts products={dashboard.lowStockProducts ?? []} /></> : isLoading ? <div className="admin-dashboard-loading"><SkeletonChart /><SkeletonCard /></div> : <div className="admin-dashboard-error"><strong>No se pudieron mostrar las métricas.</strong><span>Revisa la conexión con la API y vuelve a intentarlo.</span></div>}
+      {dashboard && reports ? <><AdminDecisionCenter dashboard={dashboard} reports={reports} onOpenLowStock={() => setActiveTab('lowStock')} /><AdminCharts reports={reports} branches={branches} selectedBranchId={selectedBranchId} onBranchChange={setSelectedBranchId} /><InventoryAlerts products={dashboard.lowStockProducts ?? []} /></> : isLoading ? <div className="admin-dashboard-loading"><SkeletonChart /><SkeletonCard /></div> : <div className="admin-dashboard-error"><strong>No se pudieron mostrar las métricas.</strong><span>Revisa la conexión con la API y vuelve a intentarlo.</span></div>}
     </>;
   };
   const LowStockTab = () => dashboard ? <InventoryAlerts products={dashboard.lowStockProducts ?? []} /> : <SkeletonCard />;

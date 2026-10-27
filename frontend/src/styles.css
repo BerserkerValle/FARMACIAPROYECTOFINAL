@@ -247,10 +247,12 @@ button, input, select, textarea {
 }
 
 .brand-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
-  background: var(--cv-green-light);
+  width: 58px;
+  height: 58px;
+  padding: 3px;
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  border-radius: 15px;
+  background: #fff;
   color: var(--cv-green);
   display: flex;
   align-items: center;
@@ -262,10 +264,17 @@ button, input, select, textarea {
 
 .brand-icon:hover,
 .brand-icon:focus {
-  background: var(--cv-green);
-  color: var(--text-inverse);
+  background: #fff;
   transform: scale(1.05);
   box-shadow: var(--shadow-md), 0 0 0 3px rgba(0, 150, 57, 0.3);
+}
+
+.brand-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  object-fit: contain;
 }
 
 .brand-icon:focus-visible {
@@ -1060,6 +1069,26 @@ button, input, select, textarea {
 .action-item small { color: #849189; font-size: 0.66rem; line-height: 1.35; }
 .action-arrow { margin-left: auto; color: #087a43; font-size: 1rem; font-weight: 800; }
 .admin-metric-icon.red { color: #b54d38; background: #fff0ed; }
+
+.carousel-slide.image-banner-slide {
+  min-height: 0;
+  padding: 0;
+}
+
+/* Vista ejecutiva compacta: más información visible sin perder jerarquía. */
+.admin-dashboard-hero { padding: clamp(1.25rem, 2vw, 1.75rem); }
+.admin-metrics-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
+.admin-metric-card { min-height: 142px; padding: 1rem; }
+.admin-metric-icon { width: 2rem; height: 2rem; margin-bottom: 0.65rem; }
+.admin-metric-card strong { font-size: clamp(1.3rem, 1.8vw, 1.65rem); }
+.admin-decision-center { gap: 0.75rem; padding: 1.2rem; }
+.decision-hero-card, .decision-highlight-card { min-height: 125px; padding: 0.95rem; }
+.action-item { padding: 0.58rem; }
+
+@media (max-width: 1024px) {
+  .image-banner-slide { min-height: 0; padding: 0; }
+}
+
 .analytics-subtitle { margin-top: 0.35rem; color: var(--text-muted); font-size: 0.82rem; }
 .branch-filter-label select { min-width: 12rem; }
 .daily-branch-card { margin-top: 1rem; }
@@ -1114,6 +1143,33 @@ button, input, select, textarea {
   width: 400%;
 }
 
+.image-banner-slide {
+  flex: 0 0 33.333333%;
+  width: 33.333333%;
+  min-height: 0;
+  aspect-ratio: 1920 / 680;
+  padding: 0;
+  background-color: #edf7f0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.carousel-slide.image-banner-slide { width: 33.333333%; }
+
+.image-banner-track { width: 300%; }
+
+.image-banner-slide .banner-image-hitarea {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
 .carousel-slide {
   width: 25%;
   min-height: 320px;
@@ -1130,6 +1186,40 @@ button, input, select, textarea {
   z-index: 2;
   max-width: 55%;
   color: var(--text-inverse);
+}
+
+.slide-brand-lockup {
+  position: absolute;
+  right: clamp(3rem, 9vw, 8rem);
+  z-index: 2;
+  display: flex;
+  width: clamp(132px, 17vw, 190px);
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 38px rgba(0, 42, 21, 0.22);
+  transform: rotate(2deg);
+}
+
+.slide-brand-lockup img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 13px;
+  object-fit: contain;
+}
+
+.slide-brand-lockup span {
+  color: #0a5f42;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .slide-overlay {
@@ -1292,6 +1382,11 @@ button, input, select, textarea {
     max-width: 500px;
   }
 
+  .slide-brand-lockup {
+    right: 4.5rem;
+    width: 135px;
+  }
+
   .cart-total {
     min-width: 60px;
   }
@@ -1445,6 +1540,18 @@ button, input, select, textarea {
   }
 
   .slide-visual {
+    display: none;
+  }
+
+  .slide-brand-lockup {
+    right: 1rem;
+    bottom: 3.1rem;
+    width: 88px;
+    padding: 0.35rem;
+    border-radius: 12px;
+  }
+
+  .slide-brand-lockup span {
     display: none;
   }
 

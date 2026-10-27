@@ -84,9 +84,13 @@ function assertLocalSupplierUnique(input: Partial<{ id: number; nit: string; ema
 // ============================================================================
 // SECCIÓN 1: MÉTRICAS, ESTADÍSTICAS Y REPORTES
 
-export async function dashboard(_req: Request, res: Response) {
+export async function dashboard(req: Request, res: Response) {
   try {
-    const data = databaseEnabled ? await getDatabaseDashboard() : store.getDashboard();
+    const branchId = req.query.branchId ? Number(req.query.branchId) : undefined;
+    if (branchId !== undefined && (!Number.isInteger(branchId) || branchId <= 0)) {
+      return res.status(400).json({ success: false, message: 'Sucursal no válida' });
+    }
+    const data = databaseEnabled ? await getDatabaseDashboard({ branchId }) : store.getDashboard({ branchId });
     return res.json({
       success: true,
       data: { ...data, dataSource: databaseEnabled ? 'postgres' : 'server-store' }

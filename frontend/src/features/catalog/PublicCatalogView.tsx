@@ -64,7 +64,7 @@ export function PublicCatalogView({
     : null;
 
   return (
-    <main className="catalog-layout">
+    <main id="catalogo-medicamentos" className="catalog-layout">
       <div className="catalog-control-bar">
         <div className="catalog-header-row">
           <div className="catalog-title-block">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { TopHeader, HeroCarousel } from '../components/PublicHeader';
+import { ImageHeroCarousel } from '../components/ImageHeroCarousel';
 import LoginPage from '../features/auth/LoginPage';
 import { apiRequest, setUnauthorizedHandler, uploadTemporaryPrescription } from '../api';
 import { ProductDetailModal } from '../components/ProductDetailModal';
@@ -703,7 +704,7 @@ export default function AppController() {
       />
 
       {/* HERO CAROUSEL - Solo en portal público */}
-      {activePortal === 'public' && (!token || !profile || canAccessEmployeePortal(profile.role, 'public')) && <HeroCarousel onNavigatePortal={navigatePortal} products={products} />}
+      {activePortal === 'public' && (!token || !profile || canAccessEmployeePortal(profile.role, 'public')) && <ImageHeroCarousel onNavigatePortal={navigatePortal} />}
 
       {/* MAIN PRODUCT CATALOG */}
       {activePortal === 'public' && (!token || !profile || canAccessEmployeePortal(profile.role, 'public')) && (
