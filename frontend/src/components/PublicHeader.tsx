@@ -1,6 +1,50 @@
 import { useState } from 'react';
 import type { Branch, Category, CustomerAccount, EmployeeProfile, Portal, ProductCard } from '../types';
 
+// Matriz de permisos por rol según el requisito 3.1
+// Módulos: Catálogo, POS, Bodega, Reparto, Admin
+// Roles: Cajero, Bodeguero, Repartidor, Gerente, Administrador
+const rolePortals: Record<string, Portal[]> = {
+  // Cajero ve Catálogo y POS
+  Cajero: ['public', 'pos'],
+  // Bodeguero ve solo Bodega
+  Bodeguero: ['warehouse'],
+  // Repartidor ve solo Reparto
+  Repartidor: ['delivery'],
+  // Gerente y Administrador ven los 5 módulos
+  Gerente: ['public', 'pos', 'warehouse', 'delivery', 'admin'],
+  Administrador: ['public', 'pos', 'warehouse', 'delivery', 'admin'],
+};
+
+// Determina qué portales debe mostrar el usuario según su rol
+function getAllowedPortals(role: string | null): Portal[] {
+  if (!role) return [];
+  const normalized = role.replace(/\s/g, ''); // quita espacios para comparar
+  return (rolePortals as Record<string, Portal[]>)[normalized] || [];
+}
+
+// Calcula los botones de navegación visibles según el rol y el portal activo
+function computeNavButtons(): JSX.Element[] {
+  const portals: JSX.Element[] = [];
+  const portalsList: Portal[] = ['public', 'pos', 'warehouse', 'delivery', 'admin'];
+  for (const portal of portalsList) {
+    if (allowedPortals.includes(portal)) {
+      const isActive = activePortal === portal;
+      portals.push(
+        <button
+          key={portal}
+          type="button"
+          className={`portal-nav-pill ${isActive ? 'active' : ''}`}
+          onClick={() => onNavigatePortal(portal)}
+        >
+          {portal === 'public' ? 'Catálogo' : portal === 'warehouse' ? 'Bodega' : portal === 'delivery' ? 'Reparto' : portal === 'pos' ? 'POS' : 'Admin'}
+        </button>
+      );
+    }
+  }
+  return portals;
+}
+
 export type PublicHeaderProps = {
   branches: Branch[];
   branchId: number;
@@ -34,7 +78,7 @@ export function TopHeader({ branches, branchId, onSelectBranch, cartCount, cartT
     <div className="header-main"><div className="header-main-inner">
       <div className="header-brand"><div className="brand-icon" onClick={() => onNavigatePortal('login')} role="button" tabIndex={0} title="Acceso Empleados" aria-label="Acceso empleados"><span>+</span></div><div className="brand-text" onClick={() => onNavigatePortal('public')}><h1>FARMACIA FJK</h1><span>Tu farmacia de confianza</span></div></div>
       <div className="header-search"><form onSubmit={submit} className="search-form"><svg className="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input type="search" className="search-input" placeholder="Buscar medicamentos, marcas, principios activos..." value={query} onChange={(event) => setQuery(event.target.value)} /></form></div>
-      <div className="header-actions">{token && profile && <nav className="portal-nav-pills" aria-label="Portales internos">{(['public', 'pos', 'warehouse', 'delivery', 'admin'] as const).map((portal) => <button key={portal} type="button" className={`portal-nav-pill ${activePortal === portal ? 'active' : ''}`} onClick={() => onNavigatePortal(portal)}>{portal === 'public' ? 'Catálogo' : portal === 'warehouse' ? 'Bodega' : portal === 'delivery' ? 'Reparto' : portal === 'pos' ? 'POS' : 'Admin'}</button>)}</nav>}
+      <div className="header-actions">{token && profile && <nav className="portal-nav-pills" aria-label="Portales internos">{computeNavButtons()}</nav>}
         {activePortal === 'public' && <button type="button" className="cart-btn" onClick={onOpenCheckout} aria-label={`Carrito: ${cartCount} artículos`}><span>Carrito ({cartCount})</span><strong>Q. {cartTotal.toFixed(2)}</strong></button>}
         <div className="user-menu">{token && profile ? <button type="button" className="user-btn" onClick={onLogout}>{profile.fullName} <small>{profile.role}</small></button> : customer ? <button type="button" className="user-btn" onClick={() => onNavigatePortal('customer')}>{customer.fullName} <small>Mi cuenta</small></button> : <button type="button" className="user-btn login-btn" onClick={() => onNavigatePortal('customer')}>Iniciar Sesión</button>}</div>
       </div>
