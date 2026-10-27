@@ -560,13 +560,20 @@ function dibujarPiePagina(doc: PDFKit.PDFDocument, factura: FacturaCompleta) {
  */
 export async function generarFacturaDesdeOrden(
   orderId: number,
-  isOnline: boolean
+  isOnline: boolean,
+  forcePaid = false
 ): Promise<{ pdfBuffer: Buffer; facturaData: FacturaCompleta }> {
   const databaseData = databaseEnabled ? await getDatabaseInvoiceDataForEmail(orderId) : null;
   if (databaseEnabled && !databaseData) throw new Error('No se encontraron datos de factura para la orden #' + orderId);
   const order = databaseData?.order ?? store.getOrderById(orderId);
   if (!order) {
     throw new Error('Orden #' + orderId + ' no encontrada');
+  }
+
+  if (forcePaid) {
+    order.paymentStatus = 'PAID';
+    order.status = 'PAID';
+    order.paidAt = order.paidAt ?? new Date().toISOString();
   }
 
   // Obtener items de la orden con productos

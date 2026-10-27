@@ -625,7 +625,7 @@ export async function downloadOrderInvoice(req: Request, res: Response) {
     orderId = requestedOrderId;
   }
 
-  // Verificar que la orden existe y está pagada
+  // Verificar que la orden existe. El token solo se entrega después de crear el checkout.
   const databaseInvoiceData = databaseEnabled ? await getDatabaseInvoiceDataForEmail(orderId) : null;
   let order = databaseInvoiceData?.order ?? store.getOrderById(orderId);
   if (!order) {
@@ -649,16 +649,12 @@ export async function downloadOrderInvoice(req: Request, res: Response) {
     return res.status(400).json({ success: false, message: 'Esta orden no es una compra en línea' });
   }
 
-  if (order.paymentStatus !== 'PAID') {
-    return res.status(400).json({ success: false, message: 'La orden no está pagada, no se puede descargar la factura' });
-  }
-
   if (tokenOrderId !== null && order.code !== orderCode) {
     return res.status(403).json({ success: false, message: 'El token no corresponde a la orden' });
   }
 
   try {
-    const { pdfBuffer } = await generarFacturaDesdeOrden(orderId, true);
+    const { pdfBuffer } = await generarFacturaDesdeOrden(orderId, true, true);
 
     const invoice = databaseInvoiceData?.invoice ?? store.getInvoiceByOrderId(orderId);
     const filename = invoice ? 'factura-' + invoice.invoiceNumber + '.pdf' : 'factura-' + order.code + '.pdf';

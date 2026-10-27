@@ -503,9 +503,6 @@ export default function AppController() {
                 Volver al Catálogo
               </button>
             </div>
-            <p style={{ marginTop: '1.5rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              La factura también será enviada a tu correo electrónico.
-            </p>
           </div>
         </div>
       </div>
