@@ -154,6 +154,8 @@ async function resetStore() {
   store['snapshot'].branches = [];
   store['snapshot'].payments = [];
   store['snapshot'].lots = []; // IMPORTANTE: resetear lotes para stock
+  store['snapshot'].discountCodes = [];
+  store['snapshot'].discountRedemptions = [];
   store['snapshot'].counters = {
     customer: 0, employee: 0, order: 0, orderItem: 0, payment: 0,
     invoice: 0, return: 0, crosscheck: 0, lot: 0, product: 0, discountCode: 0
@@ -451,6 +453,54 @@ describe('POS Idempotency - Claves de idempotencia en ventas de mostrador', () =
 
     // Limpiar claves de idempotencia
     store['posIdempotencyKeys'].clear();
+  });
+
+  it('POS acepta varias líneas y aplica el descuento también a la factura', () => {
+    store.createDiscountCode({
+      code: 'POS10',
+      type: 'PERCENTAGE',
+      value: 10,
+      maxUses: 2,
+      startsAt: null,
+      expiresAt: null,
+      active: true
+    });
+
+    const sale = store.createPosSale({
+      branchId: 1,
+      customer: { name: 'Cliente POS', nit: 'CF', email: 'pos-descuento@test.com', phone: '12345678' },
+      items: [{ productId: 1, quantity: 1 }, { productId: 1, quantity: 1 }],
+      discountCode: 'pos10'
+    }, 1);
+
+    expect(sale.items).toHaveLength(2);
+    expect(sale.order.subtotal).toBe(100);
+    expect(sale.order.discountAmount).toBe(10);
+    expect(sale.order.total).toBe(90);
+    expect(store.getInvoiceByOrderId(sale.order.id)).toMatchObject({
+      subtotal: 100,
+      discountAmount: 10,
+      discountCode: 'POS10',
+      total: 90
+    });
+    expect(store['snapshot'].discountRedemptions).toContainEqual(expect.objectContaining({
+      orderId: sale.order.id,
+      customerEmail: 'pos-descuento@test.com',
+      status: 'REDEEMED'
+    }));
+    expect(() => store.createPosSale({
+      branchId: 1,
+      customer: { name: 'Otro Cliente', nit: 'CF', email: 'otro-cliente@test.com', phone: '12345678' },
+      items: [{ productId: 1, quantity: 1 }],
+      discountCode: 'POS10',
+      cashReceived: 44
+    }, 1)).toThrow('El pago es insuficiente');
+    expect(() => store.createPosSale({
+      branchId: 1,
+      customer: { name: 'Cliente POS', nit: 'CF', email: 'pos-descuento@test.com', phone: '12345678' },
+      items: [{ productId: 1, quantity: 1 }],
+      discountCode: 'POS10'
+    }, 1)).toThrow('Este código ya fue utilizado por este correo');
   });
 
   it('POS con misma clave y misma huella: devuelve la venta original (replay idempotente)', () => {
@@ -1013,15 +1063,6 @@ describe('Documented Risks and Limitations', () => {
     // pero NO hay job programado interno que las llame
     // Requiere configuración externa: cron job, pg_cron, o worker dedicado
     console.warn('RISK DOCUMENTADO: Recuperación/reintentos requieren job externo (cron/pg_cron)');
-    expect(true).toBe(true);
-  });
-
-  it('RISK: Fingerprint usa JSON.stringify - orden de claves no garantizado en spec', () => {
-    // JSON.stringify mantiene orden de inserción en V8/Node.js
-    // Pero especificación ECMAScript no lo garantiza
-    // Frontend usa Object.keys(payload).sort() para canonicalizar
-    // Backend debe hacer lo mismo si recalcula fingerprint
-    console.warn('RISK DOCUMENTADO: JSON.stringify orden no estándar - frontend canonicaliza con sort()');
     expect(true).toBe(true);
   });
 

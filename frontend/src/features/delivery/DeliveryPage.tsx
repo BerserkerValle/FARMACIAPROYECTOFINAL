@@ -13,6 +13,17 @@ function GoogleMapLink({ origin, destination }: { origin: string; destination: s
   );
 }
 
+function getDeliveryCoordinates(order: any): string | null {
+  const rawLatitude = order.deliveryLatitude ?? order.latitude;
+  const rawLongitude = order.deliveryLongitude ?? order.longitude;
+  if (rawLatitude == null || rawLongitude == null || rawLatitude === '' || rawLongitude === '') return null;
+  const latitude = Number(rawLatitude);
+  const longitude = Number(rawLongitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  return `${latitude},${longitude}`;
+}
+
 export function DeliveryPage({ token, role, branchId }: { token: string | null; role?: string; branchId?: number | null }) {
   const [orders, setOrders] = useState<any[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
@@ -52,7 +63,13 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
     }
     const routesByBranch = await Promise.all(routeBranches.map(async (branch) => {
       const deliveries = await apiRequest<any[]>(`/api/pos/deliveries?branchId=${branch.id}`, {}, token);
-      return deliveries.map((delivery) => ({ ...delivery, branch }));
+      return deliveries.map((delivery) => ({
+        ...delivery,
+        branch: {
+          ...branch,
+          name: delivery.branchName || branch.name
+        }
+      }));
     }));
     setOrders(routesByBranch.flat());
     setStatus('');
@@ -138,14 +155,8 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
   }
 
   const selectedOrigin = selectedOrder?.branch ? getDeliveryOrigin(selectedOrder.branch) : null;
-  const destinationLatitude = selectedOrder?.deliveryLatitude ?? selectedOrder?.latitude;
-  const destinationLongitude = selectedOrder?.deliveryLongitude ?? selectedOrder?.longitude;
-  const selectedDestination = selectedOrder
-    ? Number.isFinite(Number(destinationLatitude)) && Number.isFinite(Number(destinationLongitude))
-      && destinationLatitude != null && destinationLongitude != null
-      ? `${destinationLatitude},${destinationLongitude}`
-      : selectedOrder.address?.trim() || ''
-    : '';
+  const selectedCoordinates = selectedOrder ? getDeliveryCoordinates(selectedOrder) : null;
+  const selectedDestination = selectedCoordinates || selectedOrder?.address?.trim() || '';
 
   return (
     <div className="internal-page-container">
@@ -165,10 +176,10 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
                 <div className="delivery-route-content">
                   <strong>{order.code}</strong>
                   <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
-                    {order.customer?.name ?? 'Cliente'} · {order.branch?.name ?? `Sucursal ${order.branchId}`}
+                    {order.customer?.name ?? order.customerName ?? 'Cliente'} · {order.branch?.name ?? order.branchName ?? `Sucursal ${order.branchId}`}
                   </p>
-                  <small>{order.address || 'Sin dirección registrada'}</small>
-                  <small>{money(order.total)} · {order.status}</small>
+                  <small>{order.address?.trim() || (getDeliveryCoordinates(order) ? 'Ubicación GPS compartida por el cliente' : 'Sin dirección registrada')}</small>
+                  <small>{money(Number(order.total) || 0)} · {order.status}</small>
                   <div className="delivery-route-actions">
                     <button type="button" className="btn-secondary" onClick={() => setSelectedOrder(order)}>
                       Ver ruta
@@ -202,7 +213,7 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
               <strong>Sale de:</strong> {selectedOrder.branch?.name ?? 'Sucursal asignada'}
             </p>
             <p>
-              <strong>Dirección:</strong> {selectedOrder.address || 'No registrada'}
+              <strong>Dirección:</strong> {selectedOrder.address?.trim() || (selectedCoordinates ? `Ubicación GPS del cliente (${selectedCoordinates})` : 'No registrada')}
             </p>
             {selectedOrigin && selectedDestination ? (
               <GoogleMapLink origin={selectedOrigin} destination={selectedDestination} />

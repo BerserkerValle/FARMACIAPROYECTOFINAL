@@ -508,6 +508,8 @@ export interface PublicCheckoutInput {
  */
 export interface PosSaleInput {
   branchId: number;
+  discountCode?: string;
+  cashReceived?: number;
   customer: {
     name: string;
     nit: string;

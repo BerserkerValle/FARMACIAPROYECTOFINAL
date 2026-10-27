@@ -31,6 +31,7 @@ import {
   createDatabaseCheckout,
   databaseEnabled,
   findDatabaseDeliveryOwnership,
+  getDatabaseInvoiceDataForEmail,
   listDatabaseDeliveries,
   updateDatabaseDeliveryTracking,
   checkAndReserveDatabasePosIdempotency,
@@ -82,7 +83,9 @@ const saleSchema = z.object({
       productId: z.number().int().positive('ID de producto inválido'),
       quantity: z.number().int().positive('La cantidad debe ser mayor a 0')
     })
-  ).min(1, 'Debe incluir al menos un producto en la venta')
+  ).min(1, 'Debe incluir al menos un producto en la venta'),
+  discountCode: z.string().trim().toUpperCase().min(1).max(32).optional(),
+  cashReceived: z.number().finite().nonnegative().optional()
 });
 
 /**
@@ -209,7 +212,7 @@ async function handlePosSaleDatabase(
       }
       // Misma clave y misma huella → replay idempotente
       if (check.existingOrderId && check.existingOrderId > 0) {
-        const existingSale = store.getOrderById(check.existingOrderId);
+        const existingSale = (await getDatabaseInvoiceDataForEmail(check.existingOrderId))?.order ?? store.getOrderById(check.existingOrderId);
         if (existingSale) {
           return res.json({
             success: true,
@@ -223,7 +226,7 @@ async function handlePosSaleDatabase(
       await new Promise(r => setTimeout(r, 100));
       const orderId = await getDatabasePosIdempotencyOrderId(keyHash);
       if (orderId) {
-        const existingSale = store.getOrderById(orderId);
+        const existingSale = (await getDatabaseInvoiceDataForEmail(orderId))?.order ?? store.getOrderById(orderId);
         if (existingSale) {
           return res.json({ success: true, data: existingSale, idempotentReplay: true });
         }
@@ -236,7 +239,18 @@ async function handlePosSaleDatabase(
     }
 
     // PASO 2: Crear la venta (la clave ya está reservada con order_id = 0)
-    const sale = store.createPosSale({ ...payload, branchId }, req.user.employeeId);
+    const sale = await createDatabaseCheckout({
+      branchId,
+      deliveryMode: 'PICKUP',
+      paymentMethod: 'CASH',
+      address: null,
+      deliveryLatitude: null,
+      deliveryLongitude: null,
+      customer: payload.customer,
+      items: payload.items,
+      discountCode: payload.discountCode,
+      prescriptionWebUrl: null
+    }, { source: 'POS', cashReceived: payload.cashReceived });
 
     // PASO 3: Confirmar la clave con el orderId real
     await confirmDatabasePosIdempotency(keyHash, sale.order.id);
@@ -310,6 +324,7 @@ export async function createQrPayment(req: Request, res: Response) {
       deliveryLongitude: null,
       customer: payload.customer,
       items: payload.items,
+      discountCode: payload.discountCode,
       prescriptionWebUrl: null
     };
     const created = databaseEnabled
@@ -318,7 +333,7 @@ export async function createQrPayment(req: Request, res: Response) {
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(created.order.total * 100),
       currency: process.env.STRIPE_CURRENCY?.trim().toLowerCase() || 'gtq',
-      automatic_payment_methods: { enabled: true },
+      payment_method_types: ['card'],
       receipt_email: created.customer.email,
       description: 'Venta POS ' + created.order.code,
       metadata: {
@@ -464,7 +479,8 @@ export async function downloadPosInvoice(req: Request, res: Response) {
   }
 
   // Verificar que la orden existe y es una venta POS
-  const order = store.getOrderById(orderId);
+  const databaseInvoiceData = databaseEnabled ? await getDatabaseInvoiceDataForEmail(orderId) : null;
+  const order = databaseEnabled ? databaseInvoiceData?.order ?? null : store.getOrderById(orderId);
   if (!order) {
     return res.status(404).json({ success: false, message: 'Venta no encontrada' });
   }
@@ -490,8 +506,8 @@ export async function downloadPosInvoice(req: Request, res: Response) {
   try {
     const { pdfBuffer } = await generarFacturaDesdeOrden(orderId, false);
 
-    const invoice = store.getInvoiceByOrderId(orderId);
-    const filename = invoice ? 'factura-' + invoice.invoiceNumber + '.pdf' : 'factura-' + order.code + '.pdf';
+    const invoiceNumber = databaseInvoiceData?.invoice.invoiceNumber ?? store.getInvoiceByOrderId(orderId)?.invoiceNumber ?? order.code;
+    const filename = 'factura-' + invoiceNumber + '.pdf';
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename=\"' + filename + '\"');

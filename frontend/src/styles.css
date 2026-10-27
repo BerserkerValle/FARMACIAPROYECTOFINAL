@@ -818,6 +818,7 @@ button, input, select, textarea {
 
 /* Contact Modal */
 .contact-modal {
+  position: relative;
   background: var(--bg-white);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-xl);
@@ -826,6 +827,7 @@ button, input, select, textarea {
   max-height: 90vh;
   overflow-y: auto;
   animation: scaleIn var(--transition-fast);
+  border: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 .contact-modal-header {
@@ -837,6 +839,8 @@ button, input, select, textarea {
   background: var(--brand-gradient);
   color: var(--text-inverse);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  min-height: 190px;
+  padding-right: 3.5rem;
 }
 
 .contact-modal-icon {
@@ -874,8 +878,12 @@ button, input, select, textarea {
 
 .contact-info-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #fff 0%, #f8fbf9 100%);
 }
 
 .contact-info-icon {
@@ -960,6 +968,49 @@ button, input, select, textarea {
   background: var(--cv-green);
   color: var(--text-inverse);
   transform: translateY(-2px);
+}
+
+.contact-modal .modal-close-btn {
+  z-index: 1;
+}
+
+.contact-facebook-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  min-height: 44px;
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius-full);
+  background: #1877f2;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 4px 12px rgba(24, 119, 242, 0.2);
+  transition: transform var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.contact-facebook-link:hover {
+  background: #0866ff;
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 7px 16px rgba(24, 119, 242, 0.26);
+}
+
+@media (max-width: 480px) {
+  .contact-modal {
+    width: 100%;
+    max-height: calc(100vh - 1rem);
+  }
+
+  .contact-modal-header {
+    min-height: 170px;
+    padding: 1.5rem 1rem 1.25rem;
+  }
+
+  .contact-modal-body {
+    padding: 1rem;
+  }
 }
 
 /* =========================================================================

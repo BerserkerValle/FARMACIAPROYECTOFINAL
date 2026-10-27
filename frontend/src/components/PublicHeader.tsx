@@ -45,12 +45,51 @@ export function TopHeader({ branches, branchId, onSelectBranch, cartCount, cartT
     </div></div>
     {showCatalogSubnav && <nav className="header-subnav" aria-label="Navegación principal"><div className="subnav-inner">
       <div className="subnav-dropdown"><button type="button" className="subnav-item" onClick={() => setShowCategories(!showCategories)} aria-expanded={showCategories}>Categorías</button>{showCategories && <div className="category-dropdown-menu"><button type="button" className="category-dropdown-item" onClick={() => { onCategorySelect('all'); setShowCategories(false); onNavigatePortal('public'); }}>Todas las categorías</button>{categories.map((category) => <button key={category.id} type="button" className="category-dropdown-item" onClick={() => { onCategorySelect(category.id); setShowCategories(false); onNavigatePortal('public'); }}>{category.name}</button>)}</div>}</div>
-      {isClientPortal && <button type="button" className="subnav-item batres-accent" onClick={() => onNavigatePortal('public')}>Descuentos</button>}
       {!token && !profile && <button type="button" className="subnav-item" onClick={() => setShowContact(true)}>Contáctenos</button>}
       {isClientPortal && <div className="subnav-price-filter-desktop"><label>Precio:</label><input type="number" placeholder="Mín" value={minPrice} onChange={(event) => onMinPriceChange(event.target.value ? Number(event.target.value) : '')} /><span>-</span><input type="number" placeholder="Máx" value={maxPrice} onChange={(event) => onMaxPriceChange(event.target.value ? Number(event.target.value) : '')} /></div>}
       {activePortal === 'public' && branches.length > 0 && <select className="subnav-branch-dropdown" value={branchId} onChange={(event) => onSelectBranch(Number(event.target.value))}>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name} ({branch.city})</option>)}</select>}
     </div></nav>}
-    {showContact && <div className="modal-backdrop" onClick={() => setShowContact(false)}><div className="contact-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close-btn" onClick={() => setShowContact(false)}>Cerrar</button><h2>Contáctenos</h2><p>Sucursal Jocotenango: +502 4693 2765</p><p>Sucursal Antigua: +502 4893 8771</p><p>Sucursal Ciudad Vieja: +502 3104 3531</p><p>Sucursal Xela: Parqueo Interplaza Xela</p></div></div>}
+    {showContact && <div className="modal-backdrop" onClick={() => setShowContact(false)}>
+      <section className="contact-modal" role="dialog" aria-modal="true" aria-labelledby="contact-modal-title" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="modal-close-btn" onClick={() => setShowContact(false)} aria-label="Cerrar contacto">×</button>
+        <header className="contact-modal-header">
+          <div className="contact-modal-icon" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8A8.5 8.5 0 0 1 8.7 3.9a8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z" />
+            </svg>
+          </div>
+          <h2 id="contact-modal-title">Estamos para ayudarte</h2>
+          <p>Comunícate con tu sucursal más cercana.</p>
+        </header>
+        <div className="contact-modal-body">
+          <div className="contact-info-grid">
+            <div className="contact-info-item">
+              <span className="contact-info-icon" aria-hidden="true">J</span>
+              <div><h4>Jocotenango</h4><a href="tel:+50246932765">+502 4693 2765</a></div>
+            </div>
+            <div className="contact-info-item">
+              <span className="contact-info-icon" aria-hidden="true">A</span>
+              <div><h4>Antigua Guatemala</h4><a href="tel:+50248938771">+502 4893 8771</a></div>
+            </div>
+            <div className="contact-info-item">
+              <span className="contact-info-icon" aria-hidden="true">P</span>
+              <div><h4>Pastores</h4><a href="tel:+50231043531">+502 3104 3531</a></div>
+            </div>
+            <div className="contact-info-item">
+              <span className="contact-info-icon" aria-hidden="true">X</span>
+              <div><h4>Xela</h4><address>Parqueo Interplaza Xela</address></div>
+            </div>
+          </div>
+          <div className="contact-social">
+            <h4>Síguenos en redes sociales</h4>
+            <a className="contact-facebook-link" href="https://www.facebook.com/profile.php?id=61575011542133&amp;locale=es_LA" target="_blank" rel="noopener noreferrer">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5 21v-8.2h2.8l.4-3.2h-3.2v-2c0-.9.3-1.6 1.6-1.6h1.7V3.1c-.3 0-1.3-.1-2.5-.1-2.5 0-4.2 1.5-4.2 4.3v2.3H7.3v3.2h2.8V21h3.4z" /></svg>
+              Visitar nuestra página de Facebook
+            </a>
+          </div>
+        </div>
+      </section>
+    </div>}
   </header>;
 }
 

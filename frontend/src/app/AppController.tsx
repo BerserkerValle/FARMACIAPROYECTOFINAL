@@ -91,7 +91,10 @@ export default function AppController() {
   const [products, setProducts] = useState<ProductCard[]>([]);
   const [query, setQuery] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | 'all'>('all');
-  const [branchId, setBranchId] = useState(1);
+  const [branchId, setBranchId] = useState(() => {
+    const savedBranchId = Number(localStorage.getItem('farmacia-fjk.branch-id'));
+    return Number.isInteger(savedBranchId) && savedBranchId > 0 ? savedBranchId : 1;
+  });
   const [minPrice, setMinPrice] = useState<number | ''>('');
   const [maxPrice, setMaxPrice] = useState<number | ''>('');
   const [cart, setCart] = useState<Array<{ productId: number; quantity: number }>>(() => {
@@ -112,6 +115,14 @@ export default function AppController() {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [pendingPaymentOrder, setPendingPaymentOrder] = useState<{ orderCode: string; total: number; invoiceDownloadToken: string } | null>(null);
   const [lastOrder, setLastOrder] = useState<{ orderCode: string; total: number; invoiceDownloadToken: string } | null>(null);
+  const [posPaymentData, setPosPaymentData] = useState<{
+    clientSecret: string;
+    amount: number;
+    status: string;
+    orderCode: string;
+    invoiceDownloadToken: string;
+  } | null>(null);
+  const [posPaymentLoading, setPosPaymentLoading] = useState(() => new URLSearchParams(window.location.search).has('posPayment'));
 
   useEffect(() => {
     localStorage.setItem('farmacia-fjk.cart', JSON.stringify(cart));
@@ -145,6 +156,7 @@ export default function AppController() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      setStatus('Factura descargada correctamente.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'No se pudo descargar la factura');
     }
@@ -198,13 +210,52 @@ export default function AppController() {
     const paymentIntentId = new URLSearchParams(window.location.search).get('posPayment');
     if (!paymentIntentId) return;
     setActivePortal('public');
-    apiRequest<{ clientSecret: string; amount: number }>(`/api/public/pos-payment/${encodeURIComponent(paymentIntentId)}`)
-      .then(({ clientSecret }) => {
-        setPaymentClientSecret(clientSecret);
-        setStatus('Completa el pago de la venta del mostrador.');
+    setPosPaymentLoading(true);
+    apiRequest<{ clientSecret: string; amount: number; status: string; orderCode: string; invoiceDownloadToken: string }>(`/api/public/pos-payment/${encodeURIComponent(paymentIntentId)}`)
+      .then((payment) => {
+        setPosPaymentData(payment);
+        const order = {
+          orderCode: payment.orderCode,
+          total: payment.amount / 100,
+          invoiceDownloadToken: payment.invoiceDownloadToken
+        };
+        if (payment.status === 'succeeded') {
+          setLastOrder(order);
+          setPaymentSuccess(true);
+          setStatus('Pago confirmado correctamente.');
+        } else if (payment.status === 'canceled') {
+          setStatus('Este pago fue cancelado. Solicita un nuevo código QR en caja.');
+        } else {
+          setPaymentClientSecret(payment.clientSecret);
+          setStatus('Completa el pago con tarjeta para la orden ' + payment.orderCode + '.');
+        }
       })
-      .catch((error) => setStatus(error instanceof Error ? error.message : 'No se pudo cargar el pago'));
+      .catch((error) => setStatus(error instanceof Error ? error.message : 'No se pudo cargar el pago'))
+      .finally(() => setPosPaymentLoading(false));
   }, []);
+
+  useEffect(() => {
+    const paymentIntentId = new URLSearchParams(window.location.search).get('posPayment');
+    if (!paymentIntentId || !posPaymentData || ['succeeded', 'canceled'].includes(posPaymentData.status)) return;
+    const interval = window.setInterval(() => {
+      apiRequest<{ clientSecret: string; amount: number; status: string; orderCode: string; invoiceDownloadToken: string }>(`/api/public/pos-payment/${encodeURIComponent(paymentIntentId)}`)
+        .then((payment) => {
+          setPosPaymentData(payment);
+          if (payment.status === 'succeeded') {
+            setPaymentClientSecret('');
+            setLastOrder({
+              orderCode: payment.orderCode,
+              total: payment.amount / 100,
+              invoiceDownloadToken: payment.invoiceDownloadToken
+            });
+            setPaymentSuccess(true);
+            setStatus('Pago confirmado correctamente.');
+          }
+        })
+        .catch((error) => setStatus(error instanceof Error ? error.message : 'No se pudo actualizar el estado del pago'));
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [posPaymentData]);
 
   useEffect(() => {
     if (!customer) return;
@@ -221,7 +272,15 @@ export default function AppController() {
   // Load branches & categories
   useEffect(() => {
     apiRequest<Branch[]>('/api/public/branches')
-      .then(setBranches)
+      .then((loadedBranches) => {
+        setBranches(loadedBranches);
+        setBranchId((currentBranchId) => {
+          if (loadedBranches.some((branch) => branch.id === currentBranchId)) return currentBranchId;
+          const fallbackBranchId = loadedBranches[0]?.id ?? 1;
+          localStorage.setItem('farmacia-fjk.branch-id', String(fallbackBranchId));
+          return fallbackBranchId;
+        });
+      })
       .catch((error) => console.error(error.message));
 
     apiRequest<Category[]>('/api/public/categories')
@@ -454,10 +513,17 @@ export default function AppController() {
 
   function openCheckout() {
     localStorage.setItem('farmacia-fjk.cart', JSON.stringify(cart));
+    localStorage.setItem('farmacia-fjk.branch-id', String(branchId));
     window.location.assign(`${window.location.origin}/?checkout=1`);
   }
 
-  const checkoutOnly = ['checkout', 'posPayment'].some((key) => new URLSearchParams(window.location.search).has(key));
+  function handleSelectBranch(nextBranchId: number) {
+    setBranchId(nextBranchId);
+    localStorage.setItem('farmacia-fjk.branch-id', String(nextBranchId));
+  }
+
+  const posPaymentId = new URLSearchParams(window.location.search).get('posPayment');
+  const checkoutOnly = new URLSearchParams(window.location.search).has('checkout');
   const checkoutPanel = (
     <TopPaymentBar
       cart={cart}
@@ -482,6 +548,61 @@ export default function AppController() {
       onToggleExpand={() => undefined}
     />
   );
+
+  if (posPaymentId) {
+    return (
+      <div className="checkout-only-page">
+        <div className="checkout-only-header">
+          <div className="checkout-only-brand">
+            <div className="brand-icon"><span>+</span></div>
+            <div><strong>Farmacia FJK</strong><small>Pago POS seguro con tarjeta</small></div>
+          </div>
+          <button type="button" className="btn-secondary" onClick={() => { window.location.href = '/'; }}>Volver al POS</button>
+        </div>
+        <main className="panel-card" style={{ maxWidth: '560px', margin: '2rem auto', padding: '1.5rem' }}>
+          {paymentSuccess && lastOrder ? (
+            <div style={{ textAlign: 'center' }}>
+              <div className="success-icon" style={{ fontSize: '4rem', marginBottom: '1rem' }}>✅</div>
+              <h2 style={{ color: 'var(--success, #10b981)', marginBottom: '0.5rem' }}>¡Pago confirmado!</h2>
+              <p>La venta del mostrador se pagó correctamente.</p>
+              <div style={{ margin: '1.5rem 0', padding: '1rem', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)' }}>
+                <p style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>Orden: {lastOrder.orderCode}</p>
+                <p style={{ margin: 0 }}>Total pagado: <strong>{money(lastOrder.total)}</strong></p>
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button type="button" className="btn-primary" onClick={() => downloadInvoice(lastOrder.orderCode, lastOrder.invoiceDownloadToken)}>Descargar factura PDF</button>
+                <button type="button" className="btn-secondary" onClick={() => { window.location.href = '/'; }}>Volver al POS</button>
+              </div>
+              {status && <div className="checkout-status-msg" role="status">{status}</div>}
+            </div>
+          ) : (
+            <>
+              <span className="pill-tag">Pago con tarjeta</span>
+              <h1 style={{ margin: '0.75rem 0 0.25rem' }}>Completa tu pago</h1>
+              {posPaymentData && (
+                <div style={{ margin: '1rem 0', padding: '1rem', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)' }}>
+                  <p style={{ margin: '0 0 0.35rem' }}>Orden: <strong>{posPaymentData.orderCode}</strong></p>
+                  <p style={{ margin: 0 }}>Monto a pagar: <strong>{money(posPaymentData.amount / 100)}</strong></p>
+                </div>
+              )}
+              {posPaymentLoading && <div className="checkout-status-msg" role="status">Cargando el pago…</div>}
+              {!posPaymentLoading && paymentClientSecret && <StripePaymentForm clientSecret={paymentClientSecret} onPaymentSuccess={() => {
+                if (!posPaymentData) return;
+                setPosPaymentData((current) => current ? { ...current, status: 'succeeded' } : current);
+                handlePaymentSuccess({
+                  orderCode: posPaymentData.orderCode,
+                  total: posPaymentData.amount / 100,
+                  invoiceDownloadToken: posPaymentData.invoiceDownloadToken
+                });
+              }} />}
+              {!posPaymentLoading && !paymentClientSecret && status && <div className="checkout-status-msg" role="status">{status}</div>}
+              {posPaymentData?.status === 'processing' && <div className="checkout-status-msg" role="status">El pago está en proceso. Esta pantalla se actualizará al confirmarse.</div>}
+            </>
+          )}
+        </main>
+      </div>
+    );
+  }
 
   if (checkoutOnly) {
 // Show payment success screen
@@ -561,7 +682,7 @@ export default function AppController() {
       <TopHeader
         branches={branches}
         branchId={branchId}
-        onSelectBranch={setBranchId}
+        onSelectBranch={handleSelectBranch}
         cartCount={cartCount}
         cartTotal={cartTotal}
         activePortal={activePortal}

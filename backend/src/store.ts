@@ -918,7 +918,6 @@ export class PharmacyStore {
 
   createPosSale(input: PosSaleInput, cashierEmployeeId: number) {
     this.assertReady();
-    const customer = this.upsertCustomer(input.customer);
     const items = input.items.map((item) => {
       const product = this.snapshot.products.find((candidate) => candidate.id === item.productId);
       if (!product) {
@@ -934,6 +933,19 @@ export class PharmacyStore {
         subtotal: item.quantity * product.price
       };
     });
+    const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+    const normalizedCode = input.discountCode?.trim().toUpperCase() || null;
+    const discount = normalizedCode
+      ? this.snapshot.discountCodes.find((item) => item.code === normalizedCode)
+      : null;
+    if (normalizedCode && !discount) throw new Error('El código de descuento no existe');
+    if (discount) assertDiscountCodeUsable(discount, input.customer.email, this.snapshot.discountRedemptions);
+    const discountAmount = discount ? calculateDiscountAmount(subtotal, discount.type, discount.value) : 0;
+    const total = subtotal - discountAmount;
+    if (input.cashReceived !== undefined && input.cashReceived < total) {
+      throw new Error(`El pago es insuficiente. Debe recibir al menos Q${total.toFixed(2)}.`);
+    }
+    const customer = this.upsertCustomer(input.customer);
 
     const order: Order = {
       id: ++this.snapshot.counters.order,
@@ -949,7 +961,10 @@ export class PharmacyStore {
       requiresPrescription: false,
       prescriptionWebUrl: null,
       prescriptionDeliveryUrl: null,
-      total: items.reduce((sum, item) => sum + item.subtotal, 0),
+      subtotal,
+      discountAmount,
+      discountCode: discount?.code ?? null,
+      total,
       createdAt: now(),
       paidAt: now(),
       releasedAt: null
@@ -965,6 +980,15 @@ export class PharmacyStore {
         unitPrice: item.product.price,
         subtotal: item.subtotal,
         assignedLotIds: this.consumeStock(input.branchId, item.product.id, item.quantity)
+      });
+    }
+    if (discount) {
+      this.snapshot.discountRedemptions.push({
+        discountCodeId: discount.id,
+        orderId: order.id,
+        customerEmail: input.customer.email.trim().toLowerCase(),
+        status: 'REDEEMED',
+        createdAt: now()
       });
     }
     this.snapshot.payments.push({
@@ -983,6 +1007,9 @@ export class PharmacyStore {
       satCorrelative: `SAT-${String(order.id).padStart(8, '0')}`,
       issuedAt: now(),
       total: order.total,
+      subtotal,
+      discountAmount,
+      discountCode: discount?.code ?? null,
       emailStatus: 'PENDING',
       emailSentAt: null,
       emailError: null,

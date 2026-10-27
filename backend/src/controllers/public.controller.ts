@@ -143,15 +143,25 @@ export async function getPosPayment(req: Request, res: Response) {
 
   try {
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    if (!paymentIntent.metadata.posPayment) {
+    const orderId = Number(paymentIntent.metadata.orderId);
+    const orderCode = paymentIntent.metadata.orderCode;
+    if (
+      paymentIntent.metadata.posPayment !== 'true' ||
+      !Number.isInteger(orderId) ||
+      orderId <= 0 ||
+      !orderCode ||
+      (paymentIntent.status !== 'succeeded' && !paymentIntent.client_secret)
+    ) {
       return res.status(404).json({ success: false, message: 'Pago no encontrado' });
     }
     return res.json({
       success: true,
       data: {
-        clientSecret: paymentIntent.client_secret,
+        clientSecret: paymentIntent.client_secret ?? '',
         amount: paymentIntent.amount,
-        status: paymentIntent.status
+        status: paymentIntent.status,
+        orderCode,
+        invoiceDownloadToken: createInvoiceDownloadToken(orderId)
       }
     });
   } catch {
@@ -251,6 +261,7 @@ export async function checkout(req: Request, res: Response) {
         address: payload.address ?? '',
         latitude: payload.deliveryLatitude ?? null,
         longitude: payload.deliveryLongitude ?? null,
+        total: created.order.total,
         deliveryMode: payload.deliveryMode
       });
     }

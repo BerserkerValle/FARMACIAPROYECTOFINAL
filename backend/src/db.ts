@@ -168,14 +168,20 @@ export async function updateDatabaseCustomerAccount(id: number, input: { fullNam
 }
 
 /** Registra el seguimiento GPS y telemetrÃ­a de una orden de entrega a domicilio */
-export async function createDatabaseDeliveryTracking(input: { orderCode: string; customerId: number | null; branchId: number; address: string; latitude: number | null; longitude: number | null; deliveryMode: string }) {
+export async function createDatabaseDeliveryTracking(input: { orderCode: string; customerId: number | null; branchId: number; address: string; latitude: number | null; longitude: number | null; total: number; deliveryMode: string }) {
   if (input.deliveryMode !== 'DELIVERY') return;
   const database = requirePool();
   await database.query(
-    `INSERT INTO pharmacy_delivery_tracking (order_code, customer_account_id, branch_id, address, latitude, longitude, status)
-     VALUES ($1, $2, $3, $4, $5, $6, 'CREATED')
-     ON CONFLICT (order_code) DO UPDATE SET customer_account_id = EXCLUDED.customer_account_id, address = EXCLUDED.address, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude`,
-    [input.orderCode, input.customerId, input.branchId, input.address, input.latitude, input.longitude]
+    `INSERT INTO pharmacy_delivery_tracking (order_code, customer_account_id, branch_id, address, latitude, longitude, total, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'CREATED')
+     ON CONFLICT (order_code) DO UPDATE SET
+       customer_account_id = EXCLUDED.customer_account_id,
+       branch_id = EXCLUDED.branch_id,
+       address = EXCLUDED.address,
+       latitude = EXCLUDED.latitude,
+       longitude = EXCLUDED.longitude,
+       total = EXCLUDED.total`,
+    [input.orderCode, input.customerId, input.branchId, input.address, input.latitude, input.longitude, input.total]
   );
 }
 
@@ -198,16 +204,20 @@ export async function listDatabaseDeliveries(branchId: number, scope?: { employe
   const database = requirePool();
   const restrictToAssignee = Boolean(scope?.restrictToAssignee);
   const result = await database.query(
-    `SELECT id, order_code AS code, branch_id AS "branchId", address, status,
-            latitude, longitude, customer_account_id AS "customerId",
-            rider_latitude AS "riderLatitude", rider_longitude AS "riderLongitude",
-            assigned_employee_id AS "assignedEmployeeId",
-            updated_at AS "updatedAt"
-       FROM pharmacy_delivery_tracking
-      WHERE branch_id = $1
-        AND status <> 'DELIVERED'
-        AND ($2::boolean = false OR assigned_employee_id IS NULL OR assigned_employee_id = $3)
-      ORDER BY created_at`,
+    `SELECT tracking.id, tracking.order_code AS code, tracking.branch_id AS "branchId",
+            branch.nombre_sucursal AS "branchName",
+            tracking.address, tracking.status, tracking.latitude, tracking.longitude,
+            tracking.total, customer.id AS "customerId", customer.full_name AS "customerName",
+            tracking.rider_latitude AS "riderLatitude", tracking.rider_longitude AS "riderLongitude",
+            tracking.assigned_employee_id AS "assignedEmployeeId",
+            tracking.updated_at AS "updatedAt"
+       FROM pharmacy_delivery_tracking tracking
+       LEFT JOIN Sucursales branch ON branch.id_sucursal = tracking.branch_id
+       LEFT JOIN pharmacy_customer_accounts customer ON customer.id = tracking.customer_account_id
+      WHERE tracking.branch_id = $1
+        AND tracking.status <> 'DELIVERED'
+        AND ($2::boolean = false OR tracking.assigned_employee_id IS NULL OR tracking.assigned_employee_id = $3)
+      ORDER BY tracking.created_at`,
     [branchId, restrictToAssignee, scope?.employeeId ?? null]
   );
   return result.rows;
@@ -1317,7 +1327,7 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
  * 3. InserciÃ³n de movimientos de kardex.
  * 4. GeneraciÃ³n de factura fiscal electrÃ³nica y sus partidas detalladas.
  */
-export async function createDatabaseCheckout(input: PublicCheckoutInput) {
+export async function createDatabaseCheckout(input: PublicCheckoutInput, options: { source: 'POS'; cashReceived?: number } | null = null) {
   const database = requirePool();
   const client = await database.connect();
   try {
@@ -1385,7 +1395,8 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
         if (remaining <= 0) break;
         const take = Math.min(remaining, Number(row.cantidad_disponible));
         await client.query('UPDATE Stock_Sucursal SET cantidad_disponible = cantidad_disponible - $1, ultima_modificacion = CURRENT_TIMESTAMP WHERE id_lote = $2 AND id_sucursal = $3', [take, row.id_lote, input.branchId]);
-        await client.query(`INSERT INTO MovimientoInventario (id_lote, tipo_movimiento, cantidad, motivo) VALUES ($1, 'VENTA', $2, 'Reserva de venta web')`, [row.id_lote, take]);
+        const reason = options?.source === 'POS' ? 'Venta POS' : 'Reserva de venta web';
+        await client.query(`INSERT INTO MovimientoInventario (id_lote, tipo_movimiento, cantidad, motivo) VALUES ($1, 'VENTA', $2, $3)`, [row.id_lote, take, reason]);
         lots.push({ id: Number(row.id_lote), quantity: take, price: Number(row.precio_venta) });
         remaining -= take;
       }
@@ -1396,11 +1407,14 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
     const discountAmount = discount ? calculateDiscountAmount(subtotal, discount.type, discount.value) : 0;
     const total = subtotal - discountAmount;
+    if (options?.source === 'POS' && options.cashReceived !== undefined && options.cashReceived < total) {
+      throw new Error(`El pago es insuficiente. Debe recibir al menos Q${total.toFixed(2)}.`);
+    }
     const invoiceResult = await client.query(
       `INSERT INTO Facturas (id_cliente, id_sucursal, fecha_emision, correlativo_sat, total_neto,
                              subtotal_bruto, descuento_aplicado, codigo_descuento)
        VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4, $5, $6, $7) RETURNING id_factura`,
-      [customer.id_cliente, input.branchId, `WEB-${Date.now()}`, total, subtotal, discountAmount, discount?.code ?? null]
+      [customer.id_cliente, input.branchId, `${options?.source ?? 'WEB'}-${Date.now()}`, total, subtotal, discountAmount, discount?.code ?? null]
     );
     const invoiceId = Number(invoiceResult.rows[0].id_factura);
     if (discount) {
@@ -1415,18 +1429,32 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput) {
         await client.query(`INSERT INTO Detalle_Facturas (id_factura, id_lote, cantidad_vendida, precio_venta_aplicado, subtotal) VALUES ($1, $2, $3, $4, $5)`, [invoiceId, lot.id, lot.quantity, lot.price, lot.quantity * lot.price]);
       }
     }
+    if (options?.source === 'POS') {
+      const methodResult = await client.query(
+        `INSERT INTO MetodosPago (nombre_metodo) VALUES ('Efectivo') ON CONFLICT DO NOTHING RETURNING id_metodo_pago`
+      );
+      const methodId = methodResult.rows[0]?.id_metodo_pago
+        ?? (await client.query(`SELECT id_metodo_pago FROM MetodosPago WHERE LOWER(nombre_metodo) = 'efectivo' LIMIT 1`)).rows[0]?.id_metodo_pago;
+      if (!methodId) throw new Error('No se pudo registrar el método de pago en efectivo');
+      await client.query(
+        `INSERT INTO Pagos (id_factura, id_metodo_pago, transaccion_pasarela_id, monto_pagado)
+         VALUES ($1, $2, $3, $4)`,
+        [invoiceId, methodId, `cash-${invoiceId}`, total]
+      );
+    }
     await client.query('COMMIT');
     return {
       order: {
         id: invoiceId,
-        code: `WEB-${String(invoiceId).padStart(6, '0')}`,
+        code: `${options?.source ?? 'WEB'}-${String(invoiceId).padStart(6, '0')}`,
+        source: options?.source ?? 'WEB',
         subtotal,
         discountAmount,
         discountCode: discount?.code ?? null,
         total,
         deliveryMode: input.deliveryMode,
-        status: 'AWAITING_PAYMENT',
-        paymentStatus: 'PENDING'
+        status: options?.source === 'POS' ? 'PAID' : 'AWAITING_PAYMENT',
+        paymentStatus: options?.source === 'POS' ? 'PAID' : 'PENDING'
       },
       customer,
       items: items.map((item) => ({
@@ -1485,7 +1513,7 @@ export interface DatabaseInvoiceDataForEmail {
   paymentMethod: string;
 }
 
-/** Recupera desde PostgreSQL todos los datos que necesita el PDF de una factura web. */
+/** Recupera desde PostgreSQL todos los datos que necesita el PDF de una factura. */
 export async function getDatabaseInvoiceDataForEmail(invoiceId: number): Promise<DatabaseInvoiceDataForEmail | null> {
   const database = requirePool();
   const invoiceResult = await database.query(
@@ -1536,12 +1564,14 @@ export async function getDatabaseInvoiceDataForEmail(invoiceId: number): Promise
     [invoiceId]
   );
   const paymentRow = paymentResult.rows[0];
+  const isPosInvoice = String(row.correlativo_sat ?? '').startsWith('POS-');
+  const orderCode = `${isPosInvoice ? 'POS' : 'WEB'}-${String(invoiceId).padStart(6, '0')}`;
   const trackingResult = await database.query(
     `SELECT email_status, email_sent_at, email_error, email_attempt_at
        FROM pharmacy_delivery_tracking
       WHERE order_code = $1
       LIMIT 1`,
-    [`WEB-${String(invoiceId).padStart(6, '0')}`]
+    [orderCode]
   );
   const tracking = trackingResult.rows[0];
   const issuedAt = new Date(String(row.fecha_emision)).toISOString();
@@ -1554,14 +1584,14 @@ export async function getDatabaseInvoiceDataForEmail(invoiceId: number): Promise
     createdAt: issuedAt, updatedAt: issuedAt
   };
   const invoice: Invoice = {
-    id: invoiceId, orderId: invoiceId, invoiceNumber: `WEB-${String(invoiceId).padStart(6, '0')}`,
+    id: invoiceId, orderId: invoiceId, invoiceNumber: orderCode,
     satCorrelative: String(row.correlativo_sat ?? ''), issuedAt, total, subtotal, discountAmount,
     discountCode: row.codigo_descuento == null ? null : String(row.codigo_descuento),
     emailStatus: tracking?.email_status, emailSentAt: tracking?.email_sent_at ? new Date(tracking.email_sent_at).toISOString() : null,
     emailError: tracking?.email_error ?? null, emailAttemptAt: tracking?.email_attempt_at ? new Date(tracking.email_attempt_at).toISOString() : null
   };
   const order: Order = {
-    id: invoiceId, code: invoice.invoiceNumber, source: 'WEB', branchId: Number(row.id_sucursal), customerId: customer.id,
+    id: invoiceId, code: invoice.invoiceNumber, source: isPosInvoice ? 'POS' : 'WEB', branchId: Number(row.id_sucursal), customerId: customer.id,
     customerEmail: customer.email, employeeId: null, deliveryMode: 'PICKUP', address: null, assignedEmployeeId: null,
     deliveryLatitude: null, deliveryLongitude: null, status: paymentRow ? 'PAID' : 'AWAITING_PAYMENT',
     paymentStatus: paymentRow ? 'PAID' : 'PENDING', requiresPrescription: false, prescriptionWebUrl: null,
@@ -1580,7 +1610,7 @@ export async function getDatabaseInvoiceDataForEmail(invoiceId: number): Promise
     }
   }));
   const payment: Payment | null = paymentRow ? {
-    id: Number(paymentRow.id_pago), orderId: invoiceId, provider: String(paymentRow.nombre_metodo ?? '').toLowerCase() === 'stripe' ? 'stripe' : 'demo',
+    id: Number(paymentRow.id_pago), orderId: invoiceId, provider: String(paymentRow.nombre_metodo ?? '').toLowerCase() === 'stripe' ? 'stripe' : String(paymentRow.nombre_metodo ?? '').toLowerCase() === 'efectivo' ? 'cash' : 'demo',
     transactionId: String(paymentRow.transaccion_pasarela_id ?? ''), amount: Number(paymentRow.monto_pagado ?? total), status: 'PAID',
     createdAt: paymentRow.fecha_pago ? new Date(paymentRow.fecha_pago).toISOString() : issuedAt
   } : null;
@@ -2030,6 +2060,7 @@ export async function initializeDatabase() {
       longitude NUMERIC,
       rider_latitude NUMERIC,
       rider_longitude NUMERIC,
+      total NUMERIC(12, 2) NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -2039,6 +2070,15 @@ export async function initializeDatabase() {
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS longitude NUMERIC');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS rider_latitude NUMERIC');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS rider_longitude NUMERIC');
+  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS total NUMERIC(12, 2) NOT NULL DEFAULT 0');
+  await pool.query(`
+    UPDATE pharmacy_delivery_tracking tracking
+       SET total = invoice.total_neto
+      FROM Facturas invoice
+     WHERE tracking.order_code ~ '^WEB-[0-9]+$'
+       AND substring(tracking.order_code from 5)::BIGINT = invoice.id_factura
+       AND tracking.total = 0
+  `);
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS assigned_employee_id INTEGER');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT \'PENDING\'');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS email_status TEXT NOT NULL DEFAULT \'PENDING\'');
