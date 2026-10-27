@@ -85,3 +85,10 @@ export function resolveBranchScope(actorRole: Role | string | null | undefined, 
   if (actorBranchId != null) return actorBranchId;
   return requestedBranchId;
 }
+
+export function resolveOperationalBranchScope(actorRole: Role | string | null | undefined, actorBranchId: number | null, requestedBranchId: number | null): number | null {
+  if (actorRole === 'Administrador' || actorRole === 'Gerente' || actorRole === 'Cajero' || actorRole === 'Bodeguero') {
+    return requestedBranchId ?? actorBranchId;
+  }
+  return resolveBranchScope(actorRole, actorBranchId, requestedBranchId);
+}

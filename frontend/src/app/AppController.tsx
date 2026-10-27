@@ -608,7 +608,7 @@ export default function AppController() {
       {activePortal === 'customer' && !customer && <CustomerAuthPage onLogin={handleCustomerLogin} />}
       {customer && customerToken && activePortal === 'customer' && <CustomerOrdersPage customer={customer} customerToken={customerToken} onUpdate={handleCustomerUpdate} onLogout={handleCustomerLogout} />}
 
-      {activePortal === 'pos' && <PosPage token={token} profile={profile} categories={categories} />}
+      {activePortal === 'pos' && <PosPage token={token} profile={profile} categories={categories} branches={branches} />}
       {activePortal === 'warehouse' && <WarehousePage token={token} categories={categories} />}
       {activePortal === 'delivery' && <DeliveryPage token={token} />}
       {activePortal === 'admin' && <AdminPage token={token} canManageDiscountCodes={profile?.role === 'Administrador' || profile?.role === 'Gerente'} />}

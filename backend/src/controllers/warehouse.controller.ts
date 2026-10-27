@@ -38,7 +38,7 @@ import {
   updateDatabaseProduct 
 } from '../db.js';
 import { store } from '../store.js';
-import { resolveBranchScope } from '../utils/permissions.js';
+import { resolveOperationalBranchScope } from '../utils/permissions.js';
 import { getUploadsDir } from '../utils.js';
 import { cloudinaryEnabled, uploadProductImageToCloudinary } from '../cloudinary.js';
 
@@ -132,7 +132,7 @@ function apiBaseUrl(req: Request): string {
  */
 export async function lots(req: Request, res: Response) {
   const requested = req.query.branchId ? Number(req.query.branchId) : undefined;
-  const branchId = resolveBranchScope(req.user?.role, req.user?.branchId ?? null, requested ?? null) ?? undefined;
+  const branchId = resolveOperationalBranchScope(req.user?.role, req.user?.branchId ?? null, requested ?? null) ?? undefined;
   const productId = req.query.productId ? Number(req.query.productId) : undefined;
   const data = databaseEnabled ? await listDatabaseLots(branchId, productId) : store.getLots(productId, branchId);
   return res.json({ success: true, data: data ?? [] });
@@ -149,7 +149,7 @@ export async function receive(req: Request, res: Response) {
       return res.status(401).json({ success: false, message: 'No autenticado' });
     }
     const payload = receiveSchema.parse(req.body);
-    const branchId = resolveBranchScope(req.user.role, req.user.branchId, payload.branchId);
+    const branchId = resolveOperationalBranchScope(req.user.role, req.user.branchId, payload.branchId);
     if (!branchId) {
       return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
     }
