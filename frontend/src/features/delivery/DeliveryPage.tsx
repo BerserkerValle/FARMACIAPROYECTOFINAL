@@ -1,214 +1,65 @@
-import { useEffect, useState } from 'react';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import { apiRequest } from '../../api';
+import { useEffect, useRef, useState } from 'react';
+import { apiRequest, uploadPrescription } from '../../api';
 import { money } from '../../lib/catalog';
+import { getDeliveryOrigin, getGoogleDirectionsUrl } from '../../lib/deliveryLocations';
+import type { Branch } from '../../types';
 
-/** Orígenes de texto por nombre de sucursal (fallback cuando no hay coordenadas). */
-const branchTextOrigins: Record<string, string> = {
-  'Antigua Central': 'Paseo Antigua, Entrada o parqueo',
-  'Ciudad Vieja': 'Vista a los Volcanes, Entrada o parqueo',
-  Jocotenango: 'Plaza Jocotenango, Entrada o parqueo',
-  Pastores: 'Parqueo Pastores, Entrada o parqueo',
-  'San Lucas': 'Parqueo San Lucas, Entrada o parqueo',
-  'Santa María': 'Parqueo Santa María, Entrada o parqueo',
-  Dueñas: 'Parqueo Dueñas, Entrada o parqueo',
-  Xela: 'Interplaza Xela, Entrada o parqueo',
-};
-
-/** Componente Leaflet Map con origen y destino */
-function DeliveryMap({
-  originLat,
-  originLng,
-  destinationLat,
-  destinationLng,
-  courierLat,
-  courierLng,
-  branchName,
-}: {
-  originLat?: number | null;
-  originLng?: number | null;
-  destinationLat?: number | null;
-  destinationLng?: number | null;
-  courierLat?: number | null;
-  courierLng?: number | null;
-  branchName?: string | null;
-}) {
-  const mapElementRef = React.useRef<HTMLDivElement | null>(null);
-
-  React.useEffect(() => {
-    if (!mapElementRef.current) return;
-    const map = L.map(mapElementRef.current).setView([14.6, -90.7], 10);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(map);
-
-    // Marcador de origen (sucursal)
-    if (originLat !== null && originLng !== null) {
-      L.marker([originLat, originLng])
-        .addTo(map)
-        .bindPopup(`<b>Origen: ${branchName ?? 'Sucursal'}</b>`)
-        .openPopup();
-    }
-
-    // Marcador de destino (cliente)
-    if (destinationLat !== null && destinationLng !== null) {
-      L.marker([destinationLat, destinationLng])
-        .addTo(map)
-        .bindPopup('<b>Destino: Entrega al cliente</b>');
-    }
-
-    // Marcador de ubicación del repartidor (si está disponible)
-    if (courierLat !== null && courierLng !== null) {
-      L.marker([courierLat, courierLng], {
-        icon: L.icon({
-          iconUrl:
-            'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-          iconSize: [25, 41],
-        }),
-      })
-        .addTo(map)
-        .bindPopup('<b>Repartidor en ruta</b>');
-    }
-
-    // Línea entre origen y destino (cuando estén ambos)
-    if (
-      originLat !== null &&
-      originLng !== null &&
-      destinationLat !== null &&
-      destinationLng !== null
-    ) {
-      L.polyline(
-        [
-          [originLat, originLng],
-          [destinationLat, destinationLng],
-        ],
-        { color: 'green', weight: 4, dashArray: '5, 5' }
-      ).addTo(map);
-    }
-
-    // Línea entre repartidor y destino (si el repartidor está en ruta)
-    if (
-      courierLat !== null &&
-      courierLng !== null &&
-      destinationLat !== null &&
-      destinationLng !== null
-    ) {
-      L.polyline(
-        [
-          [courierLat, courierLng],
-          [destinationLat, destinationLng],
-        ],
-        { color: 'blue', weight: 4 }
-      ).addTo(map);
-    }
-  }, [
-    originLat,
-    originLng,
-    destinationLat,
-    destinationLng,
-    courierLat,
-    courierLng,
-    branchName,
-  ]);
-
-  return <div ref={mapElementRef} style={{ width: '100%', height: '260px' }} />;
-}
-
-/** Determina el enlace de Google Maps si hay datos, o null */
-function useGoogleMapLink(
-  address: string | null,
-  branchName: string | null
-): JSX.Element | null {
-  const originText = getBranchOrigin(branchName ?? '');
-  if (!address || !originText) return null;
-  const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
-    originText
-  )}&destination=${encodeURIComponent(address)}&travelmode=driving`;
-  return <a className="btn-primary" href={googleMapsUrl} target="_blank" rel="noreferrer">
-    Ver ruta en Google Maps
-  </a>;
-}
-
-/** Obtiene el texto del origen de la sucursal */
-function getBranchOrigin(branchName: string): string | null {
-  if (!branchName) return null;
-  const originKey = Object.keys(branchTextOrigins).find(
-    (key) =>
-      key.toLowerCase() === branchName.toLowerCase() ||
-      key.toLowerCase().includes(branchName.toLowerCase()) ||
-      branchName.toLowerCase().includes(key.toLowerCase())
+function GoogleMapLink({ origin, destination }: { origin: string; destination: string }) {
+  const googleMapsUrl = getGoogleDirectionsUrl(origin, destination);
+  return (
+    <a className="btn-primary" href={googleMapsUrl} target="_blank" rel="noreferrer" style={{ width: '100%' }}>
+      Ver ruta en Google Maps
+    </a>
   );
-  return originKey ? branchTextOrigins[originKey] : null;
 }
 
-export function DeliveryPage({ token }: { token: string | null }) {
+export function DeliveryPage({ token, role, branchId }: { token: string | null; role?: string; branchId?: number | null }) {
   const [orders, setOrders] = useState<any[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [status, setStatus] = useState('');
+  const [sharingLocation, setSharingLocation] = useState(false);
   const [recipe, setRecipe] = useState<File | null>(null);
   const [orderId, setOrderId] = useState('');
-  const [mapData, setMapData] = useState({
-    originLat: null as number | null,
-    originLng: null as number | null,
-    destinationLat: null as number | null,
-    destinationLng: null as number | null,
-    courierLat: null as number | null,
-    courierLng: null as number | null,
-    branchName: null as string | null,
-  });
+  const locationWatchId = useRef<number | null>(null);
+  const locationWatchOrderId = useRef<number | null>(null);
+  const lastLocationSentAt = useRef(0);
+  const locationRequestInFlight = useRef(false);
+
+  function stopLocationSharing(updateState = true) {
+    if (locationWatchId.current !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(locationWatchId.current);
+      locationWatchId.current = null;
+    }
+    locationWatchOrderId.current = null;
+    if (updateState) setSharingLocation(false);
+  }
+
+  useEffect(() => () => stopLocationSharing(false), []);
 
   async function loadRoute() {
     if (!token) return;
-    const data = await apiRequest<any[]>(`/api/pos/deliveries?branchId=1`, {}, token);
-    setOrders(data);
-
-    if (data && data.length > 0) {
-      const firstOrder = data[0];
-      const branchName = firstOrder.branch_name ?? String(firstOrder.branchId);
-      const originCoords = [
-        firstOrder.branch_latitude,
-        firstOrder.branch_longitude,
-      ].filter(
-        (v): v is number => typeof v === 'number'
-      );
-      const destinationCoords = [
-        firstOrder.deliveryLatitude,
-        firstOrder.deliveryLongitude,
-      ].filter(
-        (v): v is number => typeof v === 'number'
-      );
-      const courierCoords = [
-        firstOrder.courier_latitude,
-        firstOrder.courier_longitude,
-      ].filter(
-        (v): v is number => typeof v === 'number'
-      );
-
-      setMapData({
-        originLat: originCoords[0] || null,
-        originLng: originCoords[1] || null,
-        destinationLat: destinationCoords[0] || null,
-        destinationLng: destinationCoords[1] || null,
-        courierLat: courierCoords[0] || null,
-        courierLng: courierCoords[1] || null,
-        branchName,
-      });
-    } else {
-      setMapData({
-        originLat: null,
-        originLng: null,
-        destinationLat: null,
-        destinationLng: null,
-        courierLat: null,
-        courierLng: null,
-        branchName: null,
-      });
+    const branches = await apiRequest<Branch[]>('/api/public/branches');
+    const isSupervisor = role === 'Administrador' || role === 'Gerente';
+    const routeBranches = isSupervisor
+      ? branches
+      : branches.filter((branch) => branch.id === branchId);
+    if (routeBranches.length === 0) {
+      setOrders([]);
+      setStatus(isSupervisor
+        ? 'No hay sucursales disponibles para consultar entregas.'
+        : 'El usuario no tiene una sucursal asignada para consultar las entregas.');
+      return;
     }
+    const routesByBranch = await Promise.all(routeBranches.map(async (branch) => {
+      const deliveries = await apiRequest<any[]>(`/api/pos/deliveries?branchId=${branch.id}`, {}, token);
+      return deliveries.map((delivery) => ({ ...delivery, branch }));
+    }));
+    setOrders(routesByBranch.flat());
+    setStatus('');
   }
   useEffect(() => {
     loadRoute().catch((error) => setStatus(error.message));
-  }, [token]);
+  }, [token, role, branchId]);
 
   async function uploadProof() {
     try {
@@ -229,27 +80,72 @@ export function DeliveryPage({ token }: { token: string | null }) {
       setStatus('Este dispositivo no permite compartir ubicación');
       return;
     }
-    navigator.geolocation.getCurrentPosition(async (position) => {
+    if (nextStatus === 'DELIVERED') {
+      stopLocationSharing();
+      try {
+        await apiRequest(`/api/pos/deliveries/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: nextStatus }),
+        }, token);
+        setStatus('Entrega marcada como completada.');
+        await loadRoute();
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'No se pudo actualizar la entrega');
+      }
+      return;
+    }
+
+    stopLocationSharing();
+    lastLocationSentAt.current = 0;
+    locationRequestInFlight.current = false;
+    setStatus('Esperando ubicación GPS para iniciar el seguimiento...');
+    try {
+      await apiRequest(`/api/pos/deliveries/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: nextStatus }),
+      }, token);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo iniciar el seguimiento');
+      return;
+    }
+    locationWatchOrderId.current = id;
+    locationWatchId.current = navigator.geolocation.watchPosition(async (position) => {
+      const now = Date.now();
+      if (locationRequestInFlight.current || now - lastLocationSentAt.current < 10000) return;
+      lastLocationSentAt.current = now;
+      locationRequestInFlight.current = true;
       try {
         await apiRequest(`/api/pos/deliveries/${id}`, {
           method: 'PATCH',
           body: JSON.stringify({
-            status: nextStatus,
-            courier_latitude: position.coords.latitude,
-            courier_longitude: position.coords.longitude,
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
           }),
         }, token);
-        setStatus(
-          nextStatus === 'DELIVERED'
-            ? 'Entrega marcada como completada.'
-            : 'Ubicación compartida. El cliente ya puede verla.'
-        );
-        loadRoute();
+        setStatus('Ubicación compartida. El cliente ya puede ver el avance.');
       } catch (error) {
-        setStatus(error instanceof Error ? error.message : 'No se pudo actualizar la entrega');
+        setStatus(error instanceof Error ? error.message : 'No se pudo actualizar la ubicación');
+      } finally {
+        locationRequestInFlight.current = false;
       }
-    }, () => setStatus('Debes permitir la ubicación para iniciar la entrega'));
+    }, (error) => {
+      setStatus(error.code === error.PERMISSION_DENIED
+        ? 'Debes permitir la ubicación para iniciar la entrega.'
+        : 'No se pudo obtener la ubicación GPS del dispositivo.');
+      stopLocationSharing();
+    }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+    setSharingLocation(true);
   }
+
+  const selectedOrigin = selectedOrder?.branch ? getDeliveryOrigin(selectedOrder.branch) : null;
+  const destinationLatitude = selectedOrder?.deliveryLatitude ?? selectedOrder?.latitude;
+  const destinationLongitude = selectedOrder?.deliveryLongitude ?? selectedOrder?.longitude;
+  const selectedDestination = selectedOrder
+    ? Number.isFinite(Number(destinationLatitude)) && Number.isFinite(Number(destinationLongitude))
+      && destinationLatitude != null && destinationLongitude != null
+      ? `${destinationLatitude},${destinationLongitude}`
+      : selectedOrder.address?.trim() || ''
+    : '';
 
   return (
     <div className="internal-page-container">
@@ -261,34 +157,36 @@ export function DeliveryPage({ token }: { token: string | null }) {
           </div>
           <div className="item-list-stack">
             {orders.map((order, idx) => (
-              <button
+              <article
                 key={order.id}
-                type="button"
                 className="route-row"
-                onClick={() => setSelectedOrder(order)}
-                style={{ width: '100%', textAlign: 'left', border: 0, cursor: 'pointer' }}
               >
                 <div className="route-num">{idx + 1}</div>
-                <div>
+                <div className="delivery-route-content">
                   <strong>{order.code}</strong>
                   <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
-                    {order.customer?.name ?? 'Cliente'} · {order.branch?.name}
+                    {order.customer?.name ?? 'Cliente'} · {order.branch?.name ?? `Sucursal ${order.branchId}`}
                   </p>
                   <small>{order.address || 'Sin dirección registrada'}</small>
                   <small>{money(order.total)} · {order.status}</small>
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }} onClick={(event) => event.stopPropagation()}>
+                  <div className="delivery-route-actions">
                     <button type="button" className="btn-secondary" onClick={() => setSelectedOrder(order)}>
                       Ver ruta
                     </button>
                     <button type="button" className="btn-secondary" onClick={() => updateDeliveryLocation(order.id)}>
-                      Iniciar / actualizar ruta
+                      Iniciar / actualizar GPS
                     </button>
                     <button type="button" className="btn-secondary" onClick={() => updateDeliveryLocation(order.id, 'DELIVERED')}>
                       Marcar entregado
                     </button>
+                    {sharingLocation && locationWatchOrderId.current === order.id && (
+                      <button type="button" className="btn-secondary" onClick={() => { stopLocationSharing(); setStatus('Se pausó el envío de ubicación.'); }}>
+                        Detener ubicación
+                      </button>
+                    )}
                   </div>
                 </div>
-              </button>
+              </article>
             ))}
           </div>
         </div>
@@ -306,18 +204,13 @@ export function DeliveryPage({ token }: { token: string | null }) {
             <p>
               <strong>Dirección:</strong> {selectedOrder.address || 'No registrada'}
             </p>
-            {/* Mostrar mapa Leaflet con origen, destino y reparto */}
-            <DeliveryMap
-              originLat={mapData.originLat}
-              originLng={mapData.originLng}
-              destinationLat={mapData.destinationLat}
-              destinationLng={mapData.destinationLng}
-              courierLat={mapData.courierLat}
-              courierLng={mapData.courierLng}
-              branchName={mapData.branchName}
-            />
-            {/* Enlace externo a Google Maps */}
-            {useGoogleMapLink(selectedOrder.address, selectedOrder.branch?.name)}
+            {selectedOrigin && selectedDestination ? (
+              <GoogleMapLink origin={selectedOrigin} destination={selectedDestination} />
+            ) : (
+              <p className="checkout-status-msg">
+                No se pudo obtener el origen de la sucursal o el destino del cliente para crear la ruta.
+              </p>
+            )}
             {selectedOrder.address ? (
               <p>
                 <strong>Dirección del cliente:</strong> {selectedOrder.address}

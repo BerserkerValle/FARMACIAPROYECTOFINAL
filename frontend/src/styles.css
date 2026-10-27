@@ -5504,6 +5504,48 @@ body {
   animation: skeletonShimmer 1.5s ease-in-out infinite;
 }
 
+.delivery-route-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.delivery-route-content > small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.delivery-route-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .delivery-route-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .delivery-route-actions > button,
+  .delivery-route-actions > a {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .route-row {
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding: 0.8rem;
+  }
+
+  .route-num {
+    width: 30px;
+    height: 30px;
+  }
+}
+
 /* Tab panel container */
 #admin-tab-panels {
   animation: fadeIn var(--transition-fast);

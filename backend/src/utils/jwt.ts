@@ -15,8 +15,8 @@ function getJwtExpiresIn(): jwt.SignOptions['expiresIn'] {
   return (process.env.JWT_EXPIRES_IN || '8h') as jwt.SignOptions['expiresIn'];
 }
 
-export function createEmployeeToken(employeeId: number) {
-  return jwt.sign({ tokenType: 'employee' }, getJwtSecret(), {
+export function createEmployeeToken(employeeId: number, email?: string) {
+  return jwt.sign({ tokenType: 'employee', ...(email ? { email: email.trim().toLowerCase() } : {}) }, getJwtSecret(), {
     subject: String(employeeId),
     issuer: JWT_ISSUER,
     expiresIn: getJwtExpiresIn(),
@@ -24,15 +24,21 @@ export function createEmployeeToken(employeeId: number) {
   });
 }
 
-export function getEmployeeIdFromToken(token: string) {
+export function getEmployeeIdentityFromToken(token: string): { employeeId: number; email: string | null } | null {
   try {
     const payload = jwt.verify(token, getJwtSecret(), { issuer: JWT_ISSUER, algorithms: ['HS256'] });
     if (typeof payload === 'string' || payload.tokenType !== 'employee' || !payload.sub || typeof payload.exp !== 'number') return null;
     const employeeId = Number(payload.sub);
-    return Number.isInteger(employeeId) && employeeId > 0 ? employeeId : null;
+    if (!Number.isInteger(employeeId) || employeeId <= 0) return null;
+    const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : null;
+    return { employeeId, email: email || null };
   } catch {
     return null;
   }
+}
+
+export function getEmployeeIdFromToken(token: string) {
+  return getEmployeeIdentityFromToken(token)?.employeeId ?? null;
 }
 
 export function createCustomerToken(customerId: number) {

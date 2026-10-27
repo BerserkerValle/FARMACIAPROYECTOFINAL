@@ -120,7 +120,7 @@ export async function login(req: Request, res: Response) {
   return res.json({
     success: true,
     data: {
-      token: createEmployeeToken(employeeId),
+      token: createEmployeeToken(employeeId, employee.email),
       employee: {
         employeeId,
         fullName: employee.fullName,

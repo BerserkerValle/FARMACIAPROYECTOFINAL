@@ -240,9 +240,6 @@ export interface Customer {
   updatedAt: string;
   /** Hash bcrypt de la contraseña si el cliente posee cuenta en portal web */
   passwordHash?: string;
-  /** Coordenadas geográficas para despachos y geolocalización */
-  deliveryLatitude?: number | null;
-  deliveryLongitude?: number | null;
 }
 
 /**
@@ -303,6 +300,8 @@ export interface Order {
   assignedEmployeeId?: number | null;
   deliveryLatitude?: number | null;
   deliveryLongitude?: number | null;
+  riderLatitude?: number | null;
+  riderLongitude?: number | null;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   /** Si algún producto de la orden requiere prescripción médica */

@@ -88,6 +88,10 @@ export function fiscalNitSchema(message: string) {
     .refine((nit) => nit === 'CF' || nit.length >= 3, message);
 }
 
+export function hasSanitaryRegistryChanged(current: string | null | undefined, next: string | null | undefined): boolean {
+  return (current ?? '').trim() !== (next ?? '').trim();
+}
+
 /**
  * Parsea un parámetro de cadena a número entero o flotante finito.
  * Evita inyecciones de valores `NaN`, cadenas corruptas o parámetros indefinidos.

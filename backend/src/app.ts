@@ -52,15 +52,7 @@ app.use(helmet({
 }));
 
 // Habilitación de CORS para permitir solicitudes del frontend (Vite/React)
-// Se permite el origen del frontend desplegado y localhost para desarrollo
-// NOTA: Se usa origin: true para reflejar cualquier origen (necesario en Render)
-app.use(cors({
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  exposedHeaders: ['Content-Length', 'Content-Type'],
-  optionsSuccessStatus: 200,
-}));
+app.use(cors({ origin: true, credentials: true }));
 
 // Logger HTTP en consola para desarrollo
 app.use(morgan('dev'));

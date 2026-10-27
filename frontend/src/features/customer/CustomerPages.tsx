@@ -58,12 +58,26 @@ export function CustomerAuthPage({ onLogin }: { onLogin: (token: string, custome
 
 function CustomerLiveMap({ latitude, longitude }: { latitude: number; longitude: number }) {
   const mapElement = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const riderMarkerRef = useRef<L.CircleMarker | null>(null);
   useEffect(() => {
     if (!mapElement.current) return;
     const map = L.map(mapElement.current).setView([latitude, longitude], 15);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
-    L.circleMarker([latitude, longitude], { radius: 9, color: "#1d4ed8", fillColor: "#3b82f6", fillOpacity: 1 }).addTo(map).bindPopup("Ubicación actual del repartidor").openPopup();
-    return () => { map.remove(); };
+    mapRef.current = map;
+    riderMarkerRef.current = L.circleMarker([latitude, longitude], { radius: 9, color: "#1d4ed8", fillColor: "#3b82f6", fillOpacity: 1 })
+      .addTo(map)
+      .bindPopup("Ubicación actual del repartidor")
+      .openPopup();
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      riderMarkerRef.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    mapRef.current?.setView([latitude, longitude], 15);
+    riderMarkerRef.current?.setLatLng([latitude, longitude]);
   }, [latitude, longitude]);
   return <div ref={mapElement} style={{ width: "100%", height: "260px", borderRadius: "8px", overflow: "hidden", marginTop: "0.75rem" }} />;
 }
@@ -119,6 +133,10 @@ export function CustomerOrdersPage({ customer, customerToken, onUpdate, onLogout
     <div className="panel-card" style={{ marginBottom: "1rem" }}><div className="panel-head"><h3>Mi información</h3><div style={{ display: "flex", gap: "0.5rem" }}><button type="button" className="btn-secondary" onClick={() => setEditing(!editing)}>{editing ? "Cancelar" : "Editar datos"}</button><button type="button" className="btn-secondary" onClick={onLogout}>Cerrar sesión</button></div></div>
       {editing ? <div className="form-grid-2"><div className="form-field"><label>Nombre completo</label><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></div><div className="form-field"><label>Correo</label><input value={form.email} disabled /></div><div className="form-field"><label>Teléfono</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div><div className="form-field"><label>NIT o C/F</label><input value={form.nit} onChange={(e) => setForm({ ...form, nit: e.target.value })} /></div><div className="form-field" style={{ gridColumn: "1 / -1" }}><label>Dirección principal</label><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Calle, municipio, número de casa" /></div><button type="button" className="btn-primary" onClick={saveProfile}>Guardar datos</button></div> : <p>{customer.fullName} · {customer.phone} · {customer.address || "Sin dirección guardada"}</p>}
     </div>
-    {status && <div className="checkout-status-msg">{status}</div>}<div className="item-list-stack">{orders.map((order) => <div key={order.code} className="compact-list-row"><div><strong>{order.code}</strong><p>{order.address}</p><small>Estado: {order.status} · Última actualización: {new Date(order.updatedAt).toLocaleString("es-GT")}</small>{order.latitude && order.longitude && <CustomerLiveMap latitude={Number(order.latitude)} longitude={Number(order.longitude)} />}</div><div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", alignItems: "flex-end" }}>{order.latitude && order.longitude && <span className="pill-tag">Repartidor en ruta</span>}{order.paymentStatus === "PAID" && <button type="button" className="btn-secondary" onClick={() => downloadInvoice(order.id)} disabled={downloadingInvoice === order.id} style={{ fontSize: "0.75rem", padding: "0.3rem 0.6rem" }}>{downloadingInvoice === order.id ? "Descargando..." : "Descargar factura"}</button>}</div></div>)}</div>
+    {status && <div className="checkout-status-msg">{status}</div>}<div className="item-list-stack">{orders.map((order) => {
+      const hasRiderLocation = order.latitude != null && order.longitude != null
+        && Number.isFinite(Number(order.latitude)) && Number.isFinite(Number(order.longitude));
+      return <div key={order.code} className="compact-list-row"><div><strong>{order.code}</strong><p>{order.address}</p><small>Estado: {order.status} · Última actualización: {new Date(order.updatedAt).toLocaleString("es-GT")}</small>{hasRiderLocation ? <CustomerLiveMap latitude={Number(order.latitude)} longitude={Number(order.longitude)} /> : <small>El mapa aparecerá cuando el repartidor comparta su ubicación.</small>}</div><div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", alignItems: "flex-end" }}>{hasRiderLocation && <span className="pill-tag">Repartidor en ruta</span>}{order.paymentStatus === "PAID" && <button type="button" className="btn-secondary" onClick={() => downloadInvoice(order.id)} disabled={downloadingInvoice === order.id} style={{ fontSize: "0.75rem", padding: "0.3rem 0.6rem" }}>{downloadingInvoice === order.id ? "Descargando..." : "Descargar factura"}</button>}</div></div>;
+    })}</div>
   </div></div>;
 }

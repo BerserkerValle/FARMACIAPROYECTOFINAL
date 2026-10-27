@@ -2,16 +2,16 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { apiRequest } from "../../api";
 import { ProductDetailModal } from "../../components/ProductDetailModal";
-import type { Branch, Category, EmployeeProfile, ProductCard } from "../../types";
+import type { Category, EmployeeProfile, ProductCard } from "../../types";
 import { getCategoryHierarchyIds, money } from "../../lib/catalog";
 
-export function PosPage({ token, profile, categories, branches = [] }: { token: string | null; profile: EmployeeProfile | null; categories?: Category[]; branches?: Branch[] }) {
+export function PosPage({ token, profile, categories }: { token: string | null; profile: EmployeeProfile | null; categories?: Category[] }) {
   const [orders, setOrders] = useState<any[]>([]);
   const [products, setProducts] = useState<ProductCard[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | "all">("all");
   const [status, setStatus] = useState("");
-  const [branchId, setBranchId] = useState(profile?.branchId ?? 1);
+  const [branchId] = useState(profile?.branchId ?? 1);
   const [sale, setSale] = useState({ name: "Cliente de mostrador", nit: "CF", email: "mostrador@demo.com", phone: "0000-0000", productId: 1, quantity: 1, cashReceived: "" });
   const [selectedProductForModal, setSelectedProductForModal] = useState<ProductCard | null>(null);
   const [qrPayment, setQrPayment] = useState<{ orderCode: string; paymentUrl: string; imageUrl: string } | null>(null);
@@ -26,14 +26,7 @@ export function PosPage({ token, profile, categories, branches = [] }: { token: 
     ]);
     setOrders(ordersData);
     setProducts(prodsData);
-    if (prodsData.length > 0) {
-      setSale((prev) => ({
-        ...prev,
-        productId: prodsData.find((product) => product.id === prev.productId)?.id
-          ?? prodsData.find((product) => product.stock > 0)?.id
-          ?? prodsData[0].id
-      }));
-    }
+    if (prodsData.length > 0 && !sale.productId) setSale((prev) => ({ ...prev, productId: prodsData[0].id }));
   }
 
   useEffect(() => {
@@ -185,8 +178,7 @@ export function PosPage({ token, profile, categories, branches = [] }: { token: 
     <div className="internal-page-container">
       <div className="two-col-grid">
         <div className="panel-card">
-          <div className="panel-head"><h2>POS de Caja</h2><span className="pill-tag">Venta en Mostrador</span></div>
-          <div className="form-field"><label htmlFor="pos-branch">Sucursal / Bodega</label><select id="pos-branch" value={branchId} onChange={(event) => setBranchId(Number(event.target.value))}>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name} ({branch.city})</option>)}</select></div>
+          <div className="panel-head"><h2>POS de Caja (Sucursal {branchId})</h2><span className="pill-tag">Venta en Mostrador</span></div>
           <div className="form-grid-2">
             <div className="form-field"><label>Cliente</label><input value={sale.name} onChange={(e) => setSale({ ...sale, name: e.target.value })} /></div>
             <div className="form-field"><label>NIT</label><input value={sale.nit} onChange={(e) => setSale({ ...sale, nit: e.target.value })} /></div>

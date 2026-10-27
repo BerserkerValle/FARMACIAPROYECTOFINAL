@@ -53,6 +53,7 @@ import type {
 } from './domain.js';
 import { assertDiscountCodeUsable, calculateDiscountAmount } from './discounts.js';
 import { generarFacturaDesdeOrden } from './services/invoice.service.js';
+import { hasSanitaryRegistryChanged } from './utils.js';
 
 // ============================================================================
 // CONFIGURACIÃ“N DE RUTA DEL ARCHIVO DE ALMACENAMIENTO LOCAL
@@ -115,6 +116,15 @@ function normalizeProduct(product: Product): Product {
     requiresRefrigeration: product.requiresRefrigeration ?? false,
     ingredients: product.ingredients ?? []
   };
+}
+
+export function getNextEmployeeId(counter: number, employees: readonly Employee[]): number {
+  return Math.max(counter, ...employees.map((employee) => employee.id)) + 1;
+}
+
+export function getUniqueActiveEmployeeById(employees: readonly Employee[], id: number): Employee | null {
+  const matches = employees.filter((employee) => employee.id === id && employee.active);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 // ============================================================================
@@ -533,9 +543,13 @@ export class PharmacyStore {
     if (input.laboratory !== undefined) product.laboratory = (input.laboratory ?? '').trim();
     if (input.presentation !== undefined) product.presentation = (input.presentation ?? '').trim();
     if (input.unitMeasure !== undefined) product.unitMeasure = (input.unitMeasure ?? '').trim();
-    if (input.sanitaryRegistry !== undefined) product.sanitaryRegistry = (input.sanitaryRegistry ?? '').trim();
-    if (input.sanitaryRegistry !== undefined && this.snapshot.products.some((candidate) => candidate.id !== id && candidate.sanitaryRegistry.trim() === product.sanitaryRegistry)) {
-      throw new Error('Ya existe otro medicamento con ese registro sanitario');
+    if (input.sanitaryRegistry !== undefined) {
+      const sanitaryRegistry = (input.sanitaryRegistry ?? '').trim();
+      if (hasSanitaryRegistryChanged(product.sanitaryRegistry, sanitaryRegistry) &&
+          this.snapshot.products.some((candidate) => candidate.id !== id && candidate.sanitaryRegistry.trim() === sanitaryRegistry)) {
+        throw new Error('Ya existe otro medicamento con ese registro sanitario');
+      }
+      product.sanitaryRegistry = sanitaryRegistry;
     }
     if (input.requiresPrescription !== undefined) product.requiresPrescription = Boolean(input.requiresPrescription);
     if (input.controlledProduct !== undefined) product.controlledProduct = Boolean(input.controlledProduct);
@@ -706,7 +720,7 @@ export class PharmacyStore {
       })
       .map((order) => {
         const orderCustomer = this.snapshot.customers.find((candidate) => candidate.id === order.customerId);
-        return { id: order.id, code: order.code, branchId: order.branchId, address: order.address, status: order.status, paymentStatus: order.paymentStatus, latitude: orderCustomer?.deliveryLatitude ?? null, longitude: orderCustomer?.deliveryLongitude ?? null, updatedAt: order.releasedAt ?? order.createdAt };
+        return { id: order.id, code: order.code, branchId: order.branchId, address: order.address, status: order.status, paymentStatus: order.paymentStatus, latitude: order.riderLatitude ?? null, longitude: order.riderLongitude ?? null, updatedAt: order.releasedAt ?? order.createdAt };
       });
   }
 
@@ -718,22 +732,15 @@ export class PharmacyStore {
     if (actor?.role === 'Repartidor' && order.assignedEmployeeId == null) {
       order.assignedEmployeeId = actor.employeeId;
     }
-    const orderCustomer = this.snapshot.customers.find((candidate) => candidate.id === order.customerId);
-    const matchingCustomers = orderCustomer
-      ? this.snapshot.customers.filter((candidate) => candidate.email.toLowerCase() === orderCustomer.email.toLowerCase())
-      : [];
-    for (const customer of matchingCustomers) {
-      if (input.latitude !== undefined) customer.deliveryLatitude = input.latitude;
-      if (input.longitude !== undefined) customer.deliveryLongitude = input.longitude;
-      customer.updatedAt = now();
-    }
+    if (input.latitude !== undefined) order.riderLatitude = input.latitude;
+    if (input.longitude !== undefined) order.riderLongitude = input.longitude;
     this.touch();
     return clone({
       id: order.id,
       code: order.code,
       status: order.status,
-      latitude: orderCustomer?.deliveryLatitude ?? null,
-      longitude: orderCustomer?.deliveryLongitude ?? null
+      latitude: order.riderLatitude ?? null,
+      longitude: order.riderLongitude ?? null
     });
   }
 
@@ -1359,8 +1366,10 @@ export class PharmacyStore {
     supervisorId: number | null;
   }) {
     this.assertReady();
+    const employeeId = getNextEmployeeId(this.snapshot.counters.employee, this.snapshot.employees);
+    this.snapshot.counters.employee = employeeId;
     const employee: Employee = {
-      id: ++this.snapshot.counters.employee,
+      id: employeeId,
       fullName: input.fullName,
       email: input.email,
       password: bcrypt.hashSync(input.password, 12),
@@ -1672,8 +1681,14 @@ export class PharmacyStore {
 
   getEmployeeById(id: number) {
     this.assertReady();
-    const employee = this.snapshot.employees.find((item) => item.id === id);
-    return employee && employee.active ? employee : null;
+    return getUniqueActiveEmployeeById(this.snapshot.employees, id);
+  }
+
+  findEmployeeByEmail(email: string) {
+    this.assertReady();
+    const normalizedEmail = email.trim().toLowerCase();
+    const employee = this.snapshot.employees.find((item) => item.email.toLowerCase() === normalizedEmail && item.active);
+    return employee ?? null;
   }
 
   findEmployeeByCredentials(email: string, password: string) {

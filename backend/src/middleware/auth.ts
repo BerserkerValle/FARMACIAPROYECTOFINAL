@@ -11,9 +11,9 @@
 
 import type { NextFunction, Request, Response } from 'express';
 import type { Role } from '../domain.js';
-import { databaseEnabled, findDatabaseCustomerAccountById, findDatabaseEmployeeById } from '../db.js';
+import { databaseEnabled, findDatabaseCustomerAccountById, findDatabaseEmployeeByEmail, findDatabaseEmployeeById } from '../db.js';
 import { store } from '../store.js';
-import { getCustomerIdFromToken, getEmployeeIdFromToken } from '../utils/jwt.js';
+import { getCustomerIdFromToken, getEmployeeIdentityFromToken } from '../utils/jwt.js';
 import { FORBIDDEN_MESSAGE } from '../utils/permissions.js';
 
 // ============================================================================
@@ -28,14 +28,24 @@ function bearerToken(req: Request): string {
 
 async function loadAuthenticatedEmployee(req: Request) {
   const token = bearerToken(req);
-  const employeeId = token ? getEmployeeIdFromToken(token) : null;
-  if (!employeeId) return { error: 401 as const, message: 'Token inválido o expirado' };
+  const identity = token ? getEmployeeIdentityFromToken(token) : null;
+  if (!identity) return { error: 401 as const, message: 'Token inválido o expirado' };
 
-  const employee = databaseEnabled ? await findDatabaseEmployeeById(employeeId) : store.getEmployeeById(employeeId);
+  const employee = identity.email
+    ? databaseEnabled
+      ? await findDatabaseEmployeeByEmail(identity.email)
+      : store.findEmployeeByEmail(identity.email)
+    : databaseEnabled
+      ? await findDatabaseEmployeeById(identity.employeeId)
+      : store.getEmployeeById(identity.employeeId);
   if (!employee) return { error: 401 as const, message: 'Empleado no encontrado o inactivo' };
+  const resolvedEmployeeId = 'employeeId' in employee ? employee.employeeId : employee.id;
+  if (identity.email && resolvedEmployeeId !== identity.employeeId) {
+    return { error: 401 as const, message: 'La sesión ya no coincide con el empleado autenticado' };
+  }
 
   req.user = {
-    employeeId: 'employeeId' in employee ? employee.employeeId : employee.id,
+    employeeId: resolvedEmployeeId,
     role: employee.role,
     branchId: employee.branchId,
     fullName: employee.fullName,

@@ -33,6 +33,7 @@ import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import type { Branch, CreateProductInput, Customer, DashboardMetrics, DataSnapshot, DiscountCode, DiscountRedemption, Invoice, Order, OrderItem, Payment, Product, PublicCheckoutInput, Supplier } from './domain.js';
 import { assertDiscountCodeUsable, calculateDiscountAmount } from './discounts.js';
+import { hasSanitaryRegistryChanged } from './utils.js';
 
 dotenv.config();
 dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../.env') });
@@ -167,14 +168,14 @@ export async function updateDatabaseCustomerAccount(id: number, input: { fullNam
 }
 
 /** Registra el seguimiento GPS y telemetrÃ­a de una orden de entrega a domicilio */
-export async function createDatabaseDeliveryTracking(input: { orderCode: string; customerId: number | null; branchId: number; address: string; deliveryLatitude?: number | null; deliveryLongitude?: number | null; deliveryMode: string }) {
+export async function createDatabaseDeliveryTracking(input: { orderCode: string; customerId: number | null; branchId: number; address: string; latitude: number | null; longitude: number | null; deliveryMode: string }) {
   if (input.deliveryMode !== 'DELIVERY') return;
   const database = requirePool();
   await database.query(
-    `INSERT INTO pharmacy_delivery_tracking (order_code, customer_account_id, branch_id, address, destination_latitude, destination_longitude, status)
+    `INSERT INTO pharmacy_delivery_tracking (order_code, customer_account_id, branch_id, address, latitude, longitude, status)
      VALUES ($1, $2, $3, $4, $5, $6, 'CREATED')
-     ON CONFLICT (order_code) DO UPDATE SET customer_account_id = EXCLUDED.customer_account_id, address = EXCLUDED.address, destination_latitude = EXCLUDED.destination_latitude, destination_longitude = EXCLUDED.destination_longitude`,
-    [input.orderCode, input.customerId, input.branchId, input.address, input.deliveryLatitude, input.deliveryLongitude]
+     ON CONFLICT (order_code) DO UPDATE SET customer_account_id = EXCLUDED.customer_account_id, address = EXCLUDED.address, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude`,
+    [input.orderCode, input.customerId, input.branchId, input.address, input.latitude, input.longitude]
   );
 }
 
@@ -183,12 +184,10 @@ export async function listDatabaseCustomerOrders(customerId: number) {
   const database = requirePool();
   const result = await database.query(
     `SELECT id, order_code AS code, branch_id AS "branchId", address, status,
-            dt.destination_latitude AS deliveryLatitude, dt.destination_longitude AS deliveryLongitude,
-            dt.courier_latitude AS courierLatitude, dt.courier_longitude AS courierLongitude,
-            dt.updated_at AS "updatedAt"
-       FROM pharmacy_delivery_tracking dt
-      WHERE dt.customer_account_id = $1
-      ORDER BY dt.created_at DESC`,
+            rider_latitude AS latitude, rider_longitude AS longitude, updated_at AS "updatedAt"
+       FROM pharmacy_delivery_tracking
+      WHERE customer_account_id = $1
+      ORDER BY created_at DESC`,
     [customerId]
   );
   return result.rows;
@@ -199,17 +198,16 @@ export async function listDatabaseDeliveries(branchId: number, scope?: { employe
   const database = requirePool();
   const restrictToAssignee = Boolean(scope?.restrictToAssignee);
   const result = await database.query(
-    `SELECT dt.id, dt.order_code AS code, dt.branch_id AS "branchId", dt.address, dt.status,
-            dt.latitude AS courier_latitude, dt.longitude AS courier_longitude,
-            dt.destination_latitude, dt.destination_longitude,
-            s.nombre_sucursal AS branch_name, s.city AS branch_city, s.address AS branch_address,
-            s.latitude AS branch_latitude, s.longitude AS branch_longitude
-       FROM pharmacy_delivery_tracking dt
-      LEFT JOIN Sucursales s ON s.id_sucursal = dt.branch_id
-      WHERE dt.branch_id = $1
-        AND dt.status <> 'DELIVERED'
-        AND ($2::boolean = false OR dt.assigned_employee_id IS NULL OR dt.assigned_employee_id = $3)
-      ORDER BY dt.created_at`,
+    `SELECT id, order_code AS code, branch_id AS "branchId", address, status,
+            latitude, longitude, customer_account_id AS "customerId",
+            rider_latitude AS "riderLatitude", rider_longitude AS "riderLongitude",
+            assigned_employee_id AS "assignedEmployeeId",
+            updated_at AS "updatedAt"
+       FROM pharmacy_delivery_tracking
+      WHERE branch_id = $1
+        AND status <> 'DELIVERED'
+        AND ($2::boolean = false OR assigned_employee_id IS NULL OR assigned_employee_id = $3)
+      ORDER BY created_at`,
     [branchId, restrictToAssignee, scope?.employeeId ?? null]
   );
   return result.rows;
@@ -248,18 +246,20 @@ export async function claimDatabaseDelivery(id: number, employeeId: number) {
 }
 
 /** Actualiza el estado y las coordenadas GPS en tiempo real de una entrega */
-export async function updateDatabaseDeliveryTracking(id: number, input: { status?: string; courier_latitude?: number; courier_longitude?: number }) {
+export async function updateDatabaseDeliveryTracking(id: number, input: { status?: string; riderLatitude?: number; riderLongitude?: number }) {
   const database = requirePool();
   const fields: Array<[string, unknown]> = [];
   if (input.status !== undefined) fields.push(['status', input.status]);
-  if (input.courier_latitude !== undefined) fields.push(['courier_latitude', input.courier_latitude]);
-  if (input.courier_longitude !== undefined) fields.push(['courier_longitude', input.courier_longitude]);
+  if (input.riderLatitude !== undefined) fields.push(['rider_latitude', input.riderLatitude]);
+  if (input.riderLongitude !== undefined) fields.push(['rider_longitude', input.riderLongitude]);
   if (fields.length === 0) throw new Error('No hay datos de seguimiento para actualizar');
   const assignments = fields.map(([column], index) => `${column} = $${index + 2}`).join(', ');
   const result = await database.query(
     `UPDATE pharmacy_delivery_tracking SET ${assignments}, updated_at = NOW()
       WHERE id = $1
-      RETURNING id, order_code AS code, branch_id AS "branchId", address, status, courier_latitude, courier_longitude, assigned_employee_id AS "assignedEmployeeId", updated_at AS "updatedAt"`,
+      RETURNING id, order_code AS code, branch_id AS "branchId", address, status,
+                latitude, longitude, rider_latitude AS "riderLatitude", rider_longitude AS "riderLongitude",
+                assigned_employee_id AS "assignedEmployeeId", updated_at AS "updatedAt"`,
     [id, ...fields.map(([, value]) => value)]
   );
   if (!result.rows[0]) throw new Error('Seguimiento no encontrado');
@@ -1239,8 +1239,13 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
     ['requiresRefrigeration', 'requiere_refrigeracion']
   ];
   if (input.sanitaryRegistry !== undefined) {
-    const duplicate = await database.query('SELECT 1 FROM Productos WHERE registro_sanitario = $1 AND id_producto <> $2 LIMIT 1', [String(input.sanitaryRegistry).trim(), id]);
-    if (duplicate.rowCount) throw new Error('Ya existe otro medicamento con ese registro sanitario');
+    const current = await database.query('SELECT registro_sanitario AS "sanitaryRegistry" FROM Productos WHERE id_producto = $1 LIMIT 1', [id]);
+    if (!current.rows[0]) throw new Error(`Producto #${id} no encontrado`);
+    const nextRegistry = String(input.sanitaryRegistry).trim();
+    if (hasSanitaryRegistryChanged(current.rows[0].sanitaryRegistry, nextRegistry)) {
+      const duplicate = await database.query('SELECT 1 FROM Productos WHERE registro_sanitario = $1 AND id_producto <> $2 LIMIT 1', [nextRegistry, id]);
+      if (duplicate.rowCount) throw new Error('Ya existe otro medicamento con ese registro sanitario');
+    }
   }
   if ('imageUrl' in input) fields.push(['imagen_url', input.imageUrl]);
   for (const [inputKey, column] of mappings) {
@@ -1948,16 +1953,6 @@ export async function initializeDatabase() {
     )
   `);
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS imagen_url TEXT');
-  // Columnas geográficas para seguimiento de entregas
-  // destination_* = coordenadas del destino (cliente)
-  // courier_* = coordenadas actuales del repartidor
-  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS destination_latitude NUMERIC');
-  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS destination_longitude NUMERIC');
-  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS courier_latitude NUMERIC');
-  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS courier_longitude NUMERIC');
-  // Columnas geográficas para sucursales (origen de entregas)
-  await pool.query('ALTER TABLE Sucursales ADD COLUMN IF NOT EXISTS latitude NUMERIC');
-  await pool.query('ALTER TABLE Sucursales ADD COLUMN IF NOT EXISTS longitude NUMERIC');
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true');
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS producto_controlado BOOLEAN NOT NULL DEFAULT false');
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS uso_cronico BOOLEAN NOT NULL DEFAULT false');
@@ -2033,6 +2028,8 @@ export async function initializeDatabase() {
       status TEXT NOT NULL DEFAULT 'CREATED',
       latitude NUMERIC,
       longitude NUMERIC,
+      rider_latitude NUMERIC,
+      rider_longitude NUMERIC,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -2040,6 +2037,8 @@ export async function initializeDatabase() {
   await pool.query('ALTER TABLE pharmacy_customer_accounts ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT \'\'');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS latitude NUMERIC');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS longitude NUMERIC');
+  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS rider_latitude NUMERIC');
+  await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS rider_longitude NUMERIC');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS assigned_employee_id INTEGER');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT \'PENDING\'');
   await pool.query('ALTER TABLE pharmacy_delivery_tracking ADD COLUMN IF NOT EXISTS email_status TEXT NOT NULL DEFAULT \'PENDING\'');

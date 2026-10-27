@@ -6,7 +6,6 @@ import { ProductDetailModal } from '../components/ProductDetailModal';
 
 import type { Portal, Branch, Category, ProductCard, EmployeeProfile, CustomerAccount } from '../types';
 import { money } from '../lib/catalog';
-import { getAllowedPortals, getDefaultPortal } from '../lib/employeePortals';
 import { PosPage } from '../features/pos/PosPage';
 import { WarehousePage } from '../features/warehouse/WarehousePage';
 import { AdminPage } from '../features/admin/AdminPage';
@@ -14,6 +13,7 @@ import { PublicCatalogView } from '../features/catalog/PublicCatalogView';
 import { StripePaymentForm, TopPaymentBar } from '../features/checkout/CheckoutPage';
 import { CustomerAuthPage, CustomerOrdersPage } from '../features/customer/CustomerPages';
 import DeliveryPage from '../features/delivery/DeliveryPage';
+import { canAccessEmployeePortal, getEmployeeHomePortal } from '../lib/employeePortals';
 
 function readToken() {
   const token = localStorage.getItem('farmacia-fjk.token') ?? localStorage.getItem('derkas.token');
@@ -23,11 +23,6 @@ function readToken() {
     return null;
   }
   return token;
-}
-
-function readProfile() {
-  const raw = localStorage.getItem('farmacia-fjk.profile');
-  return raw ? (JSON.parse(raw) as EmployeeProfile) : null;
 }
 
 function readCustomerToken() {
@@ -56,17 +51,9 @@ function clearSession() {
 
 export default function AppController() {
   const [token, setToken] = useState<string | null>(() => readToken());
-  const [profile, setProfile] = useState<EmployeeProfile | null>(() => readProfile());
-  const [selectedPortal, setSelectedPortal] = useState<Portal>(() => {
-    const storedToken = readToken();
-    const storedProfile = readProfile();
-    return storedToken && storedProfile ? getDefaultPortal(storedProfile.role) ?? 'login' : 'public';
-  });
-  const activePortal = token
-    ? profile && getAllowedPortals(profile.role).includes(selectedPortal)
-      ? selectedPortal
-      : getDefaultPortal(profile?.role ?? null) ?? 'login'
-    : selectedPortal;
+  const [profile, setProfile] = useState<EmployeeProfile | null>(null);
+  const [isEmployeeSessionReady, setIsEmployeeSessionReady] = useState(() => !token);
+  const [activePortal, setActivePortal] = useState<Portal>('public');
   const [customerToken, setCustomerToken] = useState<string | null>(() => readCustomerToken());
   const [customer, setCustomer] = useState<CustomerAccount | null>(() => {
     if (readToken()) {
@@ -85,7 +72,8 @@ export default function AppController() {
         clearSession();
         setToken(null);
         setProfile(null);
-        setSelectedPortal('public');
+        setIsEmployeeSessionReady(true);
+        setActivePortal('public');
       }
       if (expiredToken === readCustomerToken()) {
         localStorage.removeItem('farmacia-fjk.customer');
@@ -124,11 +112,6 @@ export default function AppController() {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [pendingPaymentOrder, setPendingPaymentOrder] = useState<{ orderCode: string; total: number; invoiceDownloadToken: string } | null>(null);
   const [lastOrder, setLastOrder] = useState<{ orderCode: string; total: number; invoiceDownloadToken: string } | null>(null);
-
-  function navigateToPortal(portal: Portal) {
-    if (token && (!profile || !getAllowedPortals(profile.role).includes(portal))) return;
-    setSelectedPortal(portal);
-  }
 
   useEffect(() => {
     localStorage.setItem('farmacia-fjk.cart', JSON.stringify(cart));
@@ -190,22 +173,31 @@ export default function AppController() {
     deliveryLongitude: null as number | null
   });
 
-  // Verify profile if token exists
+  // Verify the employee role against the server before showing internal portals.
   useEffect(() => {
-    if (!token || profile) return;
+    if (!token) {
+      setIsEmployeeSessionReady(true);
+      return;
+    }
+    setIsEmployeeSessionReady(false);
     apiRequest<EmployeeProfile>('/api/auth/me', {}, token)
-      .then(setProfile)
+      .then((verifiedProfile) => {
+        setProfile(verifiedProfile);
+        setActivePortal(getEmployeeHomePortal(verifiedProfile.role));
+        setIsEmployeeSessionReady(true);
+      })
       .catch(() => {
         clearSession();
         setToken(null);
         setProfile(null);
+        setIsEmployeeSessionReady(true);
       });
-  }, [token, profile]);
+  }, [token]);
 
   useEffect(() => {
     const paymentIntentId = new URLSearchParams(window.location.search).get('posPayment');
     if (!paymentIntentId) return;
-    setSelectedPortal('public');
+    setActivePortal('public');
     apiRequest<{ clientSecret: string; amount: number }>(`/api/public/pos-payment/${encodeURIComponent(paymentIntentId)}`)
       .then(({ clientSecret }) => {
         setPaymentClientSecret(clientSecret);
@@ -381,20 +373,37 @@ export default function AppController() {
     saveSession(nextToken, nextProfile);
     setToken(nextToken);
     setProfile(nextProfile);
-    setSelectedPortal(getDefaultPortal(nextProfile.role) ?? 'login');
+    setActivePortal(getEmployeeHomePortal(nextProfile.role));
+    setIsEmployeeSessionReady(true);
   }
+
+  function navigatePortal(portal: Portal) {
+    if (token && profile && !canAccessEmployeePortal(profile.role, portal)) {
+      setActivePortal(getEmployeeHomePortal(profile.role));
+      return;
+    }
+    setActivePortal(portal);
+  }
+
+  useEffect(() => {
+    if (token && profile && !canAccessEmployeePortal(profile.role, activePortal)) {
+      setActivePortal(getEmployeeHomePortal(profile.role));
+    }
+  }, [activePortal, token, profile]);
 
   function handleLogout() {
     clearSession();
     setToken(null);
     setProfile(null);
-    setSelectedPortal('public');
+    setIsEmployeeSessionReady(true);
+    setActivePortal('public');
   }
 
   function handleCustomerLogin(nextCustomerToken: string, nextCustomer: CustomerAccount) {
     clearSession();
     setToken(null);
     setProfile(null);
+    setIsEmployeeSessionReady(true);
     localStorage.setItem('farmacia-fjk.customer-token', nextCustomerToken);
     localStorage.setItem('farmacia-fjk.customer', JSON.stringify(nextCustomer));
     setCustomerToken(nextCustomerToken);
@@ -407,7 +416,7 @@ export default function AppController() {
       nit: nextCustomer.nit,
       address: nextCustomer.address || previous.address
     }));
-    setSelectedPortal('public');
+    setActivePortal('public');
   }
 
   function handleCustomerLogout() {
@@ -415,7 +424,7 @@ export default function AppController() {
     localStorage.removeItem('farmacia-fjk.customer-token');
     setCustomer(null);
     setCustomerToken(null);
-    setSelectedPortal('public');
+    setActivePortal('public');
   }
 
   function handleCustomerUpdate(nextCustomer: CustomerAccount) {
@@ -522,6 +531,16 @@ export default function AppController() {
     );
   }
 
+  if (token && !isEmployeeSessionReady) {
+    return (
+      <div className="app-container">
+        <div className="internal-page-container">
+          <div className="panel-card" role="status">Verificando acceso del colaborador...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
       <div className="checkout-only-page">
         <div className="checkout-only-header">
@@ -546,7 +565,7 @@ export default function AppController() {
         cartCount={cartCount}
         cartTotal={cartTotal}
         activePortal={activePortal}
-        onNavigatePortal={navigateToPortal}
+        onNavigatePortal={navigatePortal}
         token={token}
         profile={profile}
         onLogout={handleLogout}
@@ -563,10 +582,10 @@ export default function AppController() {
       />
 
       {/* HERO CAROUSEL - Solo en portal público */}
-      {activePortal === 'public' && <HeroCarousel onNavigatePortal={navigateToPortal} products={products} />}
+      {activePortal === 'public' && (!token || !profile || canAccessEmployeePortal(profile.role, 'public')) && <HeroCarousel onNavigatePortal={navigatePortal} products={products} />}
 
       {/* MAIN PRODUCT CATALOG */}
-      {activePortal === 'public' && (
+      {activePortal === 'public' && (!token || !profile || canAccessEmployeePortal(profile.role, 'public')) && (
         <PublicCatalogView
           branches={branches}
           branchId={branchId}
@@ -588,30 +607,32 @@ export default function AppController() {
       )}
 
       {/* GLOBAL MODAL WHEN OPENED FROM TOP CART BAR */}
-      <ProductDetailModal
-        product={selectedProductForGlobalModal}
-        categories={categories}
-        branchName={selectedBranch ? `${selectedBranch.name} (${selectedBranch.city})` : undefined}
-        onClose={() => setSelectedProductForGlobalModal(null)}
-        onAddToCart={(id, quantity) => {
-          handleAddToCart(id, quantity);
-          setSelectedProductForGlobalModal(null);
-        }}
-        inCartQuantity={activeInCartItemForGlobal?.quantity ?? 0}
-        showInternalInfo={profile !== null}
-      />
+      {activePortal === 'public' && (
+        <ProductDetailModal
+          product={selectedProductForGlobalModal}
+          categories={categories}
+          branchName={selectedBranch ? `${selectedBranch.name} (${selectedBranch.city})` : undefined}
+          onClose={() => setSelectedProductForGlobalModal(null)}
+          onAddToCart={(id, quantity) => {
+            handleAddToCart(id, quantity);
+            setSelectedProductForGlobalModal(null);
+          }}
+          inCartQuantity={activeInCartItemForGlobal?.quantity ?? 0}
+          showInternalInfo={profile !== null}
+        />
+      )}
 
       {/* INTERNAL PORTALS - Portales Internos FARMACIA FJK */}
-      {activePortal === 'login' && (
+      {activePortal === 'login' && !token && (
         <LoginPage onLogin={handleLogin} />
       )}
       {activePortal === 'customer' && !customer && <CustomerAuthPage onLogin={handleCustomerLogin} />}
       {customer && customerToken && activePortal === 'customer' && <CustomerOrdersPage customer={customer} customerToken={customerToken} onUpdate={handleCustomerUpdate} onLogout={handleCustomerLogout} />}
 
-      {activePortal === 'pos' && <PosPage token={token} profile={profile} categories={categories} branches={branches} />}
-      {activePortal === 'warehouse' && <WarehousePage token={token} categories={categories} />}
-      {activePortal === 'delivery' && <DeliveryPage token={token} />}
-      {activePortal === 'admin' && <AdminPage token={token} canManageDiscountCodes={profile?.role === 'Administrador' || profile?.role === 'Gerente'} />}
+      {activePortal === 'pos' && token && profile && canAccessEmployeePortal(profile.role, 'pos') && <PosPage token={token} profile={profile} categories={categories} />}
+      {activePortal === 'warehouse' && token && profile && canAccessEmployeePortal(profile.role, 'warehouse') && <WarehousePage token={token} categories={categories} branchId={profile.branchId} />}
+      {activePortal === 'delivery' && token && profile && canAccessEmployeePortal(profile.role, 'delivery') && <DeliveryPage token={token} role={profile.role} branchId={profile.branchId} />}
+      {activePortal === 'admin' && token && profile && canAccessEmployeePortal(profile.role, 'admin') && <AdminPage token={token} canManageDiscountCodes={profile.role === 'Administrador' || profile.role === 'Gerente'} />}
     </div>
   );
 }

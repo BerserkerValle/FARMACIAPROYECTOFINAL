@@ -67,7 +67,8 @@ export interface DeliveryActor {
 export function canReadDelivery(actor: DeliveryActor, delivery: DeliveryOwnership): boolean {
   if (isSupervisorRole(actor.role)) return true;
   if (actor.role !== 'Repartidor') return false;
-  return delivery.assignedEmployeeId != null && delivery.assignedEmployeeId === actor.employeeId;
+  if (actor.branchId == null || delivery.branchId !== actor.branchId) return false;
+  return delivery.assignedEmployeeId == null || delivery.assignedEmployeeId === actor.employeeId;
 }
 
 export function canUpdateDelivery(actor: DeliveryActor, delivery: DeliveryOwnership): boolean {
@@ -86,9 +87,7 @@ export function resolveBranchScope(actorRole: Role | string | null | undefined, 
   return requestedBranchId;
 }
 
-export function resolveOperationalBranchScope(actorRole: Role | string | null | undefined, actorBranchId: number | null, requestedBranchId: number | null): number | null {
-  if (actorRole === 'Administrador' || actorRole === 'Gerente' || actorRole === 'Cajero' || actorRole === 'Bodeguero') {
-    return requestedBranchId ?? actorBranchId;
-  }
+export function resolveWarehouseBranchScope(actorRole: Role | string | null | undefined, actorBranchId: number | null, requestedBranchId: number | null): number | null {
+  if (actorRole === 'Bodeguero') return requestedBranchId ?? actorBranchId;
   return resolveBranchScope(actorRole, actorBranchId, requestedBranchId);
 }

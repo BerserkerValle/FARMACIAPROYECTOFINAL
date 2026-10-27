@@ -249,8 +249,8 @@ export async function checkout(req: Request, res: Response) {
         customerId: account.customerId,
         branchId: payload.branchId,
         address: payload.address ?? '',
-        deliveryLatitude: payload.deliveryLatitude ?? null,
-        deliveryLongitude: payload.deliveryLongitude ?? null,
+        latitude: payload.deliveryLatitude ?? null,
+        longitude: payload.deliveryLongitude ?? null,
         deliveryMode: payload.deliveryMode
       });
     }

@@ -47,8 +47,7 @@ import {
   canReadDelivery,
   canUpdateDelivery,
   isSupervisorRole,
-  resolveBranchScope,
-  resolveOperationalBranchScope
+  resolveBranchScope
 } from '../utils/permissions.js';
 
 function branchScope(req: Request, requested?: unknown): number | null {
@@ -56,17 +55,6 @@ function branchScope(req: Request, requested?: unknown): number | null {
     ? null
     : Number(requested);
   return resolveBranchScope(req.user?.role, req.user?.branchId ?? null, Number.isInteger(fromQuery) && fromQuery! > 0 ? fromQuery : null);
-}
-
-function operationalBranchScope(req: Request, requested?: unknown): number | null {
-  const fromQuery = requested === undefined || requested === null || requested === ''
-    ? null
-    : Number(requested);
-  return resolveOperationalBranchScope(
-    req.user?.role,
-    req.user?.branchId ?? null,
-    Number.isInteger(fromQuery) && fromQuery! > 0 ? fromQuery : null
-  );
 }
 
 function forbidden(res: Response) {
@@ -124,7 +112,7 @@ const trackingSchema = z.object({
  * GET /api/pos/orders
  */
 export function pickupOrders(req: Request, res: Response) {
-  const branchId = operationalBranchScope(req, req.query.branchId);
+  const branchId = branchScope(req, req.query.branchId);
   if (!branchId) {
     return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
   }
@@ -156,7 +144,7 @@ export function createSale(req: Request, res: Response) {
     return res.status(401).json({ success: false, message: 'No autenticado' });
   }
   const payload = saleSchema.parse(req.body);
-  const branchId = resolveOperationalBranchScope(req.user.role, req.user.branchId, payload.branchId);
+  const branchId = resolveBranchScope(req.user.role, req.user.branchId, payload.branchId);
   if (!branchId) {
     return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
   }
@@ -309,7 +297,7 @@ export async function createQrPayment(req: Request, res: Response) {
     const stripe = stripeClient();
     if (!stripe) return res.status(503).json({ success: false, message: 'Stripe no está configurado' });
     const payload = saleSchema.parse(req.body);
-    const branchId = resolveOperationalBranchScope(req.user?.role, req.user?.branchId ?? null, payload.branchId);
+    const branchId = resolveBranchScope(req.user?.role, req.user?.branchId ?? null, payload.branchId);
     if (!branchId) {
       return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
     }
@@ -426,9 +414,17 @@ export async function updateDelivery(req: Request, res: Response) {
       }
       if (!canUpdateDelivery(actor, ownership)) return forbidden(res);
       if (canClaimDelivery(actor, ownership)) {
-        await claimDatabaseDelivery(deliveryId, actor.employeeId);
+        const claimed = await claimDatabaseDelivery(deliveryId, actor.employeeId);
+        if (!claimed) {
+          const currentOwnership = await findDatabaseDeliveryOwnership(deliveryId);
+          if (!currentOwnership || !canReadDelivery(actor, currentOwnership)) return forbidden(res);
+        }
       }
-      const data = await updateDatabaseDeliveryTracking(deliveryId, payload);
+      const data = await updateDatabaseDeliveryTracking(deliveryId, {
+        status: payload.status,
+        ...(payload.latitude !== undefined ? { riderLatitude: payload.latitude } : {}),
+        ...(payload.longitude !== undefined ? { riderLongitude: payload.longitude } : {})
+      });
       return res.json({ success: true, data });
     }
 

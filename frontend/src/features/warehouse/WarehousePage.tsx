@@ -4,7 +4,7 @@ import type { Branch, Category, ProductCard, ProductIngredient, Supplier } from 
 import { money, getCategoryHierarchyIds } from '../../lib/catalog';
 import { ProductDetailModal } from '../../components/ProductDetailModal';
 
-export function WarehousePage({ token, categories: categoriesProp }: { token: string | null; categories?: Category[] }) {
+export function WarehousePage({ token, categories: categoriesProp, branchId }: { token: string | null; categories?: Category[]; branchId?: number | null }) {
   const [activeTab, setActiveTab] = useState<'new-product' | 'receive-lot' | 'products-list'>('new-product');
   const [lots, setLots] = useState<any[]>([]);
   const [products, setProducts] = useState<ProductCard[]>([]);
@@ -78,7 +78,7 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
     description: 'Antibiótico bactericida de amplio espectro para infecciones respiratorias.',
     imageUrl: '',
     includeInitialStock: false,
-    initialBranchId: 1,
+    initialBranchId: branchId ?? 1,
     initialSupplierId: 1,
     initialBatchCode: 'LOT-2026-AMX8',
     initialExpirationDate: '2027-10-31',
@@ -92,7 +92,7 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
 
   // Lot Reception Form State
   const [lotForm, setLotForm] = useState({
-    branchId: 1,
+    branchId: branchId ?? 1,
     supplierId: 1,
     productId: 1,
     batchCode: 'LOT-2026-N1',
@@ -102,6 +102,12 @@ export function WarehousePage({ token, categories: categoriesProp }: { token: st
     costPrice: 20,
     salePrice: 35
   });
+
+  useEffect(() => {
+    const defaultBranchId = branchId ?? 1;
+    setNewProd((previous) => ({ ...previous, initialBranchId: defaultBranchId }));
+    setLotForm((previous) => ({ ...previous, branchId: defaultBranchId }));
+  }, [branchId]);
 
   async function loadAllData() {
     if (!token) return;

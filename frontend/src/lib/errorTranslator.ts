@@ -76,7 +76,13 @@ function translateValidationMessage(message?: string): string {
   if (lowerMsg.includes('phone') || lowerMsg.includes('teléfono') || lowerMsg.includes('telefono')) {
     return '¡Ups! Revisa el número de teléfono. El formato no parece válido.';
   }
-  if (lowerMsg.includes('nit') || lowerMsg.includes('documento')) {
+  if (lowerMsg.includes('registro sanitario')) {
+    if (lowerMsg.includes('duplicate') || lowerMsg.includes('duplicado') || lowerMsg.includes('ya existe')) {
+      return 'Ya existe otro medicamento con ese registro sanitario. Verifica los datos e intenta de nuevo.';
+    }
+    return '¡Ups! Revisa el registro sanitario del medicamento.';
+  }
+  if (/(^|[^a-z])nit([^a-z]|$)/i.test(lowerMsg) || lowerMsg.includes('documento')) {
     return '¡Ups! Revisa el NIT o documento. El formato no parece válido.';
   }
   if (lowerMsg.includes('required') || lowerMsg.includes('requerido') || lowerMsg.includes('obligatorio')) {
