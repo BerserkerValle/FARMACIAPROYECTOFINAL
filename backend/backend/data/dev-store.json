@@ -167,8 +167,8 @@
       "nit": "CF",
       "email": "cliente@test.com",
       "phone": "12345678",
-      "createdAt": "2026-10-27T06:29:34.978Z",
-      "updatedAt": "2026-10-27T06:29:34.978Z"
+      "createdAt": "2026-10-27T07:26:20.343Z",
+      "updatedAt": "2026-10-27T07:26:20.343Z"
     },
     {
       "id": 1,
@@ -176,8 +176,8 @@
       "nit": "CF",
       "email": "cliente@test.com",
       "phone": "12345678",
-      "createdAt": "2026-10-27T06:29:34.979Z",
-      "updatedAt": "2026-10-27T06:29:34.979Z"
+      "createdAt": "2026-10-27T07:26:20.345Z",
+      "updatedAt": "2026-10-27T07:26:20.345Z"
     },
     {
       "id": 51,
@@ -185,8 +185,8 @@
       "nit": "CF",
       "email": "pospdf@test.com",
       "phone": "12345678",
-      "createdAt": "2026-10-27T06:29:34.980Z",
-      "updatedAt": "2026-10-27T06:29:34.980Z"
+      "createdAt": "2026-10-27T07:26:20.346Z",
+      "updatedAt": "2026-10-27T07:26:20.346Z"
     }
   ],
   "employees": [
@@ -314,8 +314,8 @@
       "discountAmount": 0,
       "discountCode": null,
       "total": 200,
-      "createdAt": "2026-10-27T06:29:34.980Z",
-      "paidAt": "2026-10-27T06:29:34.980Z",
+      "createdAt": "2026-10-27T07:26:20.346Z",
+      "paidAt": "2026-10-27T07:26:20.346Z",
       "releasedAt": null
     }
   ],
@@ -359,7 +359,7 @@
       "orderId": 51,
       "invoiceNumber": "FAC-000001",
       "satCorrelative": "SAT-00000001",
-      "issuedAt": "2026-10-27T06:29:34.980Z",
+      "issuedAt": "2026-10-27T07:26:20.346Z",
       "total": 200,
       "subtotal": 100,
       "discountAmount": 0,
@@ -374,7 +374,7 @@
   "crosschecks": [],
   "counters": {
     "customer": 1,
-    "employee": 3,
+    "employee": 0,
     "order": 0,
     "orderItem": 0,
     "payment": 0,

@@ -52,7 +52,31 @@ app.use(helmet({
 }));
 
 // Habilitación de CORS para permitir solicitudes del frontend (Vite/React)
-app.use(cors({ origin: true, credentials: true }));
+// Se permite el origen del frontend desplegado y localhost para desarrollo
+const allowedOrigins = [
+  'https://farmaciaproyectofinalf.onrender.com',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:4000',
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Permitir peticiones sin origen (ej. curl, Postman, health checks)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // También permitir cualquier origin de Render para flexibilidad
+    if (origin.includes('.onrender.com')) return callback(null, true);
+    callback(new Error('No permitido por CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 200,
+}));
+
+// Manejo explícito de preflight (OPTIONS) para todas las rutas
+app.options('*', cors());
 
 // Logger HTTP en consola para desarrollo
 app.use(morgan('dev'));
