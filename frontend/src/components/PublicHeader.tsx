@@ -1,33 +1,6 @@
 import { useState } from 'react';
 import type { Branch, Category, CustomerAccount, EmployeeProfile, Portal, ProductCard } from '../types';
-
-// Matriz de permisos por rol según el requisito 3.1
-// Módulos: Catálogo, POS, Bodega, Reparto, Admin
-// Roles: Cajero, Bodeguero, Repartidor, Gerente, Administrador
-const rolePortals: Record<string, Portal[]> = {
-  // Cajero ve Catálogo y POS
-  cajero: ['public', 'pos'],
-  // Bodeguero ve solo Bodega
-  bodeguero: ['warehouse'],
-  // Repartidor ve solo Reparto
-  repartidor: ['delivery'],
-  // Gerente y Administrador ven los 5 módulos
-  gerente: ['public', 'pos', 'warehouse', 'delivery', 'admin'],
-  administrador: ['public', 'pos', 'warehouse', 'delivery', 'admin'],
-};
-
-// Determina qué portales debe mostrar el usuario según su rol
-function getAllowedPortals(role: string | null): Portal[] {
-  if (!role) return [];
-  // Normaliza: quita espacios, tildes y convierte a minúsculas para comparación robusta
-  const normalized = role
-    .replace(/\s/g, '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-  const result = rolePortals[normalized];
-  return result || [];
-}
+import { getAllowedPortals } from '../lib/employeePortals';
 
 // Determina si el portal activo debe mostrar el dropdown de Categorías
 function shouldShowCategories(activePortal: Portal): boolean {

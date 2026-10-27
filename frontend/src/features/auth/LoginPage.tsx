@@ -4,7 +4,7 @@ import { PasswordInputComponent } from '../../components/PasswordInput';
 import { useToast } from '../../components/ToastProvider';
 import type { EmployeeProfile } from '../../types';
 
-export default function LoginPage({ onLogin, onSuccess }: { onLogin: (token: string, profile: EmployeeProfile) => void; onSuccess: () => void }) {
+export default function LoginPage({ onLogin }: { onLogin: (token: string, profile: EmployeeProfile) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const { success: showSuccess } = useToast();
@@ -16,7 +16,6 @@ export default function LoginPage({ onLogin, onSuccess }: { onLogin: (token: str
         body: JSON.stringify({ correo_corporativo: email, contrasena: password })
       });
       onLogin(result.token, result.employee);
-      onSuccess();
       showSuccess('¡Bienvenido al sistema de FARMACIA FJK!');
     } catch {
       // El error se muestra mediante el toast global.

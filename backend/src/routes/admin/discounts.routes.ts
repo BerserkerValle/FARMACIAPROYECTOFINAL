@@ -4,7 +4,7 @@ import { authorize } from '../../middleware/auth.js';
 
 export const discountsRouter = Router();
 
-discountsRouter.use(authorize('Administrador'));
+discountsRouter.use(authorize('Administrador', 'Gerente'));
 discountsRouter.get('/discount-codes', listDiscountCodes);
 discountsRouter.post('/discount-codes', createDiscountCode);
 discountsRouter.patch('/discount-codes/:id', updateDiscountCode);

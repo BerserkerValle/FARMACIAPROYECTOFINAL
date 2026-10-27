@@ -6,6 +6,7 @@ import { ProductDetailModal } from '../components/ProductDetailModal';
 
 import type { Portal, Branch, Category, ProductCard, EmployeeProfile, CustomerAccount } from '../types';
 import { money } from '../lib/catalog';
+import { getAllowedPortals, getDefaultPortal } from '../lib/employeePortals';
 import { PosPage } from '../features/pos/PosPage';
 import { WarehousePage } from '../features/warehouse/WarehousePage';
 import { AdminPage } from '../features/admin/AdminPage';
@@ -54,9 +55,18 @@ function clearSession() {
    ========================================================================= */
 
 export default function AppController() {
-  const [activePortal, setActivePortal] = useState<Portal>('public');
   const [token, setToken] = useState<string | null>(() => readToken());
   const [profile, setProfile] = useState<EmployeeProfile | null>(() => readProfile());
+  const [selectedPortal, setSelectedPortal] = useState<Portal>(() => {
+    const storedToken = readToken();
+    const storedProfile = readProfile();
+    return storedToken && storedProfile ? getDefaultPortal(storedProfile.role) ?? 'login' : 'public';
+  });
+  const activePortal = token
+    ? profile && getAllowedPortals(profile.role).includes(selectedPortal)
+      ? selectedPortal
+      : getDefaultPortal(profile?.role ?? null) ?? 'login'
+    : selectedPortal;
   const [customerToken, setCustomerToken] = useState<string | null>(() => readCustomerToken());
   const [customer, setCustomer] = useState<CustomerAccount | null>(() => {
     if (readToken()) {
@@ -75,7 +85,7 @@ export default function AppController() {
         clearSession();
         setToken(null);
         setProfile(null);
-        setActivePortal('public');
+        setSelectedPortal('public');
       }
       if (expiredToken === readCustomerToken()) {
         localStorage.removeItem('farmacia-fjk.customer');
@@ -114,6 +124,11 @@ export default function AppController() {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [pendingPaymentOrder, setPendingPaymentOrder] = useState<{ orderCode: string; total: number; invoiceDownloadToken: string } | null>(null);
   const [lastOrder, setLastOrder] = useState<{ orderCode: string; total: number; invoiceDownloadToken: string } | null>(null);
+
+  function navigateToPortal(portal: Portal) {
+    if (token && (!profile || !getAllowedPortals(profile.role).includes(portal))) return;
+    setSelectedPortal(portal);
+  }
 
   useEffect(() => {
     localStorage.setItem('farmacia-fjk.cart', JSON.stringify(cart));
@@ -190,7 +205,7 @@ export default function AppController() {
   useEffect(() => {
     const paymentIntentId = new URLSearchParams(window.location.search).get('posPayment');
     if (!paymentIntentId) return;
-    setActivePortal('public');
+    setSelectedPortal('public');
     apiRequest<{ clientSecret: string; amount: number }>(`/api/public/pos-payment/${encodeURIComponent(paymentIntentId)}`)
       .then(({ clientSecret }) => {
         setPaymentClientSecret(clientSecret);
@@ -366,13 +381,14 @@ export default function AppController() {
     saveSession(nextToken, nextProfile);
     setToken(nextToken);
     setProfile(nextProfile);
+    setSelectedPortal(getDefaultPortal(nextProfile.role) ?? 'login');
   }
 
   function handleLogout() {
     clearSession();
     setToken(null);
     setProfile(null);
-    setActivePortal('public');
+    setSelectedPortal('public');
   }
 
   function handleCustomerLogin(nextCustomerToken: string, nextCustomer: CustomerAccount) {
@@ -391,7 +407,7 @@ export default function AppController() {
       nit: nextCustomer.nit,
       address: nextCustomer.address || previous.address
     }));
-    setActivePortal('public');
+    setSelectedPortal('public');
   }
 
   function handleCustomerLogout() {
@@ -399,7 +415,7 @@ export default function AppController() {
     localStorage.removeItem('farmacia-fjk.customer-token');
     setCustomer(null);
     setCustomerToken(null);
-    setActivePortal('public');
+    setSelectedPortal('public');
   }
 
   function handleCustomerUpdate(nextCustomer: CustomerAccount) {
@@ -530,7 +546,7 @@ export default function AppController() {
         cartCount={cartCount}
         cartTotal={cartTotal}
         activePortal={activePortal}
-        onNavigatePortal={setActivePortal}
+        onNavigatePortal={navigateToPortal}
         token={token}
         profile={profile}
         onLogout={handleLogout}
@@ -547,7 +563,7 @@ export default function AppController() {
       />
 
       {/* HERO CAROUSEL - Solo en portal público */}
-      {activePortal === 'public' && <HeroCarousel onNavigatePortal={setActivePortal} products={products} />}
+      {activePortal === 'public' && <HeroCarousel onNavigatePortal={navigateToPortal} products={products} />}
 
       {/* MAIN PRODUCT CATALOG */}
       {activePortal === 'public' && (
@@ -587,7 +603,7 @@ export default function AppController() {
 
       {/* INTERNAL PORTALS - Portales Internos FARMACIA FJK */}
       {activePortal === 'login' && (
-        <LoginPage onLogin={handleLogin} onSuccess={() => setActivePortal('admin')} />
+        <LoginPage onLogin={handleLogin} />
       )}
       {activePortal === 'customer' && !customer && <CustomerAuthPage onLogin={handleCustomerLogin} />}
       {customer && customerToken && activePortal === 'customer' && <CustomerOrdersPage customer={customer} customerToken={customerToken} onUpdate={handleCustomerUpdate} onLogout={handleCustomerLogout} />}
@@ -595,7 +611,7 @@ export default function AppController() {
       {activePortal === 'pos' && <PosPage token={token} profile={profile} categories={categories} />}
       {activePortal === 'warehouse' && <WarehousePage token={token} categories={categories} />}
       {activePortal === 'delivery' && <DeliveryPage token={token} />}
-      {activePortal === 'admin' && <AdminPage token={token} canManageDiscountCodes={profile?.role === 'Administrador'} />}
+      {activePortal === 'admin' && <AdminPage token={token} canManageDiscountCodes={profile?.role === 'Administrador' || profile?.role === 'Gerente'} />}
     </div>
   );
 }
