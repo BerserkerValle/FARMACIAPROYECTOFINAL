@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiRequest, uploadPrescription } from '../../api';
+import { apiRequest } from '../../api';
 import { money } from '../../lib/catalog';
 import { getDeliveryOrigin, getGoogleDirectionsUrl } from '../../lib/deliveryLocations';
 import type { Branch } from '../../types';
@@ -29,8 +29,6 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [status, setStatus] = useState('');
   const [sharingLocation, setSharingLocation] = useState(false);
-  const [recipe, setRecipe] = useState<File | null>(null);
-  const [orderId, setOrderId] = useState('');
   const locationWatchId = useRef<number | null>(null);
   const locationWatchOrderId = useRef<number | null>(null);
   const lastLocationSentAt = useRef(0);
@@ -78,20 +76,6 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
     loadRoute().catch((error) => setStatus(error.message));
   }, [token, role, branchId]);
 
-  async function uploadProof() {
-    try {
-      if (!recipe) throw new Error('Selecciona la foto de la receta entregada');
-      const parsedOrderId = Number(orderId);
-      if (!Number.isInteger(parsedOrderId) || parsedOrderId <= 0) {
-        throw new Error('Ingresa un ID de orden válido (número entero positivo)');
-      }
-      const result = await uploadPrescription(recipe, parsedOrderId, 'delivery', token);
-      setStatus(`Evidencia subida correctamente: ${result.url}`);
-      loadRoute();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Error al subir evidencia');
-    }
-  }
   async function updateDeliveryLocation(id: number, nextStatus = 'IN_ROUTE') {
     if (!token || !navigator.geolocation) {
       setStatus('Este dispositivo no permite compartir ubicación');
@@ -229,28 +213,6 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
             ) : null}
           </div>
         )}
-        <div className="panel-card">
-          <div className="panel-head">
-            <h2>Evidencia de Entrega</h2>
-            <span className="pill-tag">Cargar Receta</span>
-          </div>
-          <div className="form-field">
-            <label>ID de Orden</label>
-            <input value={orderId} onChange={(e) => setOrderId(e.target.value)} placeholder="Ej. 1" />
-          </div>
-          <div className="form-field">
-            <label>Foto de la Receta Firmada</label>
-            <label className="prescription-dropzone">
-              <span>Imagen</span>
-              <span>{recipe ? recipe.name : 'Tomar foto o elegir imagen...'}</span>
-              <input type="file" accept="image/*" onChange={(e) => setRecipe(e.target.files?.[0] ?? null)} />
-            </label>
-          </div>
-          <button type="button" className="btn-primary" onClick={uploadProof}>
-            Cargar y Validar Entrega
-          </button>
-          {status && <div className="checkout-status-msg">{status}</div>}
-        </div>
       </div>
     </div>
   );
