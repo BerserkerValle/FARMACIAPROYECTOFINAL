@@ -16,7 +16,7 @@ export interface ProductCard {
   imageUrl?: string | null;
   lots: Array<{ id: number; batchCode: string; expirationDate: string; quantityAvailable: number; branchId?: number; salePrice?: number }>;
 }
-export interface EmployeeProfile { employeeId: number; role: string; branchId: number | null; fullName: string; email: string; }
+export interface EmployeeProfile { employeeId: number; role: string; branchId: number | null; stationNumber?: number | null; fullName: string; email: string; }
 export interface CustomerAccount { customerId: number; fullName: string; email: string; phone: string; nit: string; address: string; }
 export interface LowStockProduct {
   productId: number; name: string; sku: string; branchId: number; branchName: string;

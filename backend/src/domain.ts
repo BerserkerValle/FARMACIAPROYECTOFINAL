@@ -254,6 +254,8 @@ export interface Employee {
   role: Role;
   /** Sucursal a la cual está asignado físicamente */
   branchId: number | null;
+  /** Caja o puesto de reparto (1-7), único por sucursal y rol */
+  stationNumber?: number | null;
   /** Supervisor directo (ID de otro empleado, o null) */
   supervisorId: number | null;
   active: boolean;
@@ -291,6 +293,8 @@ export interface Order {
   customerId: number;
   customerEmail?: string;
   employeeId: number | null;
+  /** Caja que cobró esta venta, capturada para mantener el historial si el puesto cambia */
+  stationNumber?: number | null;
   deliveryMode: 'DELIVERY' | 'PICKUP';
   address: string | null;
   /**

@@ -1560,6 +1560,73 @@ button, input, select, textarea {
   }
 }
 
+@media (max-width: 1100px) {
+  .header-main-inner {
+    flex-wrap: wrap;
+  }
+
+  .header-actions.has-portal-nav {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .header-actions.has-portal-nav .portal-nav-pills {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 960px) {
+  .analytics-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .analytics-controls {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .period-switcher {
+    flex: 1 1 100%;
+  }
+
+  .period-switcher button {
+    flex: 1;
+  }
+
+  .date-filter-group {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .date-filter-group label:not(.branch-filter-label) {
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+
+  .date-filter-group input {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .branch-filter-label {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .branch-filter-label select {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 @media (max-width: 480px) {
   .carousel-slide {
     min-height: 340px;
@@ -6488,5 +6555,171 @@ textarea {
 
   .admin-person-actions > button {
     width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .header-actions.has-portal-nav {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .header-actions.has-portal-nav .user-menu {
+    order: 1;
+    margin-left: auto;
+  }
+
+  .header-actions.has-portal-nav .portal-nav-pills {
+    display: grid;
+    order: 2;
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-radius: var(--radius-md);
+  }
+
+  .header-actions.has-portal-nav .portal-nav-pill {
+    min-width: 0;
+    min-height: 40px;
+    padding: 0.5rem 0.35rem;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .subnav-inner {
+    flex-wrap: wrap;
+    overflow: visible;
+    row-gap: 0.35rem;
+  }
+
+  .subnav-branch-dropdown {
+    min-width: 0;
+    max-width: min(220px, calc(100vw - 1.5rem));
+  }
+
+  .category-dropdown-menu {
+    min-width: min(220px, calc(100vw - 1.5rem));
+    max-width: calc(100vw - 1.5rem);
+    max-height: min(300px, 50dvh);
+  }
+
+  .two-col-grid,
+  .top-payment-grid,
+  .form-grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panel-card,
+  .top-cart-col,
+  .top-form-col,
+  .form-field {
+    min-width: 0;
+  }
+
+  .panel-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .panel-head h2,
+  .panel-head h3 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .warehouse-tabs-header {
+    align-items: stretch !important;
+  }
+
+  .section-tabs-bar {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .section-tab-btn {
+    flex: 1 1 180px;
+    min-width: 0;
+    justify-content: flex-start;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .compact-list-row {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .compact-list-row > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 560px) {
+  .section-tab-btn {
+    flex-basis: 100%;
+  }
+
+  .top-payment-header {
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .top-payment-title-group {
+    min-width: 0;
+    align-items: flex-start;
+  }
+
+  .top-payment-title-group > div:last-child {
+    min-width: 0;
+  }
+
+  .top-payment-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+
+  .top-total-badge,
+  .toggle-expand-btn {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .top-payment-body {
+    padding: 0.75rem;
+  }
+
+  .top-cart-item-row {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.65rem;
+  }
+
+  .top-item-row-left {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .top-item-subtotal {
+    margin-left: auto;
+  }
+
+  .billing-type-options {
+    flex-wrap: wrap;
+  }
+
+  .billing-type-option {
+    min-width: 0;
+  }
+
+  .delivery-toggle-group {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -97,6 +97,7 @@ export interface DatabaseEmployee {
   password: string;
   role: 'Administrador' | 'Gerente' | 'Cajero' | 'Bodeguero' | 'Repartidor' | 'Proveedor';
   branchId: number | null;
+  stationNumber: number | null;
   supervisorId: number | null;
 }
 
@@ -246,7 +247,7 @@ export async function listDatabaseCustomerOrders(customerId: number) {
 }
 
 /** Lista los pedidos pendientes de entrega de una sucursal, aplicando alcance por repartidor */
-export async function listDatabaseDeliveries(branchId: number, scope?: { employeeId?: number; restrictToAssignee?: boolean }) {
+export async function listDatabaseDeliveries(branchId: number, scope?: { employeeId?: number; restrictToAssignee?: boolean; includeDelivered?: boolean }) {
   const database = requirePool();
   const restrictToAssignee = Boolean(scope?.restrictToAssignee);
   const result = await database.query(
@@ -261,10 +262,11 @@ export async function listDatabaseDeliveries(branchId: number, scope?: { employe
        LEFT JOIN Sucursales branch ON branch.id_sucursal = tracking.branch_id
        LEFT JOIN pharmacy_customer_accounts customer ON customer.id = tracking.customer_account_id
       WHERE tracking.branch_id = $1
-        AND tracking.status <> 'DELIVERED'
-        AND ($2::boolean = false OR tracking.assigned_employee_id IS NULL OR tracking.assigned_employee_id = $3)
+        AND tracking.status <> 'CANCELLED'
+        AND ($2::boolean = true OR tracking.status <> 'DELIVERED')
+        AND ($3::boolean = false OR tracking.assigned_employee_id IS NULL OR tracking.assigned_employee_id = $4)
       ORDER BY tracking.created_at`,
-    [branchId, restrictToAssignee, scope?.employeeId ?? null]
+    [branchId, Boolean(scope?.includeDelivered), restrictToAssignee, scope?.employeeId ?? null]
   );
   return result.rows;
 }
@@ -334,6 +336,7 @@ function mapEmployee(row: Record<string, unknown>): DatabaseEmployee {
     password: String(row.contrasena ?? ''),
     role: row.rol_usuario as DatabaseEmployee['role'],
     branchId: row.id_sucursal == null ? null : Number(row.id_sucursal),
+    stationNumber: row.puesto == null ? null : Number(row.puesto),
     supervisorId: row.id_supervisor == null ? null : Number(row.id_supervisor)
   };
 }
@@ -343,7 +346,7 @@ export async function findDatabaseEmployeeByEmail(email: string) {
   if (!pool) return null;
   const result = await pool.query(
     `SELECT id_empleado, nombre_completo, correo_corporativo, contrasena,
-            rol_usuario, id_sucursal, id_supervisor
+            rol_usuario, id_sucursal, puesto, id_supervisor
        FROM Empleados
       WHERE LOWER(correo_corporativo) = LOWER($1)
         AND COALESCE(contrasena, '') <> ''
@@ -358,7 +361,7 @@ export async function findDatabaseEmployeeById(id: number) {
   if (!pool) return null;
   const result = await pool.query(
     `SELECT id_empleado, nombre_completo, correo_corporativo, contrasena,
-            rol_usuario, id_sucursal, id_supervisor
+            rol_usuario, id_sucursal, puesto, id_supervisor
        FROM Empleados
       WHERE id_empleado = $1
         AND COALESCE(contrasena, '') <> ''
@@ -375,8 +378,9 @@ function mapEmployeeForAdmin(row: Record<string, unknown>) {
     email: String(row.correo_corporativo),
     role: String(row.rol_usuario),
     branchId: row.id_sucursal == null ? null : Number(row.id_sucursal),
+    stationNumber: row.puesto == null ? null : Number(row.puesto),
     supervisorId: row.id_supervisor == null ? null : Number(row.id_supervisor),
-    active: row.contrasena != null
+    active: String(row.contrasena ?? '') !== ''
   };
 }
 
@@ -385,7 +389,7 @@ export async function listDatabaseEmployees() {
   if (!pool) return null;
   const result = await pool.query(
     `SELECT id_empleado, nombre_completo, correo_corporativo, rol_usuario,
-            id_sucursal, id_supervisor, contrasena
+            id_sucursal, puesto, id_supervisor, contrasena
        FROM Empleados
       ORDER BY id_empleado`
   );
@@ -399,27 +403,37 @@ export async function createDatabaseEmployee(input: {
   password: string;
   role: string;
   branchId: number | null;
+  stationNumber?: number | null;
   supervisorId: number | null;
 }) {
   const database = requirePool();
-  const result = await database.query(
-    `INSERT INTO Empleados
-      (nombre_completo, correo_corporativo, contrasena, rol_usuario,
-       id_sucursal, id_supervisor, usuario_modifico)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-    RETURNING id_empleado, nombre_completo, correo_corporativo, rol_usuario,
-        id_sucursal, id_supervisor, contrasena`,
-    [
-      input.fullName.trim(),
-      input.email.trim().toLowerCase(),
-      bcrypt.hashSync(input.password, 12),
-      input.role,
-      input.branchId,
-      input.supervisorId,
-      input.email.trim()
-    ]
-  );
-  return mapEmployeeForAdmin(result.rows[0]);
+  try {
+    const result = await database.query(
+      `INSERT INTO Empleados
+        (nombre_completo, correo_corporativo, contrasena, rol_usuario,
+         id_sucursal, puesto, id_supervisor, usuario_modifico)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING id_empleado, nombre_completo, correo_corporativo, rol_usuario,
+          id_sucursal, puesto, id_supervisor, contrasena`,
+      [
+        input.fullName.trim(),
+        input.email.trim().toLowerCase(),
+        bcrypt.hashSync(input.password, 12),
+        input.role,
+        input.branchId,
+        input.stationNumber ?? null,
+        input.supervisorId,
+        input.email.trim()
+      ]
+    );
+    return mapEmployeeForAdmin(result.rows[0]);
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505'
+      && 'constraint' in error && error.constraint === 'ux_empleados_sucursal_rol_puesto_activo') {
+      throw new Error('Ese puesto ya está ocupado en esta sucursal');
+    }
+    throw error;
+  }
 }
 
 /** Actualiza datos y rol de un empleado */
@@ -431,6 +445,7 @@ export async function updateDatabaseEmployee(id: number, input: Record<string, u
     ['email', 'correo_corporativo'],
     ['role', 'rol_usuario'],
     ['branchId', 'id_sucursal'],
+    ['stationNumber', 'puesto'],
     ['supervisorId', 'id_supervisor']
   ];
   for (const [key, column] of mappings) {
@@ -439,16 +454,24 @@ export async function updateDatabaseEmployee(id: number, input: Record<string, u
   if (input.password) fields.push(['contrasena', bcrypt.hashSync(String(input.password), 12)]);
   if (fields.length === 0) throw new Error('No hay campos para actualizar');
   const assignments = fields.map(([column], index) => `${column} = $${index + 2}`).join(', ');
-  const result = await database.query(
-    `UPDATE Empleados
-        SET ${assignments}, ultima_modificacion = CURRENT_TIMESTAMP
-      WHERE id_empleado = $1
-      RETURNING id_empleado, nombre_completo, correo_corporativo, rol_usuario,
-                id_sucursal, id_supervisor, contrasena`,
-    [id, ...fields.map(([, value]) => value)]
-  );
-  if (!result.rows[0]) throw new Error(`Empleado #${id} no encontrado`);
-  return mapEmployeeForAdmin(result.rows[0]);
+  try {
+    const result = await database.query(
+      `UPDATE Empleados
+          SET ${assignments}, ultima_modificacion = CURRENT_TIMESTAMP
+        WHERE id_empleado = $1
+        RETURNING id_empleado, nombre_completo, correo_corporativo, rol_usuario,
+                  id_sucursal, puesto, id_supervisor, contrasena`,
+      [id, ...fields.map(([, value]) => value)]
+    );
+    if (!result.rows[0]) throw new Error(`Empleado #${id} no encontrado`);
+    return mapEmployeeForAdmin(result.rows[0]);
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505'
+      && 'constraint' in error && error.constraint === 'ux_empleados_sucursal_rol_puesto_activo') {
+      throw new Error('Ese puesto ya está ocupado en esta sucursal');
+    }
+    throw error;
+  }
 }
 
 /** Desactiva a un empleado removiendo su contraseÃ±a de acceso */
@@ -459,7 +482,7 @@ export async function deactivateDatabaseEmployee(id: number) {
         SET contrasena = NULL, ultima_modificacion = CURRENT_TIMESTAMP
       WHERE id_empleado = $1
       RETURNING id_empleado, nombre_completo, correo_corporativo, rol_usuario,
-                id_sucursal, id_supervisor, contrasena`,
+                id_sucursal, puesto, id_supervisor, contrasena`,
     [id]
   );
   if (!result.rows[0]) throw new Error(`Empleado #${id} no encontrado`);
@@ -819,7 +842,7 @@ export async function getDatabaseReports(filters?: { branchId?: number; from?: s
   if (filters?.to) { params.push(filters.to); conditions.push(`f.fecha_emision < ($${params.length}::date + INTERVAL '1 day')`); }
   const reportFilter = conditions.length ? ` AND ${conditions.join(' AND ')}` : '';
   const purchaseBranchParams = [filters?.branchId ?? null];
-  const [monthlyResult, branchResult, productResult, profitResult, purchasesResult, dailyBranchResult] = await Promise.all([
+  const [monthlyResult, branchResult, productResult, profitResult, purchasesResult, dailyBranchResult, employeeSalesResult] = await Promise.all([
     database.query(`
       SELECT TO_CHAR(DATE_TRUNC('month', f.fecha_emision), 'YYYY-MM') AS month,
              COALESCE(SUM(f.total_neto), 0) AS total
@@ -881,6 +904,20 @@ export async function getDatabaseReports(filters?: { branchId?: number; from?: s
        WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)${reportFilter}
        GROUP BY DATE_TRUNC('day', f.fecha_emision), f.id_sucursal, s.nombre_sucursal
        ORDER BY DATE_TRUNC('day', f.fecha_emision), branch
+    `, params),
+    database.query(`
+      SELECT e.nombre_completo AS employee,
+             COALESCE(f.puesto_cajero, e.puesto) AS "stationNumber",
+             f.id_sucursal AS "branchId",
+             COALESCE(s.nombre_sucursal, CONCAT('Sucursal #', f.id_sucursal)) AS branch,
+             COALESCE(SUM(f.total_neto), 0) AS total
+        FROM Facturas f
+        JOIN Empleados e ON e.id_empleado = f.id_empleado
+        LEFT JOIN Sucursales s ON s.id_sucursal = f.id_sucursal
+       WHERE e.rol_usuario = 'Cajero'
+         AND EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)${reportFilter}
+       GROUP BY e.id_empleado, e.nombre_completo, COALESCE(f.puesto_cajero, e.puesto), f.id_sucursal, s.nombre_sucursal
+       ORDER BY total DESC, e.nombre_completo
     `, params)
   ]);
 
@@ -892,7 +929,13 @@ export async function getDatabaseReports(filters?: { branchId?: number; from?: s
       quantity: Number(row.quantity),
       total: Number(row.total)
     })),
-    salesByEmployee: [],
+    salesByEmployee: employeeSalesResult.rows.map((row) => ({
+      employee: String(row.employee),
+      stationNumber: row.stationNumber == null ? null : Number(row.stationNumber),
+      branchId: Number(row.branchId),
+      branch: String(row.branch),
+      total: Number(row.total)
+    })),
     profitMonthly: profitResult.rows.map((row) => ({ month: String(row.month), total: Number(row.total) })),
     purchasesBySupplier: purchasesResult.rows.map((row) => ({ supplier: String(row.supplier), total: Number(row.total) })),
     dailySalesByBranch: dailyBranchResult.rows.map((row) => ({ date: String(row.date), branch: String(row.branch), branchId: Number(row.branchId), total: Number(row.total), orders: Number(row.orders) }))
@@ -1478,7 +1521,7 @@ export async function updateDatabaseProduct(id: number, input: Record<string, un
  * 3. InserciÃ³n de movimientos de kardex.
  * 4. GeneraciÃ³n de factura fiscal electrÃ³nica y sus partidas detalladas.
  */
-export async function createDatabaseCheckout(input: PublicCheckoutInput, options: { source: 'POS'; cashReceived?: number } | null = null) {
+export async function createDatabaseCheckout(input: PublicCheckoutInput, options: { source: 'POS'; employeeId: number; stationNumber?: number | null; cashReceived?: number; paymentPending?: boolean } | null = null) {
   const database = requirePool();
   const client = await database.connect();
   try {
@@ -1562,10 +1605,10 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput, options
       throw new Error(`El pago es insuficiente. Debe recibir al menos Q${total.toFixed(2)}.`);
     }
     const invoiceResult = await client.query(
-      `INSERT INTO Facturas (id_cliente, id_sucursal, fecha_emision, correlativo_sat, total_neto,
+      `INSERT INTO Facturas (id_cliente, id_sucursal, id_empleado, puesto_cajero, fecha_emision, correlativo_sat, total_neto,
                              subtotal_bruto, descuento_aplicado, codigo_descuento)
-       VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4, $5, $6, $7) RETURNING id_factura`,
-      [customer.id_cliente, input.branchId, `${options?.source ?? 'WEB'}-${Date.now()}`, total, subtotal, discountAmount, discount?.code ?? null]
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, $5, $6, $7, $8, $9) RETURNING id_factura`,
+      [customer.id_cliente, input.branchId, options?.employeeId ?? null, options?.stationNumber ?? null, `${options?.source ?? 'WEB'}-${Date.now()}`, total, subtotal, discountAmount, discount?.code ?? null]
     );
     const invoiceId = Number(invoiceResult.rows[0].id_factura);
     if (discount) {
@@ -1580,7 +1623,7 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput, options
         await client.query(`INSERT INTO Detalle_Facturas (id_factura, id_lote, cantidad_vendida, precio_venta_aplicado, subtotal) VALUES ($1, $2, $3, $4, $5)`, [invoiceId, lot.id, lot.quantity, lot.price, lot.quantity * lot.price]);
       }
     }
-    if (options?.source === 'POS') {
+    if (options?.source === 'POS' && !options.paymentPending) {
       const methodResult = await client.query(
         `INSERT INTO MetodosPago (nombre_metodo) VALUES ('Efectivo') ON CONFLICT DO NOTHING RETURNING id_metodo_pago`
       );
@@ -1599,13 +1642,15 @@ export async function createDatabaseCheckout(input: PublicCheckoutInput, options
         id: invoiceId,
         code: `${options?.source ?? 'WEB'}-${String(invoiceId).padStart(6, '0')}`,
         source: options?.source ?? 'WEB',
+        employeeId: options?.employeeId ?? null,
+        stationNumber: options?.stationNumber ?? null,
         subtotal,
         discountAmount,
         discountCode: discount?.code ?? null,
         total,
         deliveryMode: input.deliveryMode,
-        status: options?.source === 'POS' ? 'PAID' : 'AWAITING_PAYMENT',
-        paymentStatus: options?.source === 'POS' ? 'PAID' : 'PENDING'
+        status: options?.source === 'POS' && !options.paymentPending ? 'PAID' : 'AWAITING_PAYMENT',
+        paymentStatus: options?.source === 'POS' && !options.paymentPending ? 'PAID' : 'PENDING'
       },
       customer,
       items: items.map((item) => ({
@@ -1668,7 +1713,7 @@ export interface DatabaseInvoiceDataForEmail {
 export async function getDatabaseInvoiceDataForEmail(invoiceId: number): Promise<DatabaseInvoiceDataForEmail | null> {
   const database = requirePool();
   const invoiceResult = await database.query(
-    `SELECT f.id_factura, f.id_cliente, f.id_sucursal, f.fecha_emision, f.correlativo_sat,
+    `SELECT f.id_factura, f.id_cliente, f.id_sucursal, f.id_empleado, f.puesto_cajero, f.fecha_emision, f.correlativo_sat,
             f.total_neto, f.subtotal_bruto, f.descuento_aplicado, f.codigo_descuento,
             c.nombre AS customer_name, c.correo AS customer_email, c.nit AS customer_nit,
             c.telefono AS customer_phone, s.nombre_sucursal
@@ -1743,7 +1788,9 @@ export async function getDatabaseInvoiceDataForEmail(invoiceId: number): Promise
   };
   const order: Order = {
     id: invoiceId, code: invoice.invoiceNumber, source: isPosInvoice ? 'POS' : 'WEB', branchId: Number(row.id_sucursal), customerId: customer.id,
-    customerEmail: customer.email, employeeId: null, deliveryMode: 'PICKUP', address: null, assignedEmployeeId: null,
+    customerEmail: customer.email, employeeId: row.id_empleado == null ? null : Number(row.id_empleado),
+    stationNumber: row.puesto_cajero == null ? null : Number(row.puesto_cajero),
+    deliveryMode: 'PICKUP', address: null, assignedEmployeeId: null,
     deliveryLatitude: null, deliveryLongitude: null, status: paymentRow ? 'PAID' : 'AWAITING_PAYMENT',
     paymentStatus: paymentRow ? 'PAID' : 'PENDING', requiresPrescription: false, prescriptionWebUrl: null,
     prescriptionDeliveryUrl: null, subtotal, discountAmount, discountCode: invoice.discountCode, total,
@@ -2132,6 +2179,57 @@ export async function initializeDatabase() {
       snapshot JSONB NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+  await pool.query('ALTER TABLE Empleados ADD COLUMN IF NOT EXISTS puesto INTEGER');
+  await pool.query('ALTER TABLE Facturas ADD COLUMN IF NOT EXISTS id_empleado INTEGER');
+  await pool.query('ALTER TABLE Facturas ADD COLUMN IF NOT EXISTS puesto_cajero INTEGER');
+  await pool.query(`
+    WITH unassigned_employees AS (
+      SELECT id_empleado, id_sucursal, rol_usuario,
+             ROW_NUMBER() OVER (PARTITION BY id_sucursal, rol_usuario ORDER BY id_empleado) AS employee_rank
+        FROM Empleados
+       WHERE rol_usuario IN ('Cajero', 'Repartidor')
+         AND id_sucursal IS NOT NULL
+         AND COALESCE(contrasena, '') <> ''
+         AND puesto IS NULL
+    ),
+    free_stations AS (
+      SELECT branch_roles.id_sucursal, branch_roles.rol_usuario, station.number AS station_number,
+             ROW_NUMBER() OVER (PARTITION BY branch_roles.id_sucursal, branch_roles.rol_usuario ORDER BY station.number) AS station_rank
+        FROM (
+          SELECT DISTINCT id_sucursal, rol_usuario
+            FROM unassigned_employees
+        ) branch_roles
+        CROSS JOIN generate_series(1, 7) AS station(number)
+       WHERE NOT EXISTS (
+         SELECT 1
+           FROM Empleados occupied
+          WHERE occupied.id_sucursal = branch_roles.id_sucursal
+            AND occupied.rol_usuario = branch_roles.rol_usuario
+            AND occupied.puesto = station.number
+            AND COALESCE(occupied.contrasena, '') <> ''
+       )
+    ),
+    assignments AS (
+      SELECT unassigned_employees.id_empleado, free_stations.station_number
+        FROM unassigned_employees
+        JOIN free_stations
+          ON free_stations.id_sucursal = unassigned_employees.id_sucursal
+         AND free_stations.rol_usuario = unassigned_employees.rol_usuario
+         AND free_stations.station_rank = unassigned_employees.employee_rank
+    )
+    UPDATE Empleados employee
+       SET puesto = assignments.station_number
+      FROM assignments
+     WHERE employee.id_empleado = assignments.id_empleado
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_empleados_sucursal_rol_puesto_activo
+      ON Empleados (id_sucursal, rol_usuario, puesto)
+      WHERE puesto IS NOT NULL
+        AND contrasena IS NOT NULL
+        AND contrasena <> ''
+        AND rol_usuario IN ('Cajero', 'Repartidor')
   `);
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS imagen_url TEXT');
   await pool.query('ALTER TABLE Productos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true');

@@ -9,7 +9,7 @@ type AdminReports = {
   monthlySales?: Array<{ month: string; total: number }>;
   topProducts?: Array<{ name: string; quantity: number; total: number }>;
   salesByBranch?: Array<{ branch: string; total: number }>;
-  salesByEmployee?: Array<{ employee: string; total: number }>;
+  salesByEmployee?: Array<{ employee: string; stationNumber?: number | null; branchId?: number; branch?: string; total: number }>;
   profitMonthly?: Array<{ month: string; total: number }>;
   purchasesBySupplier?: Array<{ supplier: string; total: number }>;
   dailySalesByBranch?: Array<{ date: string; branch: string; branchId?: number; total: number; orders: number }>;
@@ -33,6 +33,7 @@ type AdminEmployee = {
   email: string;
   role: string;
   branchId: number | null;
+  stationNumber?: number | null;
   supervisorId: number | null;
   active: boolean;
 };
@@ -46,7 +47,24 @@ type AdminCustomer = {
   address: string;
 };
 
-type EmployeeDraft = { role: string; branchId: number | null };
+type EmployeeDraft = { role: string; branchId: number | null; stationNumber: number | null };
+
+function availableEmployeeStations(
+  employees: AdminEmployee[],
+  role: string,
+  branchId: number | null,
+  excludeEmployeeId?: number
+) {
+  if ((role !== 'Cajero' && role !== 'Repartidor') || branchId == null) return [];
+  const occupied = new Set(employees
+    .filter((employee) => employee.active
+      && employee.id !== excludeEmployeeId
+      && employee.role === role
+      && employee.branchId === branchId
+      && employee.stationNumber != null)
+    .map((employee) => employee.stationNumber));
+  return [1, 2, 3, 4, 5, 6, 7].filter((stationNumber) => !occupied.has(stationNumber));
+}
 
 function formatChartLabel(value: string) {
   if (/^\d{4}-\d{2}$/.test(value)) {
@@ -92,8 +110,8 @@ function SalesTrendChart({ rows }: { rows: Array<{ month: string; total: number 
   </div>;
 }
 
-function HorizontalBars({ rows, labelKey }: { rows: Array<{ label: string; value: number }>; labelKey: string }) {
-  const data = rows.slice(0, 6);
+function HorizontalBars({ rows, labelKey, limit = 6 }: { rows: Array<{ label: string; value: number }>; labelKey: string; limit?: number }) {
+  const data = rows.slice(0, limit);
   const max = Math.max(...data.map((row) => row.value), 1);
   return <div className="horizontal-bars">
     {data.length > 0 ? data.map((row) => <div className="bar-row" key={`${labelKey}-${row.label}`}>
@@ -169,6 +187,10 @@ function AdminCharts({ reports, branches, selectedBranchId, onBranchChange, canS
       ? fillMonthlySales(monthlySales, Math.max(monthlySales.length, 1), monthlySales.length ? new Date(`${monthlySales[monthlySales.length - 1].month}-01T00:00:00`) : new Date())
       : fillMonthlySales(monthlySales, Number(period.replace('m', '')));
   const branchRows = (reports?.salesByBranch ?? []).map((row) => ({ label: row.branch, value: Number(row.total) }));
+  const cashierRows = (reports?.salesByEmployee ?? []).map((row) => ({
+    label: `${row.branch ? `${row.branch} · ` : ''}${row.stationNumber ? `Caja ${row.stationNumber} · ` : ''}${row.employee}`,
+    value: Number(row.total)
+  }));
   const productRows = (reports?.topProducts ?? []).map((row) => ({ label: row.name, value: Number(row.total) }));
   const branch = branches.find((item) => item.id === selectedBranchId)?.name ?? '';
   const periodStart = (() => {
@@ -182,7 +204,7 @@ function AdminCharts({ reports, branches, selectedBranchId, onBranchChange, canS
   const dailyTotal = dailyRows.filter((row) => !branch || row.branch === branch).reduce((sum, row) => sum + Number(row.total), 0);
   return <section className="dashboard-analytics">
     <div className="analytics-heading"><div><span className="section-kicker">Lectura operativa</span><h2>Rendimiento {branch ? `· ${branch}` : 'de la farmacia'}</h2><p className="analytics-subtitle">Explora ventas, sucursales y productos con filtros reales.</p></div><div className="analytics-controls"><div className="period-switcher" role="group" aria-label="Período del gráfico">{(['3m', '6m', '12m', 'all'] as const).map((value) => <button key={value} type="button" className={period === value && !fromDate && !toDate ? 'active' : ''} onClick={() => { setPeriod(value); setFromDate(''); setToDate(''); }}>{value === 'all' ? 'Todo' : value.replace('m', ' meses')}</button>)}</div><div className="date-filter-group"><label>Desde<input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label>Hasta<input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label>{canSelectBranch && <label className="branch-filter-label">Sucursal<select value={selectedBranchId ?? ''} onChange={(event) => onBranchChange(event.target.value ? Number(event.target.value) : null)}><option value="">Todas las sucursales</option>{branches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}</div></div></div>
-    <div className="analytics-grid"><div className="analytics-card analytics-card-wide"><div className="analytics-card-head"><div><h3>Ventas mensuales</h3><p>Ingresos confirmados por período seleccionado</p></div><span className="data-freshness">{visibleMonthlySales.length} períodos</span></div><SalesTrendChart rows={visibleMonthlySales} /></div><div className="analytics-card"><div className="analytics-card-head"><div><h3>Ventas por sucursal</h3><p>Comparación acumulada</p></div><span className="chart-accent blue" /></div><HorizontalBars rows={branchRows} labelKey="branch" /></div><div className="analytics-card"><div className="analytics-card-head"><div><h3>Productos destacados</h3><p>Mayor contribución a ventas</p></div><span className="chart-accent amber" /></div><HorizontalBars rows={productRows} labelKey="product" /></div></div>
+    <div className="analytics-grid"><div className="analytics-card analytics-card-wide"><div className="analytics-card-head"><div><h3>Ventas mensuales</h3><p>Ingresos confirmados por período seleccionado</p></div><span className="data-freshness">{visibleMonthlySales.length} períodos</span></div><SalesTrendChart rows={visibleMonthlySales} /></div><div className="analytics-card"><div className="analytics-card-head"><div><h3>Ventas por sucursal</h3><p>Comparación acumulada</p></div><span className="chart-accent blue" /></div><HorizontalBars rows={branchRows} labelKey="branch" /></div><div className="analytics-card"><div className="analytics-card-head"><div><h3>Ventas por caja</h3><p>Ventas registradas por cajero y puesto</p></div><span className="chart-accent green" /></div><HorizontalBars rows={cashierRows} labelKey="cashier" limit={7} /></div><div className="analytics-card"><div className="analytics-card-head"><div><h3>Productos destacados</h3><p>Mayor contribución a ventas</p></div><span className="chart-accent amber" /></div><HorizontalBars rows={productRows} labelKey="product" /></div></div>
     <div className="analytics-card daily-branch-card"><div className="analytics-card-head"><div><span className="section-kicker">Detalle por sucursal</span><h3>Ventas diarias por sucursal</h3><p>La vista que necesitas para saber qué sucursal vende cada día.</p></div><div className="daily-total"><strong>{money(dailyTotal)}</strong><span>{branch || 'Todas'} · {dailyRows.filter((row) => !branch || row.branch === branch).length} registros</span></div></div><DailyBranchPerformance rows={dailyRows} branch={branch} /></div>
   </section>;
 }
@@ -228,6 +250,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
   const [empPassword, setEmpPassword] = useState('');
   const [empRole, setEmpRole] = useState<'Administrador' | 'Gerente' | 'Cajero' | 'Bodeguero' | 'Repartidor'>('Cajero');
   const [empBranchId, setEmpBranchId] = useState<number | ''>('');
+  const [empStationNumber, setEmpStationNumber] = useState<number | ''>('');
   const [empSupervisorId, setEmpSupervisorId] = useState<number | null>(null);
   const [crosscheckOrderId, setCrosscheckOrderId] = useState('1');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -247,6 +270,9 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
   const isAdministrator = role === 'Administrador';
   const isManager = role === 'Gerente';
   const effectiveBranchId = isManager ? branchId : selectedBranchId;
+  const availableCreateStations = (empRole === 'Cajero' || empRole === 'Repartidor') && empBranchId !== ''
+    ? availableEmployeeStations(employees, empRole, empBranchId)
+    : [];
 
   useEffect(() => { window.location.hash = activeTab; }, [activeTab]);
   useEffect(() => {
@@ -276,7 +302,8 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
       setEmployees(employeeData);
       setEmployeeDrafts(Object.fromEntries(employeeData.map((employee) => [employee.id, {
         role: employee.role,
-        branchId: employee.branchId
+        branchId: employee.branchId,
+        stationNumber: employee.stationNumber ?? null
       }])));
       setCustomers(customerData);
       if (empRole !== 'Administrador' && (empBranchId === '' || isManager)) {
@@ -293,21 +320,30 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
   useEffect(() => { void loadAll().catch(() => undefined); }, [token, canManageDiscountCodes, effectiveBranchId]);
   async function createEmployee() {
     try {
+      const needsStation = empRole === 'Cajero' || empRole === 'Repartidor';
+      const stationNumber = needsStation
+        ? empStationNumber !== '' && availableCreateStations.includes(empStationNumber)
+          ? empStationNumber
+          : availableCreateStations[0]
+        : null;
       const employeeData = {
         fullName: empFullName,
         email: empEmail,
         password: empPassword,
         role: empRole,
         branchId: empRole === 'Administrador' ? null : isManager ? branchId : empBranchId === '' ? null : empBranchId,
+        stationNumber: stationNumber ?? null,
         supervisorId: empSupervisorId
       };
       if (employeeData.role !== 'Administrador' && !employeeData.branchId) throw new Error('Selecciona una sucursal para el colaborador');
+      if (needsStation && !stationNumber) throw new Error('No hay puestos disponibles para este rol en la sucursal seleccionada');
       await apiRequest('/api/admin/employees', { method: 'POST', body: JSON.stringify(employeeData) }, token);
       setEmpFullName('');
       setEmpEmail('');
       setEmpPassword('');
       setEmpRole('Cajero');
       setEmpBranchId(isManager ? branchId ?? '' : branches[0]?.id ?? '');
+      setEmpStationNumber('');
       setEmpSupervisorId(null);
       await loadAll();
       setStatus('Empleado registrado con éxito.');
@@ -319,6 +355,10 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
     const draft = employeeDrafts[employee.id];
     if (!draft || (draft.role !== 'Administrador' && draft.branchId == null)) {
       setStatus('Selecciona una sucursal para el colaborador');
+      return;
+    }
+    if ((draft.role === 'Cajero' || draft.role === 'Repartidor') && draft.stationNumber == null) {
+      setStatus('Selecciona un puesto para el cajero o repartidor');
       return;
     }
     try {
@@ -333,11 +373,11 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
     }
   }
   async function removeEmployee(employee: AdminEmployee) {
-    if (!window.confirm(`¿Desactivar el acceso de ${employee.fullName}?`)) return;
+    if (!window.confirm(`¿Eliminar el acceso de ${employee.fullName}? Se conservará su historial de ventas y entregas.`)) return;
     try {
       await apiRequest(`/api/admin/employees/${employee.id}`, { method: 'DELETE' }, token);
       await loadAll();
-      setStatus(`Se desactivó el acceso de ${employee.fullName}.`);
+      setStatus(`Se eliminó el acceso de ${employee.fullName}; su historial se conservó.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'No se pudo desactivar el colaborador');
     }
@@ -437,18 +477,80 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
     </>;
   };
   const LowStockTab = () => dashboard ? <InventoryAlerts products={dashboard.lowStockProducts ?? []} /> : <SkeletonCard />;
-  const NewEmployeeTab = () => <div className="two-col-grid"><div className="panel-card"><div className="panel-head"><h2>Alta de Colaborador</h2><span className="pill-tag">Control RBAC</span></div><div className="form-grid-2"><div className="form-field"><label>Nombre</label><input value={empFullName} onChange={(e) => setEmpFullName(e.target.value)} required /></div><div className="form-field"><label>Correo</label><input type="email" value={empEmail} onChange={(e) => setEmpEmail(e.target.value)} required /></div></div><div className="form-grid-2"><div className="form-field"><label>Rol</label><select value={empRole} onChange={(e) => { const nextRole = e.target.value as typeof empRole; setEmpRole(nextRole); setEmpBranchId(nextRole === 'Administrador' ? '' : isManager ? branchId ?? '' : empBranchId || branches[0]?.id || ''); }}><option disabled={isManager}>Administrador</option><option>Gerente</option><option>Cajero</option><option>Bodeguero</option><option>Repartidor</option></select></div><div className="form-field"><label>Sucursal asignada</label><select value={empRole === 'Administrador' ? '' : empBranchId} disabled={empRole === 'Administrador' || isManager} onChange={(e) => setEmpBranchId(e.target.value ? Number(e.target.value) : '')} required={empRole !== 'Administrador'}><option value="">{empRole === 'Administrador' ? 'Acceso a todas las sucursales' : 'Selecciona una sucursal'}</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select>{empRole === 'Administrador' && <small>El administrador no necesita sucursal asignada.</small>}{isManager && <small>Este colaborador quedará asignado a tu sucursal.</small>}</div><PasswordInputComponent label="Contraseña" value={empPassword} onChange={(e) => setEmpPassword(e.target.value)} required /></div><button type="button" className="btn-primary" onClick={createEmployee} disabled={empRole !== 'Administrador' && (!branches.length || (isManager && branchId == null))}>Crear Usuario</button>{status && <div className="checkout-status-msg" role="status">{status}</div>}{!branches.length && empRole !== 'Administrador' && <p role="status">No hay sucursales disponibles para asignar.</p>}</div></div>;
+  const NewEmployeeTab = () => <div className="two-col-grid">
+    <div className="panel-card">
+      <div className="panel-head"><h2>Alta de Colaborador</h2><span className="pill-tag">Control RBAC</span></div>
+      <div className="form-grid-2">
+        <div className="form-field"><label>Nombre</label><input value={empFullName} onChange={(event) => setEmpFullName(event.target.value)} required /></div>
+        <div className="form-field"><label>Correo</label><input type="email" value={empEmail} onChange={(event) => setEmpEmail(event.target.value)} required /></div>
+      </div>
+      <div className="form-grid-2">
+        <div className="form-field">
+          <label>Rol</label>
+          <select value={empRole} onChange={(event) => {
+            const nextRole = event.target.value as typeof empRole;
+            setEmpRole(nextRole);
+            setEmpBranchId(nextRole === 'Administrador' ? '' : isManager ? branchId ?? '' : empBranchId || branches[0]?.id || '');
+            setEmpStationNumber('');
+          }}>
+            <option disabled={isManager}>Administrador</option><option>Gerente</option><option>Cajero</option><option>Bodeguero</option><option>Repartidor</option>
+          </select>
+        </div>
+        <div className="form-field">
+          <label>Sucursal asignada</label>
+          <select value={empRole === 'Administrador' ? '' : empBranchId} disabled={empRole === 'Administrador' || isManager} onChange={(event) => {
+            setEmpBranchId(event.target.value ? Number(event.target.value) : '');
+            setEmpStationNumber('');
+          }} required={empRole !== 'Administrador'}>
+            <option value="">{empRole === 'Administrador' ? 'Acceso a todas las sucursales' : 'Selecciona una sucursal'}</option>
+            {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+          </select>
+          {empRole === 'Administrador' && <small>El administrador no necesita sucursal asignada.</small>}
+          {isManager && <small>Este colaborador quedará asignado a tu sucursal.</small>}
+        </div>
+        <PasswordInputComponent label="Contraseña" value={empPassword} onChange={setEmpPassword} required />
+        {(empRole === 'Cajero' || empRole === 'Repartidor') && <div className="form-field">
+          <label>Puesto asignado</label>
+          <select value={empStationNumber !== '' && availableCreateStations.includes(empStationNumber) ? empStationNumber : availableCreateStations[0] ?? ''} onChange={(event) => setEmpStationNumber(event.target.value ? Number(event.target.value) : '')} required>
+            <option value="">Selecciona un puesto disponible</option>
+            {availableCreateStations.map((stationNumber) => <option key={stationNumber} value={stationNumber}>{empRole === 'Cajero' ? `Caja ${stationNumber}` : `Puesto ${stationNumber}`}</option>)}
+          </select>
+          {availableCreateStations.length === 0 && <small>No quedan puestos disponibles para este rol en la sucursal.</small>}
+        </div>}
+      </div>
+      <button type="button" className="btn-primary" onClick={createEmployee} disabled={empRole !== 'Administrador' && (!branches.length || (isManager && branchId == null) || ((empRole === 'Cajero' || empRole === 'Repartidor') && availableCreateStations.length === 0))}>Crear Usuario</button>
+      {status && <div className="checkout-status-msg" role="status">{status}</div>}
+      {!branches.length && empRole !== 'Administrador' && <p role="status">No hay sucursales disponibles para asignar.</p>}
+    </div>
+  </div>;
   const EmployeesTab = () => <section className="panel-card admin-people-panel"><div className="panel-head"><div><h2>Empleados</h2><span className="panel-subtitle">Consulta y actualiza el rol y la sucursal asignada.</span></div><span className="pill-tag">{employees.length} colaboradores</span></div>{status && <div className="checkout-status-msg" role="status">{status}</div>}{employees.length ? <div className="admin-people-list">{employees.map((employee) => {
-    const draft = employeeDrafts[employee.id] ?? { role: employee.role, branchId: employee.branchId };
+    const draft = employeeDrafts[employee.id] ?? { role: employee.role, branchId: employee.branchId, stationNumber: employee.stationNumber ?? null };
+    const availableStations = availableEmployeeStations(employees, draft.role, draft.branchId, employee.id);
     const canEdit = employee.active;
     return <article className="admin-person-card" key={employee.id}>
       <div className="admin-person-summary"><div><h3>{employee.fullName}</h3><span>{employee.email}</span></div><span className={`supplier-status ${employee.active ? 'active' : 'inactive'}`}>{employee.active ? 'Activo' : 'Inactivo'}</span></div>
       <div className="admin-person-fields">
-        <div className="form-field"><label htmlFor={`employee-role-${employee.id}`}>Rol</label><select id={`employee-role-${employee.id}`} value={draft.role} disabled={!canEdit} onChange={(event) => { const nextRole = event.target.value; setEmployeeDrafts({ ...employeeDrafts, [employee.id]: { ...draft, role: nextRole, branchId: nextRole === 'Administrador' ? null : isManager ? branchId : draft.branchId } }); }}><option disabled={isManager}>Administrador</option><option>Gerente</option><option>Cajero</option><option>Bodeguero</option><option>Repartidor</option><option>Proveedor</option></select></div>
-        <div className="form-field"><label htmlFor={`employee-branch-${employee.id}`}>Sucursal asignada</label><select id={`employee-branch-${employee.id}`} value={draft.role === 'Administrador' ? '' : draft.branchId ?? ''} disabled={!canEdit || draft.role === 'Administrador' || isManager} onChange={(event) => setEmployeeDrafts({ ...employeeDrafts, [employee.id]: { ...draft, branchId: event.target.value ? Number(event.target.value) : null } })}><option value="">{draft.role === 'Administrador' ? 'Acceso a todas las sucursales' : 'Selecciona una sucursal'}</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></div>
+        <div className="form-field"><label htmlFor={`employee-role-${employee.id}`}>Rol</label><select id={`employee-role-${employee.id}`} value={draft.role} disabled={!canEdit} onChange={(event) => {
+          const nextRole = event.target.value;
+          const nextBranchId = nextRole === 'Administrador' ? null : isManager ? branchId : draft.branchId;
+          const nextAvailable = availableEmployeeStations(employees, nextRole, nextBranchId, employee.id);
+          const stationNumber = nextRole === 'Cajero' || nextRole === 'Repartidor'
+            ? draft.stationNumber != null && nextAvailable.includes(draft.stationNumber) ? draft.stationNumber : nextAvailable[0] ?? null
+            : null;
+          setEmployeeDrafts({ ...employeeDrafts, [employee.id]: { ...draft, role: nextRole, branchId: nextBranchId, stationNumber } });
+        }}><option disabled={isManager}>Administrador</option><option>Gerente</option><option>Cajero</option><option>Bodeguero</option><option>Repartidor</option><option>Proveedor</option></select></div>
+        <div className="form-field"><label htmlFor={`employee-branch-${employee.id}`}>Sucursal asignada</label><select id={`employee-branch-${employee.id}`} value={draft.role === 'Administrador' ? '' : draft.branchId ?? ''} disabled={!canEdit || draft.role === 'Administrador' || isManager} onChange={(event) => {
+          const nextBranchId = event.target.value ? Number(event.target.value) : null;
+          const nextAvailable = availableEmployeeStations(employees, draft.role, nextBranchId, employee.id);
+          const stationNumber = draft.role === 'Cajero' || draft.role === 'Repartidor'
+            ? draft.stationNumber != null && nextAvailable.includes(draft.stationNumber) ? draft.stationNumber : nextAvailable[0] ?? null
+            : null;
+          setEmployeeDrafts({ ...employeeDrafts, [employee.id]: { ...draft, branchId: nextBranchId, stationNumber } });
+        }}><option value="">{draft.role === 'Administrador' ? 'Acceso a todas las sucursales' : 'Selecciona una sucursal'}</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></div>
+        {(draft.role === 'Cajero' || draft.role === 'Repartidor') && <div className="form-field"><label htmlFor={`employee-station-${employee.id}`}>Puesto asignado</label><select id={`employee-station-${employee.id}`} value={draft.stationNumber ?? ''} disabled={!canEdit} onChange={(event) => setEmployeeDrafts({ ...employeeDrafts, [employee.id]: { ...draft, stationNumber: event.target.value ? Number(event.target.value) : null } })}><option value="">Selecciona un puesto</option>{availableStations.map((stationNumber) => <option key={stationNumber} value={stationNumber}>{draft.role === 'Cajero' ? `Caja ${stationNumber}` : `Puesto ${stationNumber}`}</option>)}</select></div>}
         <div className="admin-person-password"><span>Contraseña</span><strong>Protegida; no se puede consultar</strong></div>
       </div>
-      <div className="admin-person-actions"><button type="button" className="btn-primary" disabled={!canEdit || (draft.role !== 'Administrador' && draft.branchId == null)} onClick={() => saveEmployee(employee)}>Guardar cambios</button><button type="button" className="btn-secondary" disabled={!canEdit} onClick={() => removeEmployee(employee)}>{employee.active ? 'Desactivar empleado' : 'Empleado desactivado'}</button></div>
+      <div className="admin-person-actions"><button type="button" className="btn-primary" disabled={!canEdit || (draft.role !== 'Administrador' && draft.branchId == null) || ((draft.role === 'Cajero' || draft.role === 'Repartidor') && draft.stationNumber == null)} onClick={() => saveEmployee(employee)}>Guardar cambios</button><button type="button" className="btn-secondary" disabled={!canEdit} onClick={() => removeEmployee(employee)}>{employee.active ? 'Eliminar empleado' : 'Empleado eliminado'}</button></div>
     </article>;
   })}</div> : <p>No hay colaboradores registrados.</p>}</section>;
   const CustomersTab = () => <section className="panel-card admin-people-panel"><div className="panel-head"><div><h2>Clientes</h2><span className="panel-subtitle">Cuentas registradas en el portal de clientes.</span></div><span className="pill-tag">{customers.length} clientes</span></div>{status && <div className="checkout-status-msg" role="status">{status}</div>}<div className="admin-dashboard-message" role="note">Las contraseñas se almacenan cifradas y no se pueden consultar. Al eliminar una cuenta se conserva el historial de pedidos.</div>{customers.length ? <div className="admin-people-list">{customers.map((customer) => <article className="admin-person-card" key={customer.customerId}><div className="admin-person-summary"><div><h3>{customer.fullName}</h3><span>{customer.email}</span></div></div><div className="admin-person-fields"><div className="admin-person-password"><span>Teléfono</span><strong>{customer.phone || 'Sin teléfono'}</strong></div><div className="admin-person-password"><span>Contraseña</span><strong>Protegida; no se puede consultar</strong></div></div>{isAdministrator && <div className="admin-person-actions"><button type="button" className="btn-secondary" onClick={() => removeCustomer(customer)}>Eliminar cuenta</button></div>}</article>)}</div> : <p>No hay cuentas de clientes registradas.</p>}</section>;

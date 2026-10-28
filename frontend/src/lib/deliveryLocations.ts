@@ -1,9 +1,9 @@
 import type { Branch } from '../types';
 
 const knownBranchAddresses = {
-  jocotenango: 'Calle Ricardo Arjona, Finca Lizardi, Zona 4, Centro Comercial Plaza Jocotenango, Jocotenango, Sacatepéquez, 03002',
-  antigua: 'Finca Las Victorias, Kilómetro 46, Carretera a Ciudad Vieja, Antigua Guatemala, Sacatepéquez, 03001',
-  pastores: 'Calle Real de Pastores 2-12, Zona 6, Pastores, Sacatepéquez, 03003'
+  jocotenango: 'H7F6+JG3, C. Ricardo Arjona, Antigua Guatemala, Sacatepéquez, Guatemala',
+  antigua: 'G7X4+RJ, Antigua Guatemala, Sacatepéquez, Guatemala',
+  pastores: 'H6VW+HJF, Pastores, Sacatepéquez, Guatemala'
 };
 
 function normalize(value: string): string {
@@ -14,7 +14,7 @@ export function getDeliveryOrigin(branch: Branch): string | null {
   const name = normalize(`${branch.name} ${branch.city}`);
   if (name.includes('jocotenango')) return knownBranchAddresses.jocotenango;
   if (name.includes('antigua')) return knownBranchAddresses.antigua;
-  if (name.includes('pastores') || name.includes('ciudad vieja')) return knownBranchAddresses.pastores;
+  if (name.includes('pastores')) return knownBranchAddresses.pastores;
   return branch.address.trim() || null;
 }
 

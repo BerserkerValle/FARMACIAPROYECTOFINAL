@@ -146,6 +146,9 @@ export function createSale(req: Request, res: Response) {
   if (!req.user) {
     return res.status(401).json({ success: false, message: 'No autenticado' });
   }
+  if (req.user.role === 'Cajero' && req.user.stationNumber == null) {
+    return res.status(403).json({ success: false, message: 'No tienes una caja asignada' });
+  }
   const payload = saleSchema.parse(req.body);
   const branchId = resolveBranchScope(req.user.role, req.user.branchId, payload.branchId);
   if (!branchId) {
@@ -250,7 +253,7 @@ async function handlePosSaleDatabase(
       items: payload.items,
       discountCode: payload.discountCode,
       prescriptionWebUrl: null
-    }, { source: 'POS', cashReceived: payload.cashReceived });
+    }, { source: 'POS', employeeId: req.user.employeeId, stationNumber: req.user.stationNumber, cashReceived: payload.cashReceived });
 
     // PASO 3: Confirmar la clave con el orderId real
     await confirmDatabasePosIdempotency(keyHash, sale.order.id);
@@ -308,6 +311,10 @@ function handlePosSaleMemory(
 
 export async function createQrPayment(req: Request, res: Response) {
   try {
+    if (!req.user) return res.status(401).json({ success: false, message: 'No autenticado' });
+    if (req.user.role === 'Cajero' && req.user.stationNumber == null) {
+      return res.status(403).json({ success: false, message: 'No tienes una caja asignada' });
+    }
     const stripe = stripeClient();
     if (!stripe) return res.status(503).json({ success: false, message: 'Stripe no está configurado' });
     const payload = saleSchema.parse(req.body);
@@ -328,8 +335,8 @@ export async function createQrPayment(req: Request, res: Response) {
       prescriptionWebUrl: null
     };
     const created = databaseEnabled
-      ? await createDatabaseCheckout(checkout)
-      : store.createWebCheckout(checkout);
+      ? await createDatabaseCheckout(checkout, { source: 'POS', employeeId: req.user.employeeId, stationNumber: req.user.stationNumber, paymentPending: true })
+      : store.createWebCheckout(checkout, { source: 'POS', employeeId: req.user.employeeId, stationNumber: req.user.stationNumber });
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(created.order.total * 100),
       currency: process.env.STRIPE_CURRENCY?.trim().toLowerCase() || 'gtq',
@@ -388,11 +395,15 @@ export async function deliveries(req: Request, res: Response) {
   if (!branchId) {
     return res.status(400).json({ success: false, message: 'Debe definir la sucursal' });
   }
+  if (req.user.role === 'Repartidor' && req.user.stationNumber == null) {
+    return res.status(403).json({ success: false, message: 'No tienes un puesto de reparto asignado' });
+  }
 
   if (databaseEnabled) {
     const rows = await listDatabaseDeliveries(branchId, {
       employeeId: actor.employeeId,
-      restrictToAssignee: !isSupervisorRole(actor.role)
+      restrictToAssignee: !isSupervisorRole(actor.role),
+      includeDelivered: isSupervisorRole(actor.role)
     });
     const data = rows.filter((row) => canReadDelivery(actor, {
       branchId: Number(row.branchId),
@@ -402,7 +413,7 @@ export async function deliveries(req: Request, res: Response) {
   }
 
   const data = store
-    .listDeliveries(branchId, actor)
+    .listDeliveries(branchId, actor, isSupervisorRole(actor.role))
     .filter((order) => canReadDelivery(actor, { branchId: order.branchId, assignedEmployeeId: order.assignedEmployeeId ?? null }));
   return res.json({ success: true, data });
 }
@@ -421,6 +432,9 @@ export async function updateDelivery(req: Request, res: Response) {
     const payload = trackingSchema.parse(req.body);
     const deliveryId = Number(req.params.id);
     const actor = { employeeId: req.user.employeeId, role: req.user.role, branchId: req.user.branchId };
+    if (actor.role === 'Repartidor' && req.user.stationNumber == null) {
+      return res.status(403).json({ success: false, message: 'No tienes un puesto de reparto asignado' });
+    }
 
     if (databaseEnabled) {
       const ownership = await findDatabaseDeliveryOwnership(deliveryId);

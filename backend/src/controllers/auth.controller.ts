@@ -126,7 +126,8 @@ export async function login(req: Request, res: Response) {
         fullName: employee.fullName,
         email: employee.email,
         role: employee.role,
-        branchId: employee.branchId
+        branchId: employee.branchId,
+        stationNumber: employee.stationNumber ?? null
       }
     }
   });

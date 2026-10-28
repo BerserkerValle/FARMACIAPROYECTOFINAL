@@ -27,6 +27,7 @@ import {
 } from '../db.js';
 import { store } from '../store.js';
 import { guatemalaPhoneSchema } from '../utils.js';
+import { getAvailableEmployeeStations, requiresEmployeeStation } from '../utils/employeeStations.js';
 
 
 // ESQUEMAS DE VALIDACION
@@ -39,6 +40,7 @@ const employeeSchema = z.object({
   password: z.string().min(6, 'Contraseña mínima de 6 caracteres'),
   role: z.enum(['Administrador', 'Gerente', 'Cajero', 'Bodeguero', 'Repartidor', 'Proveedor']),
   branchId: z.number().int().positive().nullable(),
+  stationNumber: z.number().int().min(1).max(7).nullable().optional(),
   supervisorId: z.number().int().positive().nullable()
 });
 
@@ -297,6 +299,26 @@ async function assertEmployeeBranchExists(branchId: number | null, role: Role) {
   }
 }
 
+async function assertEmployeeStationAvailable(
+  role: Role,
+  branchId: number | null,
+  stationNumber: number | null,
+  excludeEmployeeId?: number
+) {
+  if (!requiresEmployeeStation(role)) {
+    if (stationNumber !== null) throw new Error('Este rol no requiere un puesto');
+    return;
+  }
+  if (branchId == null || stationNumber == null) {
+    throw new Error('Selecciona un puesto para el cajero o repartidor');
+  }
+  const employees = databaseEnabled ? await listDatabaseEmployees() : store.getEmployees();
+  const available = getAvailableEmployeeStations(employees ?? [], role, branchId, excludeEmployeeId);
+  if (!available.includes(stationNumber)) {
+    throw new Error(`El puesto ${stationNumber} ya está ocupado en esta sucursal`);
+  }
+}
+
 /** Lista todos los colaboradores del sistema */
 export async function employees(req: Request, res: Response) {
   const data = databaseEnabled ? await listDatabaseEmployees() : store.getEmployees();
@@ -361,6 +383,7 @@ export async function createEmployee(req: Request, res: Response) {
       return res.status(403).json({ success: false, message: 'Solo puedes asignar colaboradores a tu sucursal' });
     }
     await assertEmployeeBranchExists(payload.branchId, payload.role);
+    await assertEmployeeStationAvailable(payload.role, payload.branchId, payload.stationNumber ?? null);
     const employee = databaseEnabled ? await createDatabaseEmployee(payload) : store.addEmployee(payload);
     const { password: _password, ...safeEmployee } = employee as typeof employee & { password?: string };
     return res.status(201).json({ success: true, data: safeEmployee });
@@ -402,14 +425,18 @@ export async function updateEmployee(req: Request, res: Response) {
 
     const nextRole = payload.role ?? current.role as Role;
     const nextBranchId = payload.branchId !== undefined ? payload.branchId : current.branchId;
+    const nextStationNumber = requiresEmployeeStation(nextRole)
+      ? payload.stationNumber !== undefined ? payload.stationNumber : current.stationNumber ?? null
+      : null;
     if (req.user.role === 'Gerente' && nextBranchId !== req.user.branchId) {
       return res.status(403).json({ success: false, message: 'Solo puedes asignar colaboradores a tu sucursal' });
     }
     await assertEmployeeBranchExists(nextBranchId, nextRole);
+    await assertEmployeeStationAvailable(nextRole, nextBranchId, nextStationNumber, targetId);
 
     const employee = databaseEnabled
-      ? await updateDatabaseEmployee(targetId, payload)
-      : store.updateEmployee(targetId, payload);
+      ? await updateDatabaseEmployee(targetId, { ...payload, stationNumber: nextStationNumber })
+      : store.updateEmployee(targetId, { ...payload, stationNumber: nextStationNumber });
     const { password: _password, ...safeEmployee } = employee as typeof employee & { password?: string };
     return res.json({ success: true, data: safeEmployee });
   } catch (error) {
@@ -419,8 +446,8 @@ export async function updateEmployee(req: Request, res: Response) {
 }
 
 /**
- * Desactiva un empleado en el sistema (baja lógica).
- * Nadie puede desactivarse a sí mismo ni desactivar a un administrador.
+ * Elimina el acceso del empleado conservando los datos vinculados a su historial.
+ * Nadie puede eliminarse a sí mismo ni eliminar a un administrador como gerente.
  */
 export async function deleteEmployee(req: Request, res: Response) {
   try {
@@ -429,7 +456,7 @@ export async function deleteEmployee(req: Request, res: Response) {
     }
     const targetId = Number(req.params.id);
     if (targetId === req.user.employeeId) {
-      return res.status(403).json({ success: false, message: 'No puedes desactivar tu propia cuenta' });
+      return res.status(403).json({ success: false, message: 'No puedes eliminar el acceso de tu propia cuenta' });
     }
     const current = await findEmployeeRecord(targetId);
     if (!current) {
@@ -446,7 +473,7 @@ export async function deleteEmployee(req: Request, res: Response) {
       : store.deleteEmployee(targetId);
     return res.json({ success: true, data });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'No se pudo desactivar el empleado';
+    const message = error instanceof Error ? error.message : 'No se pudo eliminar el empleado';
     return res.status(400).json({ success: false, message });
   }
 }

@@ -48,6 +48,7 @@ async function loadAuthenticatedEmployee(req: Request) {
     employeeId: resolvedEmployeeId,
     role: employee.role,
     branchId: employee.branchId,
+    stationNumber: employee.stationNumber ?? null,
     fullName: employee.fullName,
     email: employee.email
   };

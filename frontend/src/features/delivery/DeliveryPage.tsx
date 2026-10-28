@@ -47,9 +47,16 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
 
   async function loadRoute() {
     if (!token) return;
-    const branches = role === 'Administrador' || role === 'Gerente'
-      ? await apiRequest<Branch[]>('/api/admin/branches', {}, token)
-      : await apiRequest<Branch[]>('/api/public/branches');
+    const supervisor = role === 'Administrador' || role === 'Gerente';
+    const [branches, employees] = await Promise.all([
+      supervisor
+        ? apiRequest<Branch[]>('/api/admin/branches', {}, token)
+        : apiRequest<Branch[]>('/api/public/branches'),
+      supervisor
+        ? apiRequest<Array<{ id: number; fullName: string }>>('/api/admin/employees', {}, token)
+        : Promise.resolve([])
+    ]);
+    const employeeNames = new Map(employees.map((employee) => [employee.id, employee.fullName]));
     const routeBranches = role === 'Administrador'
       ? branches
       : branches.filter((branch) => branch.id === branchId);
@@ -67,7 +74,10 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
         branch: {
           ...branch,
           name: delivery.branchName || branch.name
-        }
+        },
+        assignedEmployeeName: delivery.assignedEmployeeId == null
+          ? null
+          : employeeNames.get(Number(delivery.assignedEmployeeId)) ?? 'Empleado eliminado'
       }));
     }));
     setOrders(routesByBranch.flat());
@@ -165,16 +175,21 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
                   </p>
                   <small>{order.address?.trim() || (getDeliveryCoordinates(order) ? 'Ubicación GPS compartida por el cliente' : 'Sin dirección registrada')}</small>
                   <small>{money(Number(order.total) || 0)} · {order.status}</small>
+                  {role === 'Administrador' || role === 'Gerente'
+                    ? <small>Repartidor: {order.assignedEmployeeName ?? 'Sin asignar'}</small>
+                    : null}
                   <div className="delivery-route-actions">
                     <button type="button" className="btn-secondary" onClick={() => setSelectedOrder(order)}>
                       Ver ruta
                     </button>
-                    <button type="button" className="btn-secondary" onClick={() => updateDeliveryLocation(order.id)}>
-                      Iniciar / actualizar GPS
-                    </button>
-                    <button type="button" className="btn-secondary" onClick={() => updateDeliveryLocation(order.id, 'DELIVERED')}>
-                      Marcar entregado
-                    </button>
+                    {order.status !== 'DELIVERED' && <>
+                      <button type="button" className="btn-secondary" onClick={() => updateDeliveryLocation(order.id)}>
+                        Iniciar / actualizar GPS
+                      </button>
+                      <button type="button" className="btn-secondary" onClick={() => updateDeliveryLocation(order.id, 'DELIVERED')}>
+                        Marcar entregado
+                      </button>
+                    </>}
                     {sharingLocation && locationWatchOrderId.current === order.id && (
                       <button type="button" className="btn-secondary" onClick={() => { stopLocationSharing(); setStatus('Se pausó el envío de ubicación.'); }}>
                         Detener ubicación

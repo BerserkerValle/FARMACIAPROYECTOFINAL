@@ -52,6 +52,7 @@ import type {
   Supplier
 } from './domain.js';
 import { assertDiscountCodeUsable, calculateDiscountAmount } from './discounts.js';
+import { getAvailableEmployeeStations, requiresEmployeeStation } from './utils/employeeStations.js';
 import { generarFacturaDesdeOrden } from './services/invoice.service.js';
 import { hasSanitaryRegistryChanged } from './utils.js';
 
@@ -154,6 +155,7 @@ export class PharmacyStore {
       if (databaseSnapshot) {
         this.snapshot = databaseSnapshot;
         this.snapshot.products = this.snapshot.products.map(normalizeProduct);
+        this.migrateEmployeeStations();
         this.ensureDiscountSnapshotDefaults();
         await this.migrateEmployeePasswords();
         return;
@@ -166,6 +168,7 @@ export class PharmacyStore {
     try {
       const raw = await readFile(storageFile, 'utf8');
       this.snapshot = JSON.parse(raw) as DataSnapshot;
+      this.migrateEmployeeStations();
       this.ensureDiscountSnapshotDefaults();
       if (!this.snapshot.counters.product) {
         this.snapshot.counters.product = Math.max(0, ...this.snapshot.products.map((p) => p.id));
@@ -196,6 +199,17 @@ export class PharmacyStore {
       }
     }
     if (changed) await this.save();
+  }
+
+  private migrateEmployeeStations() {
+    if (!this.snapshot.employees) return;
+    for (const employee of [...this.snapshot.employees].sort((left, right) => left.id - right.id)) {
+      if (!employee.active || !requiresEmployeeStation(employee.role) || employee.branchId == null) continue;
+      const available = getAvailableEmployeeStations(this.snapshot.employees, employee.role, employee.branchId, employee.id);
+      if (employee.stationNumber == null || !available.includes(employee.stationNumber)) {
+        employee.stationNumber = available[0] ?? null;
+      }
+    }
   }
 
   /** Persiste el snapshot en PostgreSQL o en disco local */
@@ -328,9 +342,9 @@ export class PharmacyStore {
     const employees: Employee[] = [
       { id: 1, fullName: 'Admin Central', email: 'admin@derkas.com', password: 'Admin123*', role: 'Administrador', branchId: null, supervisorId: null, active: true },
       { id: 2, fullName: 'Gerente General', email: 'gerente@derkas.com', password: 'Gerente123*', role: 'Gerente', branchId: null, supervisorId: 1, active: true },
-      { id: 3, fullName: 'Cajero Vendedor 01', email: 'cajero1@derkas.com', password: 'Caja123*', role: 'Cajero', branchId: 1, supervisorId: 2, active: true },
+      { id: 3, fullName: 'Cajero Vendedor 01', email: 'cajero1@derkas.com', password: 'Caja123*', role: 'Cajero', branchId: 1, stationNumber: 1, supervisorId: 2, active: true },
       { id: 4, fullName: 'Bodeguero Antigua', email: 'bodega1@derkas.com', password: 'Bodega123*', role: 'Bodeguero', branchId: 1, supervisorId: 2, active: true },
-      { id: 5, fullName: 'Repartidor Antigua 01', email: 'rider1@derkas.com', password: 'Ruta123*', role: 'Repartidor', branchId: 1, supervisorId: 2, active: true },
+      { id: 5, fullName: 'Repartidor Antigua 01', email: 'rider1@derkas.com', password: 'Ruta123*', role: 'Repartidor', branchId: 1, stationNumber: 1, supervisorId: 2, active: true },
       { id: 6, fullName: 'Proveedor Genfar', email: 'proveedor@genfar.com', password: 'Proveedor123*', role: 'Proveedor', branchId: null, supervisorId: null, active: true }
     ];
 
@@ -863,7 +877,7 @@ export class PharmacyStore {
   // VENTAS WEB Y PUNTO DE VENTA (POS)
   // ============================================================================
 
-  createWebCheckout(input: PublicCheckoutInput) {
+  createWebCheckout(input: PublicCheckoutInput, options: { source: 'POS'; employeeId: number; stationNumber?: number | null } | null = null) {
     this.assertReady();
     const items = input.items.map((item) => {
       const product = this.snapshot.products.find((candidate) => candidate.id === item.productId);
@@ -897,12 +911,13 @@ export class PharmacyStore {
     const customer = this.upsertCustomer(input.customer);
     const order: Order = {
       id: ++this.snapshot.counters.order,
-      code: code('DK', this.snapshot.counters.order),
-      source: 'WEB',
+      code: code(options?.source ?? 'DK', this.snapshot.counters.order),
+      source: options?.source ?? 'WEB',
       branchId: input.branchId,
       customerId: customer.id,
       customerEmail: input.customer.email.trim().toLowerCase(),
-      employeeId: null,
+      employeeId: options?.employeeId ?? null,
+      stationNumber: options?.stationNumber ?? null,
       deliveryMode: input.deliveryMode,
       address: input.address ?? null,
       deliveryLatitude: input.deliveryLatitude ?? null,
@@ -984,6 +999,7 @@ export class PharmacyStore {
       branchId: input.branchId,
       customerId: customer.id,
       employeeId: cashierEmployeeId,
+      stationNumber: this.snapshot.employees.find((employee) => employee.id === cashierEmployeeId)?.stationNumber ?? null,
       deliveryMode: 'PICKUP',
       address: null,
       status: 'PAID',
@@ -1420,9 +1436,20 @@ export class PharmacyStore {
     password: string;
     role: Role;
     branchId: number | null;
+    stationNumber?: number | null;
     supervisorId: number | null;
   }) {
     this.assertReady();
+    const stationNumber = input.stationNumber ?? null;
+    if (requiresEmployeeStation(input.role) && stationNumber == null) {
+      throw new Error('Selecciona un puesto para el cajero o repartidor');
+    }
+    if (!requiresEmployeeStation(input.role) && stationNumber != null) {
+      throw new Error('Este rol no requiere un puesto');
+    }
+    if (stationNumber != null && !getAvailableEmployeeStations(this.snapshot.employees, input.role, input.branchId).includes(stationNumber)) {
+      throw new Error('Ese puesto ya está ocupado en esta sucursal');
+    }
     const employeeId = getNextEmployeeId(this.snapshot.counters.employee, this.snapshot.employees);
     this.snapshot.counters.employee = employeeId;
     const employee: Employee = {
@@ -1432,6 +1459,7 @@ export class PharmacyStore {
       password: bcrypt.hashSync(input.password, 12),
       role: input.role,
       branchId: input.branchId,
+      stationNumber,
       supervisorId: input.supervisorId,
       active: true
     };
@@ -1444,8 +1472,21 @@ export class PharmacyStore {
     this.assertReady();
     const employee = this.snapshot.employees.find((item) => item.id === id);
     if (!employee) throw new Error(`Empleado #${id} no encontrado`);
+    const nextRole = input.role ?? employee.role;
+    const nextBranchId = input.branchId !== undefined ? input.branchId : employee.branchId;
+    const nextStationNumber = input.stationNumber !== undefined ? input.stationNumber : employee.stationNumber ?? null;
+    if (requiresEmployeeStation(nextRole) && nextStationNumber == null) {
+      throw new Error('Selecciona un puesto para el cajero o repartidor');
+    }
+    if (!requiresEmployeeStation(nextRole) && nextStationNumber != null) {
+      throw new Error('Este rol no requiere un puesto');
+    }
+    if (nextStationNumber != null && !getAvailableEmployeeStations(this.snapshot.employees, nextRole, nextBranchId, id).includes(nextStationNumber)) {
+      throw new Error('Ese puesto ya está ocupado en esta sucursal');
+    }
     Object.assign(employee, {
       ...input,
+      stationNumber: nextStationNumber,
       ...(input.password ? { password: bcrypt.hashSync(input.password, 12) } : {})
     });
     this.touch();
@@ -1569,11 +1610,11 @@ export class PharmacyStore {
       .map((order) => this.enrichOrder(order));
   }
 
-  listDeliveries(branchId: number, assignee: { employeeId: number; role: Role } | null) {
+  listDeliveries(branchId: number, assignee: { employeeId: number; role: Role } | null, includeDelivered = false) {
     this.assertReady();
     return this.snapshot.orders
       .filter((order) => order.deliveryMode === 'DELIVERY')
-      .filter((order) => order.status !== 'DELIVERED' && order.status !== 'CANCELLED')
+      .filter((order) => (includeDelivered || order.status !== 'DELIVERED') && order.status !== 'CANCELLED')
       .filter((order) => (branchId ? order.branchId === branchId : true))
       .filter((order) => {
         if (!assignee || assignee.role === 'Administrador' || assignee.role === 'Gerente') return true;
@@ -1681,7 +1722,7 @@ export class PharmacyStore {
     this.assertReady();
     const salesByMonth = new Map<string, number>();
     const salesByBranch = new Map<number, number>();
-    const salesByEmployee = new Map<number, number>();
+    const salesByEmployee = new Map<string, { employeeId: number; stationNumber: number | null; branchId: number; total: number }>();
     const salesByProduct = new Map<number, { name: string; quantity: number; total: number }>();
     const purchasesBySupplier = new Map<number, number>();
     const dailySalesByBranch = new Map<string, { date: string; branch: string; total: number; orders: number }>();
@@ -1706,7 +1747,19 @@ export class PharmacyStore {
       daily.orders += 1;
       dailySalesByBranch.set(dailyKey, daily);
       if (order.employeeId) {
-        salesByEmployee.set(order.employeeId, (salesByEmployee.get(order.employeeId) ?? 0) + order.total);
+        const employee = this.snapshot.employees.find((item) => item.id === order.employeeId);
+        if (employee?.role === 'Cajero') {
+          const stationNumber = order.stationNumber ?? employee.stationNumber ?? null;
+          const employeeSaleKey = `${order.employeeId}:${stationNumber ?? ''}:${order.branchId}`;
+          const employeeSale = salesByEmployee.get(employeeSaleKey) ?? {
+            employeeId: order.employeeId,
+            stationNumber,
+            branchId: order.branchId,
+            total: 0
+          };
+          employeeSale.total += order.total;
+          salesByEmployee.set(employeeSaleKey, employeeSale);
+        }
       }
       for (const item of this.snapshot.orderItems.filter((orderItem) => orderItem.orderId === order.id)) {
         const product = this.snapshot.products.find((candidate) => candidate.id === item.productId);
@@ -1729,9 +1782,18 @@ export class PharmacyStore {
     const branchRows = this.snapshot.branches
       .filter((branch) => !filters?.branchId || branch.id === filters.branchId)
       .map((branch) => ({ branch: branch.name, total: salesByBranch.get(branch.id) ?? 0 }));
-    const employeeRows = this.snapshot.employees
-      .filter((employee) => employee.role === 'Cajero' && (!filters?.branchId || employee.branchId === filters.branchId))
-      .map((employee) => ({ employee: employee.fullName, total: salesByEmployee.get(employee.id) ?? 0 }));
+    const employeeRows = [...salesByEmployee.values()]
+      .map((sale) => {
+        const employee = this.snapshot.employees.find((item) => item.id === sale.employeeId);
+        return {
+          employee: employee?.fullName ?? `Empleado #${sale.employeeId}`,
+          stationNumber: sale.stationNumber,
+          branchId: sale.branchId,
+          branch: this.snapshot.branches.find((branch) => branch.id === sale.branchId)?.name ?? '',
+          total: sale.total
+        };
+      })
+      .sort((left, right) => right.total - left.total);
     const monthlyRows = [...salesByMonth.entries()].map(([key, total]) => ({ month: key, total })).sort((left, right) => left.month.localeCompare(right.month));
     const purchaseRows = this.snapshot.suppliers.map((supplier) => ({ supplier: supplier.name, total: purchasesBySupplier.get(supplier.id) ?? 0 }));
 

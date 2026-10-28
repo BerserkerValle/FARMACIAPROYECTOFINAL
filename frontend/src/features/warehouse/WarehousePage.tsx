@@ -352,7 +352,7 @@ export function WarehousePage({ token, categories: categoriesProp, branchId, rol
   return (
     <div className="internal-page-container">
       {/* Tab Navigation Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+      <div className="warehouse-tabs-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
         <div className="section-tabs-bar">
           {!isManager && <button
             type="button"

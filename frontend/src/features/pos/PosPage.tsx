@@ -13,6 +13,7 @@ export function PosPage({ token, profile, categories }: { token: string | null; 
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | "all">("all");
   const [status, setStatus] = useState("");
   const [branchId] = useState(profile?.branchId ?? 1);
+  const [branchName, setBranchName] = useState('');
   const [sale, setSale] = useState({ name: "Cliente de mostrador", nit: "CF", email: "mostrador@demo.com", phone: "", productId: 1, quantity: 1, cashReceived: "" });
   const [saleLines, setSaleLines] = useState<Array<{ productId: number; quantity: number }>>([]);
   const [discountCode, setDiscountCode] = useState("");
@@ -25,12 +26,14 @@ export function PosPage({ token, profile, categories }: { token: string | null; 
 
   async function loadData() {
     if (!token) return;
-    const [ordersData, prodsData] = await Promise.all([
+    const [ordersData, prodsData, branches] = await Promise.all([
       apiRequest<any[]>("/api/pos/pickup-orders?branchId=" + branchId, {}, token),
-      apiRequest<ProductCard[]>("/api/public/catalog?branchId=" + branchId)
+      apiRequest<ProductCard[]>("/api/public/catalog?branchId=" + branchId),
+      apiRequest<Array<{ id: number; name: string }>>("/api/public/branches")
     ]);
     setOrders(ordersData);
     setProducts(prodsData);
+    setBranchName(branches.find((branch) => branch.id === branchId)?.name ?? `Sucursal ${branchId}`);
     if (prodsData.length > 0 && !prodsData.some((product) => product.id === sale.productId)) {
       setSale((prev) => ({ ...prev, productId: prodsData[0].id }));
     }
@@ -265,7 +268,7 @@ export function PosPage({ token, profile, categories }: { token: string | null; 
       <div className="two-col-grid">
         <div className="panel-card">
           <div className="panel-head">
-            <h2>POS de Caja (Sucursal {branchId})</h2>
+            <h2>{profile?.role === 'Cajero' ? `POS de Caja ${profile.stationNumber ?? 'sin puesto'}` : 'POS de Caja'} · {branchName || `Sucursal ${branchId}`}</h2>
             <span className="pill-tag">Venta en Mostrador</span>
           </div>
           <div className="form-grid-2">

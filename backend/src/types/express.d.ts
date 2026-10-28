@@ -27,6 +27,8 @@ declare global {
         role: Role;
         /** Sucursal asignada (o null si es administrador corporativo) */
         branchId: number | null;
+        /** Caja o puesto de reparto asignado */
+        stationNumber: number | null;
         /** Nombre completo del empleado */
         fullName: string;
         /** Correo electrónico corporativo */
