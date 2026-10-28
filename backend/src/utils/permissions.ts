@@ -42,7 +42,7 @@ export function isDeliveryRole(role: Role | null | undefined): boolean {
 }
 
 export function canGrantRole(actorRole: Role, targetRole: Role): boolean {
-  if (actorRole === 'Administrador') return targetRole !== 'Administrador';
+  if (actorRole === 'Administrador') return true;
   if (actorRole === 'Gerente') return targetRole !== 'Administrador';
   return false;
 }
@@ -51,6 +51,11 @@ export function canManageEmployee(actorRole: Role, targetRole: Role): boolean {
   if (actorRole === 'Administrador') return true;
   if (actorRole === 'Gerente') return targetRole !== 'Administrador';
   return false;
+}
+
+export function canAccessBranch(actorRole: Role | string | null | undefined, actorBranchId: number | null, targetBranchId: number | null): boolean {
+  if (actorRole === 'Administrador') return true;
+  return actorRole === 'Gerente' && actorBranchId != null && targetBranchId === actorBranchId;
 }
 
 export interface DeliveryOwnership {
@@ -65,7 +70,8 @@ export interface DeliveryActor {
 }
 
 export function canReadDelivery(actor: DeliveryActor, delivery: DeliveryOwnership): boolean {
-  if (isSupervisorRole(actor.role)) return true;
+  if (actor.role === 'Administrador') return true;
+  if (actor.role === 'Gerente') return actor.branchId != null && delivery.branchId === actor.branchId;
   if (actor.role !== 'Repartidor') return false;
   if (actor.branchId == null || delivery.branchId !== actor.branchId) return false;
   return delivery.assignedEmployeeId == null || delivery.assignedEmployeeId === actor.employeeId;
@@ -82,7 +88,9 @@ export function canClaimDelivery(actor: DeliveryActor, delivery: DeliveryOwnersh
 }
 
 export function resolveBranchScope(actorRole: Role | string | null | undefined, actorBranchId: number | null, requestedBranchId: number | null): number | null {
-  if (actorRole === 'Administrador' || actorRole === 'Gerente') return requestedBranchId ?? actorBranchId;
+  if (actorRole === 'Administrador') return requestedBranchId;
+  if (actorRole === 'Gerente') return actorBranchId;
+  if (actorRole === 'Cajero' || actorRole === 'Repartidor') return actorBranchId;
   if (actorBranchId != null) return actorBranchId;
   return requestedBranchId;
 }

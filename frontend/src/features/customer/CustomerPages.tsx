@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css";
 import { apiRequest } from "../../api";
 import { PasswordInputComponent } from "../../components/PasswordInput";
 import { useToast } from "../../components/ToastProvider";
-import { validateEmail, validatePassword } from "../../lib/validation";
+import { isValidGuatemalaPhone, sanitizePhoneInput, validateEmail, validatePassword } from "../../lib/validation";
 import type { CustomerAccount } from "../../types";
 
 export function CustomerAuthPage({ onLogin }: { onLogin: (token: string, customer: CustomerAccount) => void }) {
@@ -12,6 +12,7 @@ export function CustomerAuthPage({ onLogin }: { onLogin: (token: string, custome
   const [form, setForm] = useState({ fullName: "", email: "", password: "", phone: "", nit: "" });
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const { success: showSuccess } = useToast();
 
   const validateForm = useCallback((): boolean => {
@@ -24,6 +25,7 @@ export function CustomerAuthPage({ onLogin }: { onLogin: (token: string, custome
     if (mode === "register") {
       const pwdValidation = validatePassword(form.password);
       if (!pwdValidation.valid) { setPasswordError(pwdValidation.errors.join(", ")); valid = false; } else setPasswordError(null);
+      if (!isValidGuatemalaPhone(form.phone)) { setPhoneError("El teléfono debe contener exactamente 8 dígitos numéricos"); valid = false; } else setPhoneError(null);
     }
     return valid;
   }, [mode, form]);
@@ -49,9 +51,9 @@ export function CustomerAuthPage({ onLogin }: { onLogin: (token: string, custome
       <div className="form-field"><label>Correo electrónico</label><input type="email" value={form.email} onChange={(e) => { setForm({ ...form, email: e.target.value }); setEmailError(null); }} placeholder="correo@ejemplo.com" aria-invalid={emailError ? "true" : "false"} aria-describedby={emailError ? "email-error" : undefined} />{emailError && <p id="email-error" className="form-field-error" role="alert">{emailError}</p>}</div>
       <PasswordInputComponent label="Contraseña" value={form.password} onChange={(e) => { setForm({ ...form, password: e.target.value }); setPasswordError(null); }} placeholder="Tu contraseña" required error={passwordError} showStrength={mode === "register"} aria-invalid={passwordError ? "true" : "false"} aria-describedby={passwordError ? "password-error" : undefined} />
       {passwordError && <p id="password-error" className="form-field-error" role="alert">{passwordError}</p>}
-      {mode === "register" && <div className="form-grid-2"><div className="form-field"><label>Teléfono</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="5555-4444" /></div><div className="form-field"><label>NIT o C/F</label><input value={form.nit} onChange={(e) => setForm({ ...form, nit: e.target.value })} placeholder="1234567-8 o C/F" /></div></div>}
+      {mode === "register" && <div className="form-grid-2"><div className="form-field"><label htmlFor="customer-register-phone">Teléfono (8 dígitos)</label><input id="customer-register-phone" type="tel" inputMode="numeric" pattern="[0-9]{8}" maxLength={8} required aria-invalid={phoneError ? "true" : "false"} value={form.phone} onChange={(e) => { setForm({ ...form, phone: sanitizePhoneInput(e.target.value) }); setPhoneError(null); }} placeholder="42501265" /><small>Ingresa exactamente 8 números, sin guiones.</small>{phoneError && <p className="form-field-error" role="alert">{phoneError}</p>}</div><div className="form-field"><label>NIT o C/F</label><input value={form.nit} onChange={(e) => setForm({ ...form, nit: e.target.value })} placeholder="1234567-8 o C/F" /></div></div>}
       <button type="button" className="btn-primary" onClick={submit}>{mode === "login" ? "Entrar" : "Crear cuenta"}</button>
-      <button type="button" className="btn-secondary" onClick={() => { setMode(mode === "login" ? "register" : "login"); setPasswordError(null); setEmailError(null); }}>{mode === "login" ? "Crear una cuenta nueva" : "Ya tengo una cuenta"}</button>
+      <button type="button" className="btn-secondary" onClick={() => { setMode(mode === "login" ? "register" : "login"); setPasswordError(null); setEmailError(null); setPhoneError(null); }}>{mode === "login" ? "Crear una cuenta nueva" : "Ya tengo una cuenta"}</button>
     </div></div>
   );
 }
@@ -130,8 +132,8 @@ export function CustomerOrdersPage({ customer, customerToken, onUpdate, onLogout
 
   return <div className="internal-page-container"><div className="panel-card">
     <div className="panel-head"><h2>Mis pedidos y entregas</h2><span className="pill-tag">Actualización automática</span></div>
-    <div className="panel-card" style={{ marginBottom: "1rem" }}><div className="panel-head"><h3>Mi información</h3><div style={{ display: "flex", gap: "0.5rem" }}><button type="button" className="btn-secondary" onClick={() => setEditing(!editing)}>{editing ? "Cancelar" : "Editar datos"}</button><button type="button" className="btn-secondary" onClick={onLogout}>Cerrar sesión</button></div></div>
-      {editing ? <div className="form-grid-2"><div className="form-field"><label>Nombre completo</label><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></div><div className="form-field"><label>Correo</label><input value={form.email} disabled /></div><div className="form-field"><label>Teléfono</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div><div className="form-field"><label>NIT o C/F</label><input value={form.nit} onChange={(e) => setForm({ ...form, nit: e.target.value })} /></div><div className="form-field" style={{ gridColumn: "1 / -1" }}><label>Dirección principal</label><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Calle, municipio, número de casa" /></div><button type="button" className="btn-primary" onClick={saveProfile}>Guardar datos</button></div> : <p>{customer.fullName} · {customer.phone} · {customer.address || "Sin dirección guardada"}</p>}
+    <div className="panel-card" style={{ marginBottom: "1rem" }}><div className="panel-head"><h3>Mi información</h3><div style={{ display: "flex", gap: "0.5rem" }}><button type="button" className="btn-secondary" onClick={() => { if (!editing) setForm((previous) => ({ ...previous, phone: sanitizePhoneInput(previous.phone) })); setEditing(!editing); }}>{editing ? "Cancelar" : "Editar datos"}</button><button type="button" className="btn-secondary" onClick={onLogout}>Cerrar sesión</button></div></div>
+      {editing ? <div className="form-grid-2"><div className="form-field"><label>Nombre completo</label><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></div><div className="form-field"><label>Correo</label><input value={form.email} disabled /></div><div className="form-field"><label htmlFor="customer-profile-phone">Teléfono (8 dígitos)</label><input id="customer-profile-phone" type="tel" inputMode="numeric" pattern="[0-9]{8}" maxLength={8} required value={form.phone} onChange={(e) => setForm({ ...form, phone: sanitizePhoneInput(e.target.value) })} /><small>Ingresa exactamente 8 números, sin guiones.</small></div><div className="form-field"><label>NIT o C/F</label><input value={form.nit} onChange={(e) => setForm({ ...form, nit: e.target.value })} /></div><div className="form-field" style={{ gridColumn: "1 / -1" }}><label>Dirección principal</label><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Calle, municipio, número de casa" /></div><button type="button" className="btn-primary" onClick={saveProfile} disabled={!isValidGuatemalaPhone(form.phone)}>Guardar datos</button></div> : <p>{customer.fullName} · {customer.phone} · {customer.address || "Sin dirección guardada"}</p>}
     </div>
     {status && <div className="checkout-status-msg">{status}</div>}<div className="item-list-stack">{orders.map((order) => {
       const hasRiderLocation = order.latitude != null && order.longitude != null

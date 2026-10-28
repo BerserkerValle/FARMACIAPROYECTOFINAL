@@ -1,20 +1,23 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import type { Role } from '../domain.js';
-import { FORBIDDEN_MESSAGE, canGrantRole, canManageEmployee } from '../utils/permissions.js';
+import { FORBIDDEN_MESSAGE, canAccessBranch, canGrantRole, canManageEmployee } from '../utils/permissions.js';
 import {
   createDatabaseBranch,
   createDatabaseCategory,
   createDatabaseEmployee,
   createDatabaseSupplier,
   databaseEnabled,
+  deleteDatabaseCustomerAccount,
   deleteDatabaseBranch,
   deleteDatabaseCategory,
   deactivateDatabaseEmployee,
   getDatabaseBranches,
+  listDatabaseCustomerAccounts,
   getDatabaseCategories,
   getDatabaseDashboard,
   getDatabaseReports,
+  getDatabaseOrderById,
   getDatabaseSuppliers,
   listDatabaseEmployees,
   updateDatabaseBranch,
@@ -23,6 +26,7 @@ import {
   updateDatabaseSupplier
 } from '../db.js';
 import { store } from '../store.js';
+import { guatemalaPhoneSchema } from '../utils.js';
 
 
 // ESQUEMAS DE VALIDACION
@@ -71,7 +75,7 @@ const supplierSchema = z.object({
   contactName: z.string().trim().min(2, 'Nombre de contacto requerido'),
   nit: z.string().trim().min(3, 'NIT requerido'),
   email: z.string().email('Correo de contacto inválido'),
-  phone: z.string().min(6, 'Teléfono requerido'),
+  phone: guatemalaPhoneSchema(),
   address: z.string().min(3, 'Dirección requerida'),
   active: z.boolean().default(true)
 });
@@ -86,9 +90,15 @@ function assertLocalSupplierUnique(input: Partial<{ id: number; nit: string; ema
 
 export async function dashboard(req: Request, res: Response) {
   try {
-    const branchId = req.query.branchId ? Number(req.query.branchId) : undefined;
-    if (branchId !== undefined && (!Number.isInteger(branchId) || branchId <= 0)) {
+    const requestedBranchId = req.query.branchId ? Number(req.query.branchId) : null;
+    if (requestedBranchId !== null && (!Number.isInteger(requestedBranchId) || requestedBranchId <= 0)) {
       return res.status(400).json({ success: false, message: 'Sucursal no válida' });
+    }
+    const branchId = req.user?.role === 'Administrador'
+      ? requestedBranchId ?? undefined
+      : req.user?.branchId ?? undefined;
+    if (req.user?.role === 'Gerente' && branchId === undefined) {
+      return res.status(403).json({ success: false, message: 'El gerente debe tener una sucursal asignada' });
     }
     const data = databaseEnabled ? await getDatabaseDashboard({ branchId }) : store.getDashboard({ branchId });
     return res.json({
@@ -106,11 +116,17 @@ export async function dashboard(req: Request, res: Response) {
  */
 export async function reports(req: Request, res: Response) {
   try {
-    const branchId = req.query.branchId ? Number(req.query.branchId) : undefined;
+    const requestedBranchId = req.query.branchId ? Number(req.query.branchId) : null;
     const from = typeof req.query.from === 'string' ? req.query.from : undefined;
     const to = typeof req.query.to === 'string' ? req.query.to : undefined;
-    if (branchId !== undefined && (!Number.isInteger(branchId) || branchId <= 0)) {
+    if (requestedBranchId !== null && (!Number.isInteger(requestedBranchId) || requestedBranchId <= 0)) {
       return res.status(400).json({ success: false, message: 'Sucursal no válida' });
+    }
+    const branchId = req.user?.role === 'Administrador'
+      ? requestedBranchId ?? undefined
+      : req.user?.branchId ?? undefined;
+    if (req.user?.role === 'Gerente' && branchId === undefined) {
+      return res.status(403).json({ success: false, message: 'El gerente debe tener una sucursal asignada' });
     }
     const filters = { branchId, from, to };
     const data = databaseEnabled ? await getDatabaseReports(filters) : store.getReports(filters);
@@ -119,14 +135,20 @@ export async function reports(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'No se pudieron cargar los reportes' });
   }
 }
-export async function branches(_req: Request, res: Response) {
+export async function branches(req: Request, res: Response) {
   const data = databaseEnabled ? await getDatabaseBranches() : store.getBranches();
-  return res.json({ success: true, data: data ?? [] });
+  const visibleBranches = req.user?.role === 'Gerente'
+    ? (data ?? []).filter((branch) => Number(branch.id) === req.user?.branchId)
+    : data ?? [];
+  return res.json({ success: true, data: visibleBranches });
 }
 
 /** Crea una nueva sucursal física en el sistema */
 export async function createBranch(req: Request, res: Response) {
   try { 
+    if (req.user?.role !== 'Administrador') {
+      return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
     const payload = branchSchema.parse(req.body); 
     const data = databaseEnabled ? await createDatabaseBranch(payload) : store.addBranch(payload); 
     return res.status(201).json({ success: true, data }); 
@@ -138,6 +160,9 @@ export async function createBranch(req: Request, res: Response) {
 /** Actualiza los datos de una sucursal existente por ID */
 export async function updateBranch(req: Request, res: Response) {
   try { 
+    if (req.user?.role !== 'Administrador') {
+      return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
     const payload = branchSchema.partial().parse(req.body); 
     const data = databaseEnabled ? await updateDatabaseBranch(Number(req.params.id), payload) : store.updateBranch(Number(req.params.id), payload); 
     return res.json({ success: true, data }); 
@@ -149,6 +174,9 @@ export async function updateBranch(req: Request, res: Response) {
 /** Elimina una sucursal por ID */
 export async function deleteBranch(req: Request, res: Response) {
   try { 
+    if (req.user?.role !== 'Administrador') {
+      return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
     const data = databaseEnabled ? await deleteDatabaseBranch(Number(req.params.id)) : store.deleteBranch(Number(req.params.id)); 
     return res.json({ success: true, data }); 
   } catch (error) { 
@@ -257,10 +285,62 @@ async function findEmployeeRecord(id: number) {
   return store.getEmployees().find((item) => item.id === id) ?? null;
 }
 
+async function assertEmployeeBranchExists(branchId: number | null, role: Role) {
+  if (role === 'Administrador') {
+    if (branchId !== null) throw new Error('Un administrador tiene acceso a todas las sucursales y no requiere asignación');
+    return;
+  }
+  if (branchId == null) throw new Error('Debe asignar una sucursal al colaborador');
+  const branches = databaseEnabled ? await getDatabaseBranches() : store.getBranches();
+  if (!branches?.some((branch) => Number(branch.id) === branchId)) {
+    throw new Error('La sucursal seleccionada no existe');
+  }
+}
+
 /** Lista todos los colaboradores del sistema */
-export async function employees(_req: Request, res: Response) {
+export async function employees(req: Request, res: Response) {
   const data = databaseEnabled ? await listDatabaseEmployees() : store.getEmployees();
+  const safeData = (data ?? []).map((employee) => {
+    if ('password' in employee) {
+      const { password: _password, ...safeEmployee } = employee;
+      return safeEmployee;
+    }
+    return employee;
+  });
+  const visibleEmployees = req.user?.role === 'Gerente'
+    ? safeData.filter((employee) => Number(employee.branchId) === req.user?.branchId)
+    : safeData;
+  return res.json({ success: true, data: visibleEmployees });
+}
+
+/** Lista las cuentas de clientes registradas sin incluir credenciales */
+export async function customerAccounts(req: Request, res: Response) {
+  if (req.user?.role !== 'Administrador') {
+    return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+  }
+  const data = databaseEnabled ? await listDatabaseCustomerAccounts() : store.getRegisteredCustomers();
   return res.json({ success: true, data: data ?? [] });
+}
+
+/** Elimina la cuenta de acceso de un cliente y conserva su historial de pedidos */
+export async function deleteCustomerAccount(req: Request, res: Response) {
+  try {
+    if (req.user?.role !== 'Administrador') {
+      return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
+    const customerId = Number(req.params.id);
+    if (!Number.isInteger(customerId) || customerId <= 0) {
+      return res.status(400).json({ success: false, message: 'Cliente no válido' });
+    }
+    const data = databaseEnabled
+      ? await deleteDatabaseCustomerAccount(customerId)
+      : store.deleteCustomerAccount(customerId);
+    return res.json({ success: true, data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo eliminar la cuenta del cliente';
+    const status = message === 'Cuenta de cliente no encontrada' ? 404 : 400;
+    return res.status(status).json({ success: false, message });
+  }
 }
 
 /** 
@@ -277,6 +357,10 @@ export async function createEmployee(req: Request, res: Response) {
     if (!canGrantRole(req.user.role, payload.role)) {
       return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
     }
+    if (req.user.role === 'Gerente' && payload.branchId !== req.user.branchId) {
+      return res.status(403).json({ success: false, message: 'Solo puedes asignar colaboradores a tu sucursal' });
+    }
+    await assertEmployeeBranchExists(payload.branchId, payload.role);
     const employee = databaseEnabled ? await createDatabaseEmployee(payload) : store.addEmployee(payload);
     const { password: _password, ...safeEmployee } = employee as typeof employee & { password?: string };
     return res.status(201).json({ success: true, data: safeEmployee });
@@ -306,12 +390,22 @@ export async function updateEmployee(req: Request, res: Response) {
     if (!canManageEmployee(req.user.role, current.role as Role)) {
       return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
     }
+    if (!canAccessBranch(req.user.role, req.user.branchId, current.branchId)) {
+      return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
     if (targetId === req.user.employeeId && payload.role !== undefined) {
       return res.status(403).json({ success: false, message: 'No puedes cambiar tu propio rol' });
     }
     if (payload.role !== undefined && !canGrantRole(req.user.role, payload.role)) {
       return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
     }
+
+    const nextRole = payload.role ?? current.role as Role;
+    const nextBranchId = payload.branchId !== undefined ? payload.branchId : current.branchId;
+    if (req.user.role === 'Gerente' && nextBranchId !== req.user.branchId) {
+      return res.status(403).json({ success: false, message: 'Solo puedes asignar colaboradores a tu sucursal' });
+    }
+    await assertEmployeeBranchExists(nextBranchId, nextRole);
 
     const employee = databaseEnabled
       ? await updateDatabaseEmployee(targetId, payload)
@@ -344,6 +438,9 @@ export async function deleteEmployee(req: Request, res: Response) {
     if (!canManageEmployee(req.user.role, current.role as Role)) {
       return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
     }
+    if (!canAccessBranch(req.user.role, req.user.branchId, current.branchId)) {
+      return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
     const data = databaseEnabled
       ? await deactivateDatabaseEmployee(targetId)
       : store.deleteEmployee(targetId);
@@ -363,14 +460,32 @@ export async function deleteEmployee(req: Request, res: Response) {
  * POST /api/admin/orders/:id/crosscheck
  * El revisor se toma siempre de la sesión, nunca del cuerpo de la petición.
  */
-export function crosscheck(req: Request, res: Response) {
+export async function crosscheck(req: Request, res: Response) {
   if (!req.user) {
     return res.status(401).json({ success: false, message: 'No autenticado' });
   }
-  const orderId = Number(req.params.id);
-  const payload = crosscheckSchema.parse(req.body);
-  const record = store.crosscheckOrder(orderId, { ...payload, reviewerEmployeeId: req.user.employeeId });
-  return res.status(201).json({ success: true, data: record });
+  try {
+    const orderId = Number(req.params.id);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({ success: false, message: 'Orden no válida' });
+    }
+    if (req.user.role === 'Gerente') {
+      if (req.user.branchId == null) {
+        return res.status(403).json({ success: false, message: 'El gerente debe tener una sucursal asignada' });
+      }
+      const order = databaseEnabled
+        ? await getDatabaseOrderById(orderId)
+        : store.getOrderById(orderId);
+      if (!order || order.branchId !== req.user.branchId) {
+        return res.status(404).json({ success: false, message: 'Orden no encontrada en tu sucursal' });
+      }
+    }
+    const payload = crosscheckSchema.parse(req.body);
+    const record = store.crosscheckOrder(orderId, { ...payload, reviewerEmployeeId: req.user.employeeId });
+    return res.status(201).json({ success: true, data: record });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo validar la orden' });
+  }
 }
 
 /**

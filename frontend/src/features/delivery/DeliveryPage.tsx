@@ -47,14 +47,15 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
 
   async function loadRoute() {
     if (!token) return;
-    const branches = await apiRequest<Branch[]>('/api/public/branches');
-    const isSupervisor = role === 'Administrador' || role === 'Gerente';
-    const routeBranches = isSupervisor
+    const branches = role === 'Administrador' || role === 'Gerente'
+      ? await apiRequest<Branch[]>('/api/admin/branches', {}, token)
+      : await apiRequest<Branch[]>('/api/public/branches');
+    const routeBranches = role === 'Administrador'
       ? branches
       : branches.filter((branch) => branch.id === branchId);
     if (routeBranches.length === 0) {
       setOrders([]);
-      setStatus(isSupervisor
+      setStatus(role === 'Administrador'
         ? 'No hay sucursales disponibles para consultar entregas.'
         : 'El usuario no tiene una sucursal asignada para consultar las entregas.');
       return;

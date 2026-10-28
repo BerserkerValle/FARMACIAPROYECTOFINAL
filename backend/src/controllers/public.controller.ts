@@ -47,7 +47,7 @@ import {
   searchDatabaseCatalog
 } from '../db.js';
 import { store } from '../store.js';
-import { fiscalNitSchema } from '../utils.js';
+import { fiscalNitSchema, guatemalaPhoneSchema } from '../utils.js';
 import { createInvoiceDownloadToken, getInvoiceIdFromDownloadToken } from '../utils/jwt.js';
 import { FORBIDDEN_MESSAGE } from '../utils/permissions.js';
 import { generarFacturaDesdeOrden } from '../services/invoice.service.js';
@@ -91,7 +91,7 @@ const checkoutSchema = z.object({
     name: z.string().min(2, 'Nombre de cliente requerido'),
     nit: fiscalNitSchema('NIT requerido o ingrese CF'),
     email: z.string().email('Correo electrónico de facturación inválido'),
-    phone: z.string().min(6, 'Número telefónico requerido')
+    phone: guatemalaPhoneSchema()
   }),
   items: z.array(
     z.object({

@@ -167,6 +167,52 @@ export async function updateDatabaseCustomerAccount(id: number, input: { fullNam
   return mapCustomerAccount(result.rows[0]);
 }
 
+/** Lista las cuentas de clientes sin exponer sus hashes de contraseña */
+export async function listDatabaseCustomerAccounts(branchId?: number) {
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT id, full_name, email, phone, nit, address
+       FROM pharmacy_customer_accounts
+      WHERE $1::integer IS NULL
+         OR EXISTS (
+              SELECT 1
+                FROM pharmacy_delivery_tracking tracking
+               WHERE tracking.customer_account_id = pharmacy_customer_accounts.id
+                 AND tracking.branch_id = $1
+            )
+      ORDER BY full_name, id`,
+    [branchId ?? null]
+  );
+  return result.rows.map(mapCustomerAccount);
+}
+
+/** Elimina la cuenta de acceso y conserva el historial de entregas y pedidos */
+export async function deleteDatabaseCustomerAccount(id: number) {
+  const database = requirePool();
+  const client = await database.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      'UPDATE pharmacy_delivery_tracking SET customer_account_id = NULL WHERE customer_account_id = $1',
+      [id]
+    );
+    const result = await client.query(
+      `DELETE FROM pharmacy_customer_accounts
+        WHERE id = $1
+        RETURNING id, full_name, email, phone, nit, address`,
+      [id]
+    );
+    if (!result.rows[0]) throw new Error('Cuenta de cliente no encontrada');
+    await client.query('COMMIT');
+    return mapCustomerAccount(result.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 /** Registra el seguimiento GPS y telemetrÃ­a de una orden de entrega a domicilio */
 export async function createDatabaseDeliveryTracking(input: { orderCode: string; customerId: number | null; branchId: number; address: string; latitude: number | null; longitude: number | null; total: number; deliveryMode: string }) {
   if (input.deliveryMode !== 'DELIVERY') return;
@@ -625,9 +671,36 @@ export async function deleteDatabaseSupplier(id: number) {
 
 export async function getDatabaseDashboard(filters?: { branchId?: number }): Promise<DashboardMetrics> {
   const database = requirePool();
-  const dashboardParams = filters?.branchId ? [filters.branchId] : [];
-  const branchInvoiceFilter = filters?.branchId ? ' AND f.id_sucursal = $1' : '';
-  const branchStockFilter = filters?.branchId ? ' AND ss.id_sucursal = $1' : '';
+  const branchId = filters?.branchId;
+  const hasBranchFilter = branchId != null;
+  const dashboardParams = hasBranchFilter ? [branchId] : [];
+  const branchInvoiceFilter = hasBranchFilter ? ' AND f.id_sucursal = $1' : '';
+  const branchStockFilter = hasBranchFilter ? ' AND ss.id_sucursal = $1' : '';
+  const outOfStockBranchFilter = hasBranchFilter ? ' AND ss.id_sucursal = $1' : '';
+  const activeProductsMetric = hasBranchFilter
+    ? `(SELECT COUNT(DISTINCT l.id_producto)
+         FROM Lotes l
+         JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+         JOIN Productos p ON p.id_producto = l.id_producto
+        WHERE COALESCE(p.activo, true) = true${branchStockFilter})`
+    : `(SELECT COUNT(*) FROM Productos WHERE COALESCE(activo, true) = true)`;
+  const supplierCountMetric = hasBranchFilter
+    ? `(SELECT COUNT(DISTINCT l.id_proveedor)
+         FROM Lotes l
+         JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote${branchStockFilter})`
+    : `(SELECT COUNT(*) FROM Proveedores)`;
+  const customerCountMetric = hasBranchFilter
+    ? `(SELECT COUNT(DISTINCT tracking.customer_account_id)
+         FROM pharmacy_delivery_tracking tracking
+        WHERE tracking.customer_account_id IS NOT NULL
+          AND tracking.branch_id = $1)`
+    : `(SELECT COUNT(*) FROM Clientes)`;
+  const employeeCountMetric = hasBranchFilter
+    ? `(SELECT COUNT(*) FROM Empleados WHERE contrasena IS NOT NULL AND id_sucursal = $1)`
+    : `(SELECT COUNT(*) FROM Empleados WHERE contrasena IS NOT NULL)`;
+  const branchCountMetric = hasBranchFilter
+    ? `(SELECT COUNT(*) FROM Sucursales WHERE id_sucursal = $1)`
+    : `(SELECT COUNT(*) FROM Sucursales)`;
   const result = await database.query(`
     WITH paid_sales AS (
       SELECT COALESCE(SUM(f.total_neto) FILTER (WHERE f.fecha_emision >= CURRENT_DATE), 0) AS total,
@@ -682,7 +755,7 @@ export async function getDatabaseDashboard(filters?: { branchId?: number }): Pro
           OR EXISTS (
             SELECT 1 FROM pharmacy_delivery_tracking d
              WHERE d.order_code = CONCAT('WEB-', LPAD(f.id_factura::text, 6, '0'))
-               AND d.status <> 'DELIVERED'
+               AND d.status <> 'DELIVERED'${hasBranchFilter ? ' AND d.branch_id = $1' : ''}
           )
     ),
     expiring_lots AS (
@@ -703,17 +776,17 @@ export async function getDatabaseDashboard(filters?: { branchId?: number }): Pro
            (SELECT yesterday_total FROM paid_sales) AS "salesYesterday",
            (SELECT month_total FROM paid_sales) AS "salesMonth",
            (SELECT total FROM low_stock) AS "lowStockCount",
-           (SELECT COUNT(*) FROM Productos WHERE COALESCE(activo, true) = true) AS "activeProducts",
+           ${activeProductsMetric} AS "activeProducts",
            (SELECT COUNT(*) FROM Productos p WHERE COALESCE(p.activo, true) = true AND NOT EXISTS (
               SELECT 1 FROM Lotes l JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
-               WHERE l.id_producto = p.id_producto AND ss.cantidad_disponible > 0
+               WHERE l.id_producto = p.id_producto${outOfStockBranchFilter} AND ss.cantidad_disponible > 0
            )) AS "outOfStockCount",
-           (SELECT COUNT(*) FROM Empleados WHERE contrasena IS NOT NULL) AS "activeEmployees",
-           (SELECT COUNT(*) FROM Sucursales) AS "activeBranches",
+           ${employeeCountMetric} AS "activeEmployees",
+           ${branchCountMetric} AS "activeBranches",
            (SELECT total FROM expiring_lots) AS "expiringLotsCount",
            (SELECT total FROM pending_orders) AS "pendingOrders",
-           (SELECT COUNT(*) FROM Proveedores) AS "suppliersCount",
-           (SELECT COUNT(*) FROM Clientes) AS "registeredCustomers",
+           ${supplierCountMetric} AS "suppliersCount",
+           ${customerCountMetric} AS "registeredCustomers",
            (SELECT cost FROM inventory_value) AS "inventoryCost",
            (SELECT retail FROM inventory_value) AS "inventoryRetailValue",
            (SELECT products FROM low_stock_products) AS "lowStockProducts"
@@ -745,6 +818,7 @@ export async function getDatabaseReports(filters?: { branchId?: number; from?: s
   if (filters?.from) { params.push(filters.from); conditions.push(`f.fecha_emision >= $${params.length}::date`); }
   if (filters?.to) { params.push(filters.to); conditions.push(`f.fecha_emision < ($${params.length}::date + INTERVAL '1 day')`); }
   const reportFilter = conditions.length ? ` AND ${conditions.join(' AND ')}` : '';
+  const purchaseBranchParams = [filters?.branchId ?? null];
   const [monthlyResult, branchResult, productResult, profitResult, purchasesResult, dailyBranchResult] = await Promise.all([
     database.query(`
       SELECT TO_CHAR(DATE_TRUNC('month', f.fecha_emision), 'YYYY-MM') AS month,
@@ -792,9 +866,10 @@ export async function getDatabaseReports(filters?: { branchId?: number; from?: s
         FROM Lotes l
         LEFT JOIN Proveedores pr ON pr.id_proveedor = l.id_proveedor
         LEFT JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+       WHERE $1::integer IS NULL OR ss.id_sucursal = $1
         GROUP BY l.id_proveedor, pr.nombre_proveedor
        ORDER BY total DESC
-    `),
+    `, purchaseBranchParams),
     database.query(`
       SELECT TO_CHAR(DATE_TRUNC('day', f.fecha_emision), 'YYYY-MM-DD') AS date,
              COALESCE(s.nombre_sucursal, CONCAT('Sucursal #', f.id_sucursal)) AS branch,

@@ -32,7 +32,7 @@ import {
 } from '../db.js';
 import { store } from '../store.js';
 import { createCustomerToken, createEmployeeToken } from '../utils/jwt.js';
-import { fiscalNitSchema } from '../utils.js';
+import { fiscalNitSchema, guatemalaPhoneSchema } from '../utils.js';
 
 // ============================================================================
 // ESQUEMAS DE VALIDACIÓN ZOD (DTOs)
@@ -59,7 +59,7 @@ const customerRegistrationSchema = z.object({
   fullName: z.string().min(3, 'El nombre debe tener al menos 3 caracteres'),
   email: z.string().email('Formato de correo electrónico inválido'),
   password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
-  phone: z.string().min(6, 'Número de teléfono inválido'),
+  phone: guatemalaPhoneSchema(),
   nit: fiscalNitSchema('NIT inválido o ingrese CF')
 });
 

@@ -1,7 +1,10 @@
 import { Router } from 'express';
+import { authorize } from '../../middleware/auth.js';
 import { categories, createCategory, deleteCategory, updateCategory } from '../../controllers/admin.controller.js';
 
 export const categoriesRouter = Router();
+
+categoriesRouter.use(authorize('Administrador'));
 
 categoriesRouter.get('/categories', categories);
 categoriesRouter.post('/categories', createCategory);

@@ -6174,3 +6174,319 @@ body {
     width: 100%;
   }
 }
+
+/* Responsive layout shared by the storefront and every employee portal. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+body,
+#root,
+.app-container,
+main,
+section,
+article,
+form {
+  min-width: 0;
+}
+
+body,
+#root,
+.app-container {
+  width: 100%;
+  max-width: 100%;
+}
+
+img,
+video,
+iframe,
+canvas {
+  max-width: 100%;
+}
+
+input,
+select,
+textarea,
+button {
+  max-width: 100%;
+}
+
+input,
+select,
+textarea {
+  min-width: 0;
+}
+
+.internal-page-container,
+.catalog-layout,
+.top-payment-section,
+.checkout-only-page {
+  width: 100%;
+  min-width: 0;
+}
+
+.panel-card,
+.stat-metric-card,
+.analytics-card,
+.product-card,
+.top-form-col,
+.chart-shell {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.lots-table-wrap {
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 960px) {
+  .header-main-inner {
+    flex-wrap: wrap;
+    column-gap: 1rem;
+    row-gap: 0.75rem;
+  }
+
+  .header-brand {
+    order: 1;
+    min-width: 0;
+  }
+
+  .header-actions {
+    order: 2;
+    max-width: 100%;
+    margin-left: auto;
+  }
+
+  .header-search {
+    order: 3;
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .two-col-grid,
+  .reports-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .internal-page-container {
+    padding: 1.25rem clamp(0.75rem, 3.5vw, 1.25rem);
+    gap: 1.25rem;
+  }
+
+  .catalog-layout {
+    padding: 1.25rem clamp(0.75rem, 3.5vw, 1.25rem) 2.5rem;
+  }
+
+  .panel-card {
+    padding: clamp(0.9rem, 3vw, 1.5rem);
+  }
+
+  .two-col-grid,
+  .reports-summary-grid,
+  .analytics-grid,
+  .form-grid-2,
+  .admin-section-body .form-grid-2,
+  .admin-dashboard-loading {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .analytics-card-wide {
+    grid-column: auto;
+  }
+
+  .products-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 1rem;
+  }
+
+  .panel-head,
+  .catalog-header-row,
+  .top-payment-header,
+  .checkout-only-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .admin-tab-bar {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .modal-backdrop,
+  .stripe-payment-modal-backdrop {
+    padding: 0.5rem;
+  }
+
+  .product-detail-modal,
+  .contact-modal,
+  .stripe-payment-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - 1rem);
+    overflow-y: auto;
+  }
+
+  .chart-shell {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .header-main-inner {
+    padding: 0.65rem 0.75rem;
+  }
+
+  .header-actions {
+    gap: 0.35rem;
+  }
+
+  .cart-btn,
+  .user-btn.login-btn {
+    min-height: 40px;
+    padding: 0.4rem 0.55rem;
+  }
+
+  .checkout-only-page {
+    padding: 0.75rem;
+  }
+
+  .checkout-only-header {
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .checkout-only-header > button {
+    width: 100%;
+  }
+
+  .admin-dashboard-hero {
+    padding: 1rem;
+  }
+
+  .decision-grid,
+  .action-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .delivery-route-actions > button,
+  .delivery-route-actions > a,
+  .btn-primary,
+  .btn-secondary,
+  .checkout-submit-btn {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 360px) {
+  .header-main-inner {
+    padding-right: 0.6rem;
+    padding-left: 0.6rem;
+  }
+
+  .brand-icon {
+    width: 46px;
+    height: 46px;
+  }
+
+  .top-payment-section {
+    padding-right: 0.25rem;
+    padding-left: 0.25rem;
+  }
+}
+
+.admin-people-panel {
+  width: 100%;
+}
+
+.admin-people-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-person-card {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+  padding: clamp(0.9rem, 2.5vw, 1.25rem);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.admin-person-summary,
+.admin-person-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.admin-person-summary h3 {
+  overflow-wrap: anywhere;
+  color: #1e382b;
+  font-size: 1rem;
+}
+
+.admin-person-summary > div > span {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.admin-person-fields {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 0.85rem;
+}
+
+.admin-person-password {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.admin-person-password span {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.admin-person-password strong {
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+}
+
+.admin-person-actions > button {
+  flex: 1 1 180px;
+}
+
+@media (max-width: 480px) {
+  .admin-person-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-person-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-person-actions > button {
+    width: 100%;
+  }
+}

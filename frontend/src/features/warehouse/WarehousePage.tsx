@@ -4,8 +4,9 @@ import type { Branch, Category, ProductCard, ProductIngredient, Supplier } from 
 import { money, getCategoryHierarchyIds } from '../../lib/catalog';
 import { ProductDetailModal } from '../../components/ProductDetailModal';
 
-export function WarehousePage({ token, categories: categoriesProp, branchId }: { token: string | null; categories?: Category[]; branchId?: number | null }) {
-  const [activeTab, setActiveTab] = useState<'new-product' | 'receive-lot' | 'products-list'>('new-product');
+export function WarehousePage({ token, categories: categoriesProp, branchId, role }: { token: string | null; categories?: Category[]; branchId?: number | null; role?: string }) {
+  const isManager = role === 'Gerente';
+  const [activeTab, setActiveTab] = useState<'new-product' | 'receive-lot' | 'products-list'>(isManager ? 'receive-lot' : 'new-product');
   const [lots, setLots] = useState<any[]>([]);
   const [products, setProducts] = useState<ProductCard[]>([]);
   const [categories, setCategories] = useState<Category[]>(categoriesProp ?? []);
@@ -117,24 +118,26 @@ export function WarehousePage({ token, categories: categoriesProp, branchId }: {
         apiRequest<ProductCard[]>('/api/warehouse/products', {}, token),
         apiRequest<Category[]>('/api/warehouse/categories', {}, token),
         apiRequest<Supplier[]>('/api/warehouse/suppliers', {}, token),
-        apiRequest<Branch[]>('/api/public/branches')
+        role === 'Gerente'
+          ? apiRequest<Branch[]>('/api/admin/branches', {}, token)
+          : apiRequest<Branch[]>('/api/public/branches')
       ]);
       setLots(lotsData);
       setProducts(prodsData);
       setCategories(catsData);
       setSuppliers(suppsData);
-      setBranches(branchesData);
+      setBranches(role === 'Gerente' ? branchesData.filter((branch) => branch.id === branchId) : branchesData);
       if (prodsData.length > 0 && !lotForm.productId) {
         setLotForm((prev) => ({ ...prev, productId: prodsData[0].id }));
       }
     } catch (error) {
-      console.error(error);
+      setStatus(error instanceof Error ? error.message : 'No se pudieron cargar los datos de bodega');
     }
   }
 
   useEffect(() => {
     loadAllData().catch((error) => setStatus(error.message));
-  }, [token, lotForm.branchId]);
+  }, [token, lotForm.branchId, role, branchId]);
 
   function handleImageFile(file: File | null) {
     if (!file) {
@@ -351,13 +354,13 @@ export function WarehousePage({ token, categories: categoriesProp, branchId }: {
       {/* Tab Navigation Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
         <div className="section-tabs-bar">
-          <button
+          {!isManager && <button
             type="button"
             className={`section-tab-btn ${activeTab === 'new-product' ? 'active' : ''}`}
             onClick={() => setActiveTab('new-product')}
           >
             <span>Registrar nuevo medicamento con foto</span>
-          </button>
+          </button>}
           <button
             type="button"
             className={`section-tab-btn ${activeTab === 'receive-lot' ? 'active' : ''}`}
@@ -998,13 +1001,13 @@ export function WarehousePage({ token, categories: categoriesProp, branchId }: {
         <div className="panel-card">
           <div className="panel-head">
             <h2>Medicamentos Registrados en el Sistema</h2>
-            <button
+            {!isManager && <button
               type="button"
               className="btn-primary"
               onClick={() => setActiveTab('new-product')}
             >
               + Registrar Nuevo Medicamento
-            </button>
+            </button>}
           </div>
 
           {/* Search & Category Filter Controls */}
@@ -1201,8 +1204,8 @@ export function WarehousePage({ token, categories: categoriesProp, branchId }: {
                       </div>
                       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.65rem' }} onClick={(e) => e.stopPropagation()}>
                         <button type="button" className="btn-primary" onClick={() => prepareRestock(p)}>Reabastecer</button>
-                        <button type="button" className="btn-secondary" onClick={() => startEditingProduct(p)}>Editar</button>
-                        <button type="button" className="btn-secondary" onClick={() => removeProduct(p)}>Eliminar</button>
+                        {!isManager && <><button type="button" className="btn-secondary" onClick={() => startEditingProduct(p)}>Editar</button>
+                        <button type="button" className="btn-secondary" onClick={() => removeProduct(p)}>Eliminar</button></>}
                       </div>
                     </div>
                   </article>

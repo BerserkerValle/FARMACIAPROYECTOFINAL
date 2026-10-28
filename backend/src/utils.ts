@@ -88,6 +88,10 @@ export function fiscalNitSchema(message: string) {
     .refine((nit) => nit === 'CF' || nit.length >= 3, message);
 }
 
+export function guatemalaPhoneSchema(message = 'El teléfono debe contener exactamente 8 dígitos numéricos') {
+  return z.string().regex(/^\d{8}$/, message);
+}
+
 export function hasSanitaryRegistryChanged(current: string | null | undefined, next: string | null | undefined): boolean {
   return (current ?? '').trim() !== (next ?? '').trim();
 }

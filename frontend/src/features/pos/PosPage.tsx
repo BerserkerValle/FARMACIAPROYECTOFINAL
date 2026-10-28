@@ -4,6 +4,7 @@ import { apiRequest } from "../../api";
 import { ProductDetailModal } from "../../components/ProductDetailModal";
 import type { Category, EmployeeProfile, ProductCard } from "../../types";
 import { getCategoryHierarchyIds, money } from "../../lib/catalog";
+import { isValidGuatemalaPhone, sanitizePhoneInput } from "../../lib/validation";
 
 export function PosPage({ token, profile, categories }: { token: string | null; profile: EmployeeProfile | null; categories?: Category[] }) {
   const [orders, setOrders] = useState<any[]>([]);
@@ -12,7 +13,7 @@ export function PosPage({ token, profile, categories }: { token: string | null; 
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | "all">("all");
   const [status, setStatus] = useState("");
   const [branchId] = useState(profile?.branchId ?? 1);
-  const [sale, setSale] = useState({ name: "Cliente de mostrador", nit: "CF", email: "mostrador@demo.com", phone: "0000-0000", productId: 1, quantity: 1, cashReceived: "" });
+  const [sale, setSale] = useState({ name: "Cliente de mostrador", nit: "CF", email: "mostrador@demo.com", phone: "", productId: 1, quantity: 1, cashReceived: "" });
   const [saleLines, setSaleLines] = useState<Array<{ productId: number; quantity: number }>>([]);
   const [discountCode, setDiscountCode] = useState("");
   const [discountMessage, setDiscountMessage] = useState("");
@@ -280,6 +281,11 @@ export function PosPage({ token, profile, categories }: { token: string | null; 
               <label>Correo del cliente</label>
               <input type="email" value={sale.email} onChange={(event) => { setSale({ ...sale, email: event.target.value }); setDiscountMessage(""); }} />
             </div>
+            <div className="form-field">
+              <label htmlFor="pos-customer-phone">Teléfono del cliente (8 dígitos)</label>
+              <input id="pos-customer-phone" type="tel" inputMode="numeric" pattern="[0-9]{8}" maxLength={8} required value={sale.phone} onChange={(event) => setSale({ ...sale, phone: sanitizePhoneInput(event.target.value) })} placeholder="42501265" />
+              <small>Ingresa exactamente 8 números, sin guiones.</small>
+            </div>
           </div>
           <div className="form-grid-2" style={{ marginTop: "0.65rem", marginBottom: "0.35rem" }}>
             <div className="form-field">
@@ -393,8 +399,9 @@ export function PosPage({ token, profile, categories }: { token: string | null; 
             </div>
             <div className="pos-change-row"><span>Vuelto</span><strong>{money(Math.max(0, Number(sale.cashReceived || 0) - total))}</strong></div>
           </div>
-          <button type="button" className="btn-primary" onClick={processSale} disabled={!saleLines.length}>Cobrar en efectivo {saleLines.length ? `(${money(total)})` : ""}</button>
-          <button type="button" className="btn-secondary pos-qr-button" onClick={createQrPayment} disabled={!saleLines.length}>Generar QR para pago con tarjeta {saleLines.length ? `(${money(total)})` : ""}</button>
+          <button type="button" className="btn-primary" onClick={processSale} disabled={!saleLines.length || !isValidGuatemalaPhone(sale.phone)}>Cobrar en efectivo {saleLines.length ? `(${money(total)})` : ""}</button>
+          <button type="button" className="btn-secondary pos-qr-button" onClick={createQrPayment} disabled={!saleLines.length || !isValidGuatemalaPhone(sale.phone)}>Generar QR para pago con tarjeta {saleLines.length ? `(${money(total)})` : ""}</button>
+          {!isValidGuatemalaPhone(sale.phone) && <div className="checkout-status-msg" role="status">Ingresa el teléfono del cliente con exactamente 8 dígitos para cobrar.</div>}
           {qrPayment && (
             <div className="pos-qr-card">
               <strong>Orden {qrPayment.orderCode}</strong>

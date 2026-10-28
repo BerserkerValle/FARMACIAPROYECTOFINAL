@@ -416,6 +416,36 @@ export class PharmacyStore {
     return clone(this.snapshot.employees);
   }
 
+  getRegisteredCustomers(branchId?: number | null) {
+    this.assertReady();
+    return clone(this.snapshot.customers
+      .filter((customer) => Boolean(customer.passwordHash) && (branchId == null || this.snapshot.orders.some((order) => order.customerId === customer.id && order.branchId === branchId)))
+      .map(({ id, name, email, phone, nit, address }) => ({
+        customerId: id,
+        fullName: name,
+        email,
+        phone,
+        nit,
+        address: address ?? ''
+      })));
+  }
+
+  deleteCustomerAccount(id: number) {
+    this.assertReady();
+    const index = this.snapshot.customers.findIndex((customer) => customer.id === id && Boolean(customer.passwordHash));
+    if (index < 0) throw new Error('Cuenta de cliente no encontrada');
+    const [customer] = this.snapshot.customers.splice(index, 1);
+    this.touch();
+    return {
+      customerId: customer.id,
+      fullName: customer.name,
+      email: customer.email,
+      phone: customer.phone,
+      nit: customer.nit,
+      address: customer.address ?? ''
+    };
+  }
+
   getDiscountCodes() {
     this.assertReady();
     return clone(this.snapshot.discountCodes);
@@ -1617,19 +1647,30 @@ export class PharmacyStore {
     }).length;
     const pendingOrders = this.snapshot.orders.filter((order) => (!filters?.branchId || order.branchId === filters.branchId) && ['AWAITING_PAYMENT', 'PAID', 'PACKING', 'READY_FOR_PICKUP', 'IN_ROUTE'].includes(order.status)).length;
     const inventoryLots = this.snapshot.lots.filter((lot) => lot.quantityAvailable > 0 && (!filters?.branchId || lot.branchId === filters.branchId));
+    const branchLots = this.snapshot.lots.filter((lot) => !filters?.branchId || lot.branchId === filters.branchId);
+    const branchOrders = this.snapshot.orders.filter((order) => !filters?.branchId || order.branchId === filters.branchId);
+    const branchCustomerIds = new Set(branchOrders.map((order) => order.customerId));
+    const branchProductIds = new Set(branchLots.map((lot) => lot.productId));
+    const branchSupplierIds = new Set(branchLots.map((lot) => lot.supplierId));
     return {
       salesToday,
       salesYesterday,
       salesMonth,
       lowStockCount,
       expiringLotsCount,
-      registeredCustomers: this.snapshot.customers.length,
+      registeredCustomers: filters?.branchId
+        ? this.snapshot.customers.filter((customer) => Boolean(customer.passwordHash) && branchCustomerIds.has(customer.id)).length
+        : this.snapshot.customers.length,
       pendingOrders,
-      suppliersCount: this.snapshot.suppliers.length,
-      activeProducts: this.snapshot.products.filter((product) => product.active).length,
+      suppliersCount: filters?.branchId
+        ? branchSupplierIds.size
+        : this.snapshot.suppliers.length,
+      activeProducts: filters?.branchId
+        ? this.snapshot.products.filter((product) => product.active && branchProductIds.has(product.id)).length
+        : this.snapshot.products.filter((product) => product.active).length,
       outOfStockCount: lowStockProducts.filter((item) => item.stock <= 0).length,
-      activeEmployees: this.snapshot.employees.filter((employee) => employee.active).length,
-      activeBranches: this.snapshot.branches.length,
+      activeEmployees: this.snapshot.employees.filter((employee) => employee.active && (!filters?.branchId || employee.branchId === filters.branchId)).length,
+      activeBranches: filters?.branchId ? Number(this.snapshot.branches.some((branch) => branch.id === filters.branchId)) : this.snapshot.branches.length,
       inventoryCost: inventoryLots.reduce((sum, lot) => sum + lot.quantityAvailable * lot.costPrice, 0),
       inventoryRetailValue: inventoryLots.reduce((sum, lot) => sum + lot.quantityAvailable * lot.salePrice, 0),
       lowStockProducts
@@ -1680,12 +1721,17 @@ export class PharmacyStore {
     }
 
     for (const lot of this.snapshot.lots) {
+      if (filters?.branchId && lot.branchId !== filters.branchId) continue;
       purchasesBySupplier.set(lot.supplierId, (purchasesBySupplier.get(lot.supplierId) ?? 0) + lot.quantityAvailable * lot.costPrice);
     }
 
     const topProducts = [...salesByProduct.values()].sort((left, right) => right.total - left.total).slice(0, 10);
-    const branchRows = this.snapshot.branches.map((branch) => ({ branch: branch.name, total: salesByBranch.get(branch.id) ?? 0 }));
-    const employeeRows = this.snapshot.employees.filter((employee) => employee.role === 'Cajero').map((employee) => ({ employee: employee.fullName, total: salesByEmployee.get(employee.id) ?? 0 }));
+    const branchRows = this.snapshot.branches
+      .filter((branch) => !filters?.branchId || branch.id === filters.branchId)
+      .map((branch) => ({ branch: branch.name, total: salesByBranch.get(branch.id) ?? 0 }));
+    const employeeRows = this.snapshot.employees
+      .filter((employee) => employee.role === 'Cajero' && (!filters?.branchId || employee.branchId === filters.branchId))
+      .map((employee) => ({ employee: employee.fullName, total: salesByEmployee.get(employee.id) ?? 0 }));
     const monthlyRows = [...salesByMonth.entries()].map(([key, total]) => ({ month: key, total })).sort((left, right) => left.month.localeCompare(right.month));
     const purchaseRows = this.snapshot.suppliers.map((supplier) => ({ supplier: supplier.name, total: purchasesBySupplier.get(supplier.id) ?? 0 }));
 

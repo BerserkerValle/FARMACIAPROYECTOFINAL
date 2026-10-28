@@ -131,6 +131,9 @@ function apiBaseUrl(req: Request): string {
  * GET /api/warehouse/lots?branchId=1&productId=5
  */
 export async function lots(req: Request, res: Response) {
+  if (req.user?.role === 'Gerente' && req.user.branchId == null) {
+    return res.status(403).json({ success: false, message: 'El gerente debe tener una sucursal asignada' });
+  }
   const requested = req.query.branchId ? Number(req.query.branchId) : undefined;
   const branchId = resolveWarehouseBranchScope(req.user?.role, req.user?.branchId ?? null, requested ?? null) ?? undefined;
   const productId = req.query.productId ? Number(req.query.productId) : undefined;
@@ -182,9 +185,20 @@ export async function categories(_req: Request, res: Response) {
 }
 
 /** Obtiene la lista de proveedores para asignación de lotes */
-export async function suppliers(_req: Request, res: Response) {
+export async function suppliers(req: Request, res: Response) {
   const data = databaseEnabled ? await getDatabaseSuppliers() : store.getSuppliers();
-  return res.json({ success: true, data: data ?? [] });
+  if (req.user?.role !== 'Gerente') {
+    return res.json({ success: true, data: data ?? [] });
+  }
+  if (req.user.branchId == null) {
+    return res.status(403).json({ success: false, message: 'El gerente debe tener una sucursal asignada' });
+  }
+  const lots = databaseEnabled
+    ? await listDatabaseLots(req.user.branchId)
+    : store.getLots(undefined, req.user.branchId);
+  const supplierIds = new Set((lots ?? []).map((lot) => Number(lot.supplierId)));
+  const branchSuppliers = (data ?? []).filter((supplier) => supplierIds.has(Number(supplier.id)));
+  return res.json({ success: true, data: branchSuppliers });
 }
 
 /**
@@ -194,6 +208,9 @@ export async function suppliers(_req: Request, res: Response) {
  */
 export async function createProduct(req: Request, res: Response) {
   try {
+    if (req.user?.role === 'Gerente') {
+      return res.status(403).json({ success: false, message: 'Solo un administrador o bodeguero puede modificar el catálogo global' });
+    }
     const payload = createProductSchema.parse(req.body);
     if (!/^MSPAS-2026-\d{4}$/.test(payload.sanitaryRegistry)) {
       throw new Error('El registro sanitario debe tener el formato MSPAS-2026-0000');
@@ -217,6 +234,9 @@ export async function createProduct(req: Request, res: Response) {
  */
 export async function updateProduct(req: Request, res: Response) {
   try {
+    if (req.user?.role === 'Gerente') {
+      return res.status(403).json({ success: false, message: 'Solo un administrador o bodeguero puede modificar el catálogo global' });
+    }
     const productId = Number(req.params.id);
     const payload = updateProductSchema.parse(req.body);
     const updated = databaseEnabled ? await updateDatabaseProduct(productId, payload) : store.updateProduct(productId, payload);
@@ -238,6 +258,9 @@ export async function updateProduct(req: Request, res: Response) {
  */
 export async function deleteProduct(req: Request, res: Response) {
   try {
+    if (req.user?.role === 'Gerente') {
+      return res.status(403).json({ success: false, message: 'Solo un administrador o bodeguero puede modificar el catálogo global' });
+    }
     const id = Number(req.params.id);
     const result = databaseEnabled ? await deleteDatabaseProduct(id) : store.deleteProduct(id);
     return res.json({ success: true, data: result });
@@ -257,6 +280,9 @@ export async function deleteProduct(req: Request, res: Response) {
  * Retorna la URL pública y el nombre del archivo guardado.
  */
 export async function uploadProductImage(req: Request, res: Response) {
+  if (req.user?.role === 'Gerente') {
+    return res.status(403).json({ success: false, message: 'Solo un administrador o bodeguero puede modificar el catálogo global' });
+  }
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'Debe adjuntar una imagen' });
   }

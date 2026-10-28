@@ -7,6 +7,7 @@ import { ProductDetailModal } from '../components/ProductDetailModal';
 
 import type { Portal, Branch, Category, ProductCard, EmployeeProfile, CustomerAccount } from '../types';
 import { money } from '../lib/catalog';
+import { sanitizePhoneInput } from '../lib/validation';
 import { PosPage } from '../features/pos/PosPage';
 import { WarehousePage } from '../features/warehouse/WarehousePage';
 import { AdminPage } from '../features/admin/AdminPage';
@@ -264,7 +265,7 @@ export default function AppController() {
       ...previous,
       name: customer.fullName,
       email: customer.email,
-      phone: customer.phone,
+      phone: sanitizePhoneInput(customer.phone),
       nit: customer.nit || 'CF',
       address: customer.address || previous.address
     }));
@@ -472,7 +473,7 @@ export default function AppController() {
       ...previous,
       name: nextCustomer.fullName,
       email: nextCustomer.email,
-      phone: nextCustomer.phone,
+      phone: sanitizePhoneInput(nextCustomer.phone),
       nit: nextCustomer.nit,
       address: nextCustomer.address || previous.address
     }));
@@ -494,7 +495,7 @@ export default function AppController() {
       ...previous,
       name: nextCustomer.fullName,
       email: nextCustomer.email,
-      phone: nextCustomer.phone,
+      phone: sanitizePhoneInput(nextCustomer.phone),
       nit: nextCustomer.nit,
       address: nextCustomer.address || previous.address
     }));
@@ -752,9 +753,9 @@ export default function AppController() {
       {customer && customerToken && activePortal === 'customer' && <CustomerOrdersPage customer={customer} customerToken={customerToken} onUpdate={handleCustomerUpdate} onLogout={handleCustomerLogout} />}
 
       {activePortal === 'pos' && token && profile && canAccessEmployeePortal(profile.role, 'pos') && <PosPage token={token} profile={profile} categories={categories} />}
-      {activePortal === 'warehouse' && token && profile && canAccessEmployeePortal(profile.role, 'warehouse') && <WarehousePage token={token} categories={categories} branchId={profile.branchId} />}
+      {activePortal === 'warehouse' && token && profile && canAccessEmployeePortal(profile.role, 'warehouse') && <WarehousePage token={token} categories={categories} branchId={profile.branchId} role={profile.role} />}
       {activePortal === 'delivery' && token && profile && canAccessEmployeePortal(profile.role, 'delivery') && <DeliveryPage token={token} role={profile.role} branchId={profile.branchId} />}
-      {activePortal === 'admin' && token && profile && canAccessEmployeePortal(profile.role, 'admin') && <AdminPage token={token} canManageDiscountCodes={profile.role === 'Administrador' || profile.role === 'Gerente'} />}
+      {activePortal === 'admin' && token && profile && canAccessEmployeePortal(profile.role, 'admin') && <AdminPage token={token} role={profile.role} branchId={profile.branchId} canManageDiscountCodes={profile.role === 'Administrador'} />}
     </div>
   );
 }

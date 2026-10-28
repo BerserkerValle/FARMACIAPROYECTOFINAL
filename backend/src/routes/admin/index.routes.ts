@@ -14,9 +14,9 @@ export const adminRouter = Router();
 adminRouter.use(authenticate, authorize('Administrador', 'Gerente'));
 
 adminRouter.use(dashboardRouter);
-adminRouter.use(discountsRouter);
 adminRouter.use(employeesRouter);
 adminRouter.use(branchesRouter);
+adminRouter.use(discountsRouter);
 adminRouter.use(categoriesRouter);
 adminRouter.use(suppliersRouter);
 adminRouter.use(ordersRouter);

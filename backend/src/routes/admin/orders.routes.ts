@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { crosscheck, returns } from '../../controllers/admin.controller.js';
+import { authorize } from '../../middleware/auth.js';
 
 export const ordersRouter = Router();
 
-ordersRouter.post('/orders/:id/crosscheck', crosscheck);
-ordersRouter.post('/orders/:id/returns', returns);
+ordersRouter.post('/orders/:id/crosscheck', authorize('Administrador', 'Gerente'), crosscheck);
+ordersRouter.post('/orders/:id/returns', authorize('Administrador'), returns);
