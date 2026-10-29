@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { apiRequest } from "../../api";
+import { API_URL, apiRequest } from "../../api";
 import { ProductDetailModal } from "../../components/ProductDetailModal";
 import type { Category, EmployeeProfile, ProductCard } from "../../types";
 import { getCategoryHierarchyIds, money } from "../../lib/catalog";
@@ -239,7 +239,7 @@ export function PosPage({ token, profile, categories }: { token: string | null; 
   async function downloadInvoice(orderId: number) {
     setDownloadingInvoice(true);
     try {
-      const response = await fetch((import.meta.env.VITE_API_URL || "http://localhost:4000") + "/api/pos/sales/" + orderId + "/invoice", {
+      const response = await fetch(API_URL + "/api/pos/sales/" + orderId + "/invoice", {
         headers: { Authorization: "Bearer " + token }
       });
       if (!response.ok) {

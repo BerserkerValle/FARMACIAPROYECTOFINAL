@@ -6723,3 +6723,191 @@ textarea {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.dashboard-view-nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .65rem;
+  margin: 1rem 0;
+  padding: .45rem;
+  border: 1px solid rgba(4, 91, 57, .12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .75);
+}
+.dashboard-view-nav button { border: 0; border-radius: 14px; padding: .8rem 1rem; background: transparent; color: #426057; font-weight: 800; cursor: pointer; text-align: left; transition: .2s ease; }
+.dashboard-view-nav button span { display: block; margin-top: .2rem; color: #78918a; font-size: .72rem; font-weight: 600; }
+.dashboard-view-nav button:hover, .dashboard-view-nav button.active { background: #075c3c; color: white; box-shadow: 0 8px 18px rgba(4, 91, 57, .18); }
+.dashboard-view-nav button.active span { color: rgba(255,255,255,.75); }
+.dashboard-view-content { display: grid; gap: 1rem; margin-bottom: 1.5rem; }
+.view-intro { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; padding: 1.35rem 1.45rem; border-radius: 20px; background: linear-gradient(135deg, #f4fbf7, #e1f3eb); border: 1px solid rgba(4, 91, 57, .12); }
+.view-intro h2 { margin: .35rem 0; color: #0b3d2c; }
+.view-intro p { margin: 0; color: #607a70; }
+.view-badge { padding: .55rem .75rem; border-radius: 999px; color: #075c3c; background: rgba(255,255,255,.8); font-size: .75rem; font-weight: 800; white-space: nowrap; }
+.finance-kpi-grid, .operations-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .8rem; }
+.operations-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.finance-kpi-grid article, .operations-kpi-grid article { display: flex; flex-direction: column; gap: .3rem; min-height: 112px; padding: 1rem; border: 1px solid rgba(4, 91, 57, .1); border-radius: 16px; background: white; box-shadow: 0 8px 20px rgba(7, 61, 44, .06); }
+.finance-kpi-grid article span, .operations-kpi-grid article span { color: #668078; font-size: .73rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.finance-kpi-grid article strong { color: #073c2b; font-size: 1.65rem; }
+.operations-kpi-grid article strong { color: #073c2b; font-size: 1.9rem; }
+.finance-kpi-grid article small, .operations-kpi-grid article small { color: #78918a; }
+.finance-kpi-grid .profit-card { background: linear-gradient(135deg, #075c3c, #0d8060); }
+.finance-kpi-grid .profit-card span, .finance-kpi-grid .profit-card strong, .finance-kpi-grid .profit-card small { color: white; }
+.finance-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: .85rem; }
+.finance-grid .analytics-card-wide { grid-row: span 2; }
+.finance-note { display: flex; justify-content: space-between; margin-top: .8rem; padding: .75rem 1rem; border-radius: 12px; background: #eff9f4; color: #3c6558; }
+.finance-note strong { color: #075c3c; }
+.operations-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .85rem; }
+.operations-grid .inventory-alerts { margin: 0; }
+@media (max-width: 800px) {
+  .dashboard-view-nav, .finance-kpi-grid, .operations-kpi-grid, .finance-grid, .operations-grid { grid-template-columns: 1fr; }
+  .view-intro { flex-direction: column; }
+  .finance-grid .analytics-card-wide { grid-row: auto; }
+}
+
+/* Executive dashboard polish: a calm clinical palette with stronger decision hierarchy. */
+.admin-dashboard-hero {
+  min-height: 218px;
+  border: 0;
+  background:
+    radial-gradient(circle at 84% 14%, rgba(116, 231, 184, .28), transparent 18%),
+    radial-gradient(circle at 96% 110%, rgba(44, 190, 132, .22), transparent 33%),
+    linear-gradient(118deg, #073c2b 0%, #075c3c 48%, #0b7655 100%);
+  box-shadow: 0 18px 42px rgba(3, 61, 42, .2);
+}
+.admin-dashboard-hero::after { border-color: rgba(184, 255, 219, .22); box-shadow: 0 0 0 24px rgba(184,255,219,.05), 0 0 0 48px rgba(184,255,219,.035); }
+.admin-dashboard-eyebrow { color: #9ff0c8; }
+.admin-dashboard-hero h1 { color: #fff; font-size: clamp(1.8rem, 3.3vw, 2.65rem); }
+.admin-dashboard-hero p { color: rgba(239, 255, 247, .78); }
+.admin-data-source { border-color: rgba(255,255,255,.18); background: rgba(255,255,255,.1); backdrop-filter: blur(12px); }
+.admin-data-source strong { color: #fff; }
+.admin-data-source small { color: rgba(239,255,247,.7); }
+.admin-refresh-button { border-color: #baf8d7; background: #baf8d7; color: #06482f; box-shadow: 0 8px 18px rgba(0,0,0,.12); }
+.admin-refresh-button:hover:not(:disabled) { background: #fff; color: #06482f; }
+.dashboard-view-nav { position: relative; z-index: 2; margin: -1.15rem 1.1rem 1.35rem; border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.9); box-shadow: 0 12px 30px rgba(6,65,43,.12); backdrop-filter: blur(14px); }
+.dashboard-view-nav button { min-height: 54px; }
+.admin-metrics-grid { position: relative; z-index: 1; }
+.admin-metric-card { border: 0; border-top: 3px solid #b9dfc8; box-shadow: 0 8px 22px rgba(11, 57, 39, .08); }
+.admin-metric-card:nth-child(1), .admin-metric-card:nth-child(3) { border-top-color: #0a9b63; }
+.admin-metric-card:nth-child(4), .admin-metric-card:nth-child(8) { border-top-color: #e2a63b; }
+.admin-metric-card:nth-child(5) { border-top-color: #dc6c5d; }
+.admin-metric-card:nth-child(6) { border-top-color: #7c64b5; }
+.admin-metric-card strong { font-family: var(--font-heading); }
+.admin-decision-center, .analytics-card, .inventory-alerts { border-color: rgba(8, 92, 60, .1); box-shadow: 0 9px 24px rgba(11,57,39,.065); }
+.decision-heading h2, .analytics-heading h2 { color: #073c2b; letter-spacing: -.035em; }
+.decision-hero-card { background: linear-gradient(135deg, #075c3c, #0b8060); box-shadow: 0 12px 26px rgba(7,92,60,.18); }
+.decision-highlight-card { transition: transform .2s ease, box-shadow .2s ease; }
+.decision-highlight-card:hover, .analytics-card:hover { transform: translateY(-2px); box-shadow: 0 14px 30px rgba(11,57,39,.1); }
+.analytics-card-head h3 { color: #123f2f; }
+.chart-accent { box-shadow: 0 0 0 5px rgba(9,155,99,.1); }
+@media (max-width: 760px) {
+  .dashboard-view-nav { margin: -0.75rem 0 1rem; border-radius: 14px; }
+  .dashboard-view-nav button { min-height: 48px; padding: .65rem .7rem; font-size: .78rem; }
+  .dashboard-view-nav button span { font-size: .64rem; }
+}
+
+/* Final layout normalization for every administrator workspace. */
+.internal-page-container {
+  max-width: 1520px;
+  padding: clamp(1rem, 2vw, 1.75rem) clamp(1rem, 2.4vw, 2rem);
+  gap: clamp(1rem, 1.7vw, 1.5rem);
+}
+.admin-tab-bar { margin-bottom: .35rem; padding: 0; }
+.admin-tab-bar-desktop {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .55rem;
+  border: 0;
+  padding: 0;
+}
+.admin-tab-btn {
+  min-width: 0;
+  min-height: 50px;
+  justify-content: center;
+  padding: .65rem .75rem;
+  border: 1px solid #e0e9e3;
+  border-radius: 12px;
+  background: rgba(255,255,255,.78);
+  font-size: .78rem;
+  white-space: normal;
+  text-align: center;
+}
+.admin-tab-icon { font-size: .95rem; }
+.admin-tab-label { overflow-wrap: anywhere; }
+.admin-tab-btn.active { border-color: var(--primary); }
+.panel-card { padding: clamp(1rem, 1.8vw, 1.5rem); gap: 1rem; }
+.stats-grid-4 { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .8rem; }
+.admin-metric-card { min-height: 150px; padding: 1rem; }
+.admin-dashboard-hero { min-height: 190px; padding: clamp(1.25rem, 2.5vw, 2rem); }
+.admin-dashboard-hero h1 { font-size: clamp(1.65rem, 2.8vw, 2.35rem); }
+.analytics-card { padding: clamp(1rem, 1.5vw, 1.25rem); }
+.analytics-grid { gap: 1rem; }
+.line-chart-shell { height: 232px; }
+.line-chart { height: 180px; }
+.decision-grid { gap: .7rem; }
+.decision-hero-card, .decision-highlight-card { min-height: 132px; padding: 1rem; }
+.admin-people-list { gap: .8rem; }
+.admin-person-card { gap: .8rem; padding: 1rem; }
+.lots-table-wrap { overflow-x: auto; }
+.lots-table { min-width: 680px; }
+
+@media (max-width: 1100px) {
+  .admin-tab-bar-desktop { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .admin-dashboard-hero { min-height: 175px; }
+  .analytics-heading { align-items: flex-start; flex-direction: column; }
+  .analytics-controls { width: 100%; justify-content: flex-start; }
+}
+
+@media (max-width: 768px) {
+  .admin-tab-bar-desktop { display: none; }
+  .admin-tab-bar-mobile { display: block; }
+  .admin-dashboard-hero { min-height: 0; }
+  .admin-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .analytics-grid, .finance-grid, .operations-grid { grid-template-columns: minmax(0, 1fr); }
+  .analytics-card-wide { grid-row: auto; }
+  .date-filter-group { width: 100%; flex-wrap: wrap; }
+  .date-filter-group label { flex: 1 1 140px; }
+  .date-filter-group input, .date-filter-group select { width: 100%; }
+}
+
+@media (max-width: 520px) {
+  .internal-page-container { padding: .8rem .7rem 1.25rem; }
+  .admin-metrics-grid { grid-template-columns: 1fr 1fr; gap: .55rem; }
+  .admin-metric-card { min-height: 132px; padding: .8rem; }
+  .admin-metric-card strong { font-size: 1.3rem; }
+  .admin-metric-card p { font-size: .66rem; }
+  .admin-metric-card > span:last-child { font-size: .66rem; }
+  .admin-dashboard-tools { gap: .6rem; }
+  .admin-data-source { width: 100%; }
+  .decision-heading h2, .analytics-heading h2 { font-size: 1.2rem; }
+  .inventory-alert-row { grid-template-columns: 1.8rem minmax(0, 1fr) auto; gap: .5rem; }
+  .inventory-severity { grid-column: 2 / -1; justify-self: start; }
+  .supplier-toolbar, .supplier-form-actions { align-items: stretch; flex-direction: column; }
+  .supplier-toolbar > *, .supplier-form-actions > * { width: 100%; }
+}
+
+.employee-status-action {
+  border-width: 1px;
+  font-weight: 800;
+}
+.employee-status-action.deactivate {
+  border-color: #f0c8be;
+  color: #a64231;
+  background: #fffaf8;
+}
+.employee-status-action.deactivate:hover:not(:disabled) {
+  border-color: #df927f;
+  background: #fff0ec;
+  color: #8f3021;
+}
+.employee-status-action.activate {
+  background: #087a43;
+}
+.employee-delete-action {
+  border-color: #d9e2dc;
+  color: #64746b;
+  background: #fff;
+}
+.employee-delete-action:hover:not(:disabled) {
+  border-color: #c7d2cb;
+  color: #33443b;
+  background: #f5f8f6;
+}

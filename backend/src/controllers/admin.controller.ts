@@ -41,7 +41,8 @@ const employeeSchema = z.object({
   role: z.enum(['Administrador', 'Gerente', 'Cajero', 'Bodeguero', 'Repartidor', 'Proveedor']),
   branchId: z.number().int().positive().nullable(),
   stationNumber: z.number().int().min(1).max(7).nullable().optional(),
-  supervisorId: z.number().int().positive().nullable()
+  supervisorId: z.number().int().positive().nullable(),
+  active: z.boolean().optional()
 });
 
 /** Validación para auditoría de doble chequeo de órdenes */
@@ -418,6 +419,9 @@ export async function updateEmployee(req: Request, res: Response) {
     }
     if (targetId === req.user.employeeId && payload.role !== undefined) {
       return res.status(403).json({ success: false, message: 'No puedes cambiar tu propio rol' });
+    }
+    if (targetId === req.user.employeeId && payload.active === false) {
+      return res.status(403).json({ success: false, message: 'No puedes desactivar tu propia cuenta' });
     }
     if (payload.role !== undefined && !canGrantRole(req.user.role, payload.role)) {
       return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });

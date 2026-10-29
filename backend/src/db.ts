@@ -73,7 +73,10 @@ const pool = url
   ? new Pool({
       connectionString: url,
       ssl: process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false },
-      max: Number(process.env.PGPOOL_MAX ?? 5)
+      max: Number(process.env.PGPOOL_MAX ?? 5),
+      // Las fechas operativas deben representar el día de la farmacia,
+      // independientemente de la zona horaria por defecto del proveedor.
+      options: '-c timezone=America/Guatemala'
     })
   : null;
 
@@ -349,6 +352,7 @@ export async function findDatabaseEmployeeByEmail(email: string) {
             rol_usuario, id_sucursal, puesto, id_supervisor
        FROM Empleados
       WHERE LOWER(correo_corporativo) = LOWER($1)
+        AND COALESCE(activo, true) = true
         AND COALESCE(contrasena, '') <> ''
       LIMIT 1`,
     [email.trim()]
@@ -364,6 +368,7 @@ export async function findDatabaseEmployeeById(id: number) {
             rol_usuario, id_sucursal, puesto, id_supervisor
        FROM Empleados
       WHERE id_empleado = $1
+        AND COALESCE(activo, true) = true
         AND COALESCE(contrasena, '') <> ''
       LIMIT 1`,
     [id]
@@ -380,7 +385,7 @@ function mapEmployeeForAdmin(row: Record<string, unknown>) {
     branchId: row.id_sucursal == null ? null : Number(row.id_sucursal),
     stationNumber: row.puesto == null ? null : Number(row.puesto),
     supervisorId: row.id_supervisor == null ? null : Number(row.id_supervisor),
-    active: String(row.contrasena ?? '') !== ''
+    active: row.activo === false ? false : String(row.contrasena ?? '') !== ''
   };
 }
 
@@ -389,7 +394,7 @@ export async function listDatabaseEmployees() {
   if (!pool) return null;
   const result = await pool.query(
     `SELECT id_empleado, nombre_completo, correo_corporativo, rol_usuario,
-            id_sucursal, puesto, id_supervisor, contrasena
+            id_sucursal, puesto, id_supervisor, contrasena, activo
        FROM Empleados
       ORDER BY id_empleado`
   );
@@ -439,6 +444,13 @@ export async function createDatabaseEmployee(input: {
 /** Actualiza datos y rol de un empleado */
 export async function updateDatabaseEmployee(id: number, input: Record<string, unknown>) {
   const database = requirePool();
+  if (input.active === true && !input.password) {
+    const current = await database.query('SELECT contrasena FROM Empleados WHERE id_empleado = $1', [id]);
+    if (!current.rows[0]) throw new Error(`Empleado #${id} no encontrado`);
+    if (String(current.rows[0].contrasena ?? '') === '') {
+      throw new Error('No se puede activar este usuario sin establecer una nueva contraseña');
+    }
+  }
   const fields: Array<[string, unknown]> = [];
   const mappings: Array<[string, string]> = [
     ['fullName', 'nombre_completo'],
@@ -446,7 +458,8 @@ export async function updateDatabaseEmployee(id: number, input: Record<string, u
     ['role', 'rol_usuario'],
     ['branchId', 'id_sucursal'],
     ['stationNumber', 'puesto'],
-    ['supervisorId', 'id_supervisor']
+      ['supervisorId', 'id_supervisor'],
+      ['active', 'activo']
   ];
   for (const [key, column] of mappings) {
     if (key in input) fields.push([column, input[key]]);
@@ -460,10 +473,13 @@ export async function updateDatabaseEmployee(id: number, input: Record<string, u
           SET ${assignments}, ultima_modificacion = CURRENT_TIMESTAMP
         WHERE id_empleado = $1
         RETURNING id_empleado, nombre_completo, correo_corporativo, rol_usuario,
-                  id_sucursal, puesto, id_supervisor, contrasena`,
+                  id_sucursal, puesto, id_supervisor, contrasena, activo`,
       [id, ...fields.map(([, value]) => value)]
     );
     if (!result.rows[0]) throw new Error(`Empleado #${id} no encontrado`);
+    if (input.active === true && String(result.rows[0].contrasena ?? '') === '') {
+      throw new Error('No se puede activar este usuario sin establecer una nueva contraseÃ±a');
+    }
     return mapEmployeeForAdmin(result.rows[0]);
   } catch (error) {
     if (typeof error === 'object' && error !== null && 'code' in error && error.code === '23505'
@@ -479,10 +495,10 @@ export async function deactivateDatabaseEmployee(id: number) {
   const database = requirePool();
   const result = await database.query(
     `UPDATE Empleados
-        SET contrasena = NULL, ultima_modificacion = CURRENT_TIMESTAMP
+        SET activo = false, ultima_modificacion = CURRENT_TIMESTAMP
       WHERE id_empleado = $1
       RETURNING id_empleado, nombre_completo, correo_corporativo, rol_usuario,
-                id_sucursal, puesto, id_supervisor, contrasena`,
+                id_sucursal, puesto, id_supervisor, contrasena, activo`,
     [id]
   );
   if (!result.rows[0]) throw new Error(`Empleado #${id} no encontrado`);
@@ -699,7 +715,6 @@ export async function getDatabaseDashboard(filters?: { branchId?: number }): Pro
   const dashboardParams = hasBranchFilter ? [branchId] : [];
   const branchInvoiceFilter = hasBranchFilter ? ' AND f.id_sucursal = $1' : '';
   const branchStockFilter = hasBranchFilter ? ' AND ss.id_sucursal = $1' : '';
-  const outOfStockBranchFilter = hasBranchFilter ? ' AND ss.id_sucursal = $1' : '';
   const activeProductsMetric = hasBranchFilter
     ? `(SELECT COUNT(DISTINCT l.id_producto)
          FROM Lotes l
@@ -719,8 +734,8 @@ export async function getDatabaseDashboard(filters?: { branchId?: number }): Pro
           AND tracking.branch_id = $1)`
     : `(SELECT COUNT(*) FROM Clientes)`;
   const employeeCountMetric = hasBranchFilter
-    ? `(SELECT COUNT(*) FROM Empleados WHERE contrasena IS NOT NULL AND id_sucursal = $1)`
-    : `(SELECT COUNT(*) FROM Empleados WHERE contrasena IS NOT NULL)`;
+    ? `(SELECT COUNT(*) FROM Empleados WHERE COALESCE(activo, true) = true AND COALESCE(contrasena, '') <> '' AND id_sucursal = $1)`
+    : `(SELECT COUNT(*) FROM Empleados WHERE COALESCE(activo, true) = true AND COALESCE(contrasena, '') <> '')`;
   const branchCountMetric = hasBranchFilter
     ? `(SELECT COUNT(*) FROM Sucursales WHERE id_sucursal = $1)`
     : `(SELECT COUNT(*) FROM Sucursales)`;
@@ -733,7 +748,7 @@ export async function getDatabaseDashboard(filters?: { branchId?: number }): Pro
        WHERE EXISTS (SELECT 1 FROM Pagos p WHERE p.id_factura = f.id_factura)${branchInvoiceFilter}
     ),
     low_stock AS (
-      SELECT COUNT(DISTINCT stock.product_id) AS total
+      SELECT COUNT(*) AS total
         FROM (
           SELECT l.id_producto AS product_id, ss.id_sucursal
             FROM Lotes l
@@ -770,6 +785,18 @@ export async function getDatabaseDashboard(filters?: { branchId?: number }): Pro
         HAVING COALESCE(SUM(ss.cantidad_disponible), 0) <= 10
       ) stock
     ),
+    out_of_stock AS (
+      SELECT COUNT(*) AS total
+        FROM (
+          SELECT l.id_producto AS product_id, ss.id_sucursal
+            FROM Lotes l
+            JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
+            JOIN Productos p ON p.id_producto = l.id_producto
+           WHERE COALESCE(p.activo, true) = true${branchStockFilter}
+           GROUP BY l.id_producto, ss.id_sucursal
+          HAVING COALESCE(SUM(ss.cantidad_disponible), 0) <= 0
+        ) stock
+    ),
     pending_orders AS (
       SELECT COUNT(*) AS total
         FROM Facturas f
@@ -800,10 +827,7 @@ export async function getDatabaseDashboard(filters?: { branchId?: number }): Pro
            (SELECT month_total FROM paid_sales) AS "salesMonth",
            (SELECT total FROM low_stock) AS "lowStockCount",
            ${activeProductsMetric} AS "activeProducts",
-           (SELECT COUNT(*) FROM Productos p WHERE COALESCE(p.activo, true) = true AND NOT EXISTS (
-              SELECT 1 FROM Lotes l JOIN Stock_Sucursal ss ON ss.id_lote = l.id_lote
-               WHERE l.id_producto = p.id_producto${outOfStockBranchFilter} AND ss.cantidad_disponible > 0
-           )) AS "outOfStockCount",
+           (SELECT total FROM out_of_stock) AS "outOfStockCount",
            ${employeeCountMetric} AS "activeEmployees",
            ${branchCountMetric} AS "activeBranches",
            (SELECT total FROM expiring_lots) AS "expiringLotsCount",
@@ -863,7 +887,7 @@ export async function getDatabaseReports(filters?: { branchId?: number; from?: s
     database.query(`
       SELECT p.nombre_producto AS name,
              COALESCE(SUM(df.cantidad_vendida), 0) AS quantity,
-             COALESCE(SUM(df.subtotal), 0) AS total
+             COALESCE(SUM(df.subtotal * COALESCE(f.total_neto / NULLIF(f.subtotal_bruto, 0), 1)), 0) AS total
         FROM Detalle_Facturas df
         JOIN Facturas f ON f.id_factura = df.id_factura
         JOIN Lotes l ON l.id_lote = df.id_lote
@@ -875,7 +899,10 @@ export async function getDatabaseReports(filters?: { branchId?: number; from?: s
     `, params),
     database.query(`
       SELECT TO_CHAR(DATE_TRUNC('month', f.fecha_emision), 'YYYY-MM') AS month,
-             COALESCE(SUM(df.subtotal - (df.cantidad_vendida * l.precio_costo)), 0) AS total
+             COALESCE(SUM(
+               (df.subtotal * COALESCE(f.total_neto / NULLIF(f.subtotal_bruto, 0), 1))
+               - (df.cantidad_vendida * l.precio_costo)
+             ), 0) AS total
         FROM Detalle_Facturas df
         JOIN Facturas f ON f.id_factura = df.id_factura
         JOIN Lotes l ON l.id_lote = df.id_lote
@@ -2180,6 +2207,8 @@ export async function initializeDatabase() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query('ALTER TABLE Empleados ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true');
+  await pool.query("UPDATE Empleados SET activo = false WHERE COALESCE(contrasena, '') = '' AND activo = true");
   await pool.query('ALTER TABLE Empleados ADD COLUMN IF NOT EXISTS puesto INTEGER');
   await pool.query('ALTER TABLE Facturas ADD COLUMN IF NOT EXISTS id_empleado INTEGER');
   await pool.query('ALTER TABLE Facturas ADD COLUMN IF NOT EXISTS puesto_cajero INTEGER');
@@ -2190,6 +2219,7 @@ export async function initializeDatabase() {
         FROM Empleados
        WHERE rol_usuario IN ('Cajero', 'Repartidor')
          AND id_sucursal IS NOT NULL
+         AND COALESCE(activo, true) = true
          AND COALESCE(contrasena, '') <> ''
          AND puesto IS NULL
     ),
@@ -2207,6 +2237,7 @@ export async function initializeDatabase() {
           WHERE occupied.id_sucursal = branch_roles.id_sucursal
             AND occupied.rol_usuario = branch_roles.rol_usuario
             AND occupied.puesto = station.number
+            AND COALESCE(occupied.activo, true) = true
             AND COALESCE(occupied.contrasena, '') <> ''
        )
     ),
@@ -2224,9 +2255,11 @@ export async function initializeDatabase() {
      WHERE employee.id_empleado = assignments.id_empleado
   `);
   await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS ux_empleados_sucursal_rol_puesto_activo
+    DROP INDEX IF EXISTS ux_empleados_sucursal_rol_puesto_activo;
+    CREATE UNIQUE INDEX ux_empleados_sucursal_rol_puesto_activo
       ON Empleados (id_sucursal, rol_usuario, puesto)
       WHERE puesto IS NOT NULL
+        AND COALESCE(activo, true) = true
         AND contrasena IS NOT NULL
         AND contrasena <> ''
         AND rol_usuario IN ('Cajero', 'Repartidor')

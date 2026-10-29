@@ -213,6 +213,53 @@ function InventoryAlerts({ products }: { products: LowStockProduct[] }) {
   return <section className="inventory-alerts analytics-card"><div className="analytics-card-head"><div><span className="section-kicker warning-kicker">Acción requerida</span><h3>Inventario bajo</h3><p>Productos que necesitan reposición por sucursal</p></div><span className="alert-counter">{products.length}</span></div>{products.length > 0 ? <div className="inventory-alert-list">{products.map((product) => <div className="inventory-alert-row" key={`${product.productId}-${product.branchId}`}><div className="inventory-alert-icon">!</div><div className="inventory-alert-main"><strong>{product.name}</strong><span>{product.sku} · {product.branchName}</span></div><div className="inventory-alert-stock"><strong>{product.stock}</strong><span>unidades</span></div><span className={`inventory-severity ${product.severity}`}>{product.severity === 'critical' ? 'Agotado' : product.severity === 'urgent' ? 'Urgente' : 'Bajo'}</span></div>)}</div> : <div className="inventory-clear"><span>✓</span><div><strong>Inventario saludable</strong><p>No hay productos por debajo del mínimo de 10 unidades.</p></div></div>}</section>;
 }
 
+function DashboardViewNav({ value, onChange }: { value: 'executive' | 'financial' | 'operations'; onChange: (value: 'executive' | 'financial' | 'operations') => void }) {
+  return <div className="dashboard-view-nav" role="tablist" aria-label="Vistas del dashboard">
+    <button type="button" className={value === 'executive' ? 'active' : ''} onClick={() => onChange('executive')}>Resumen ejecutivo<span>Decisiones rápidas</span></button>
+    <button type="button" className={value === 'financial' ? 'active' : ''} onClick={() => onChange('financial')}>Finanzas<span>Ingresos y utilidad</span></button>
+    <button type="button" className={value === 'operations' ? 'active' : ''} onClick={() => onChange('operations')}>Operación<span>Inventario y flujo</span></button>
+  </div>;
+}
+
+function FinancialView({ dashboard, reports }: { dashboard: DashboardMetrics; reports: AdminReports }) {
+  const revenue = (reports.monthlySales ?? []).reduce((sum, row) => sum + Number(row.total), 0);
+  const profit = (reports.profitMonthly ?? []).reduce((sum, row) => sum + Number(row.total), 0);
+  const margin = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
+  const inventoryCost = Number(dashboard.inventoryCost ?? 0);
+  const inventoryRetail = Number(dashboard.inventoryRetailValue ?? 0);
+  return <section className="dashboard-view-content financial-view">
+    <div className="view-intro"><div><span className="section-kicker">Control financiero</span><h2>Dinero que entra y valor que genera</h2><p>Ingresos cobrados, utilidad bruta y capital inmovilizado en existencias.</p></div><span className="view-badge">Facturación pagada</span></div>
+    <div className="finance-kpi-grid">
+      <article><span>Ingresos de hoy</span><strong>{money(Number(dashboard.salesToday ?? 0))}</strong><small>Pagos confirmados</small></article>
+      <article><span>Ingresos del mes</span><strong>{money(Number(dashboard.salesMonth ?? 0))}</strong><small>Acumulado del mes actual</small></article>
+      <article className="profit-card"><span>Utilidad bruta analizada</span><strong>{money(profit)}</strong><small>{margin}% de margen sobre ingresos</small></article>
+      <article><span>Valor comercial del inventario</span><strong>{money(inventoryRetail)}</strong><small>Costo: {money(inventoryCost)}</small></article>
+    </div>
+    <div className="finance-grid">
+      <div className="analytics-card analytics-card-wide"><div className="analytics-card-head"><div><h3>Ingresos mensuales</h3><p>Facturación confirmada por periodo</p></div><span className="data-freshness">{reports.monthlySales?.length ?? 0} meses</span></div><SalesTrendChart rows={reports.monthlySales ?? []} /><div className="finance-note"><span>Utilidad bruta acumulada</span><strong>{money(profit)}</strong></div></div>
+      <div className="analytics-card"><div className="analytics-card-head"><div><h3>Productos que más ingresan</h3><p>Contribución neta por producto</p></div></div><HorizontalBars rows={(reports.topProducts ?? []).map((row) => ({ label: row.name, value: Number(row.total) }))} labelKey="financial-product" /></div>
+      <div className="analytics-card"><div className="analytics-card-head"><div><h3>Ingresos por sucursal</h3><p>Comparación de facturación pagada</p></div></div><HorizontalBars rows={(reports.salesByBranch ?? []).map((row) => ({ label: row.branch, value: Number(row.total) }))} labelKey="financial-branch" /></div>
+      <div className="analytics-card"><div className="analytics-card-head"><div><h3>Capital en inventario por proveedor</h3><p>Valor actual de lotes disponibles</p></div></div><HorizontalBars rows={(reports.purchasesBySupplier ?? []).map((row) => ({ label: row.supplier, value: Number(row.total) }))} labelKey="supplier-stock" /></div>
+    </div>
+  </section>;
+}
+
+function OperationsView({ dashboard, reports }: { dashboard: DashboardMetrics; reports: AdminReports }) {
+  const operationalCards = [
+    ['Pedidos en seguimiento', dashboard.pendingOrders, 'Pedidos que requieren acción'],
+    ['Alertas de inventario', dashboard.lowStockCount, 'Productos por debajo de 10 unidades'],
+    ['Agotados', dashboard.outOfStockCount, 'Reposición inmediata'],
+    ['Lotes por vencer', dashboard.expiringLotsCount, 'Ventana de control: 90 días'],
+    ['Productos activos', dashboard.activeProducts, 'Disponibles en catálogo'],
+    ['Clientes registrados', dashboard.registeredCustomers, 'Cuentas habilitadas']
+  ];
+  return <section className="dashboard-view-content operations-view">
+    <div className="view-intro"><div><span className="section-kicker">Control operativo</span><h2>Lo que mantiene funcionando la farmacia</h2><p>Existencias, pedidos, vencimientos y capacidad comercial para actuar antes de que aparezca un quiebre.</p></div><span className="view-badge">Estado en tiempo real</span></div>
+    <div className="operations-kpi-grid">{operationalCards.map(([label, value, hint]) => <article key={String(label)}><span>{label}</span><strong>{String(value ?? 0)}</strong><small>{hint}</small></article>)}</div>
+    <div className="operations-grid"><InventoryAlerts products={dashboard.lowStockProducts ?? []} /><div className="analytics-card daily-branch-card"><div className="analytics-card-head"><div><span className="section-kicker">Ritmo de venta</span><h3>Ventas diarias por sucursal</h3><p>Pedidos pagados agrupados por día y sucursal.</p></div></div><DailyBranchPerformance rows={reports.dailySalesByBranch ?? []} branch="" /></div></div>
+  </section>;
+}
+
 type AdminTab = 'performance' | 'lowStock' | 'newEmployee' | 'employees' | 'customers' | 'crosscheck' | 'suppliers' | 'discounts';
 const ADMIN_TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
   { id: 'performance', label: 'Rendimiento de la farmacia', icon: <span>⌁</span> },
@@ -243,6 +290,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
   const [employeeDrafts, setEmployeeDrafts] = useState<Record<number, EmployeeDraft>>({});
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
+  const [dashboardView, setDashboardView] = useState<'executive' | 'financial' | 'operations'>('executive');
   const [status, setStatus] = useState('');
   const [discountForm, setDiscountForm] = useState({ code: '', type: 'PERCENTAGE' as AdminDiscountCode['type'], value: '10', maxUses: '100', startsAt: '', expiresAt: '' });
   const [empFullName, setEmpFullName] = useState('');
@@ -372,6 +420,26 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
       setStatus(error instanceof Error ? error.message : 'No se pudo actualizar el colaborador');
     }
   }
+  async function toggleEmployee(employee: AdminEmployee) {
+    const activating = !employee.active;
+    if (!window.confirm(activating
+      ? `¿Activar el acceso de ${employee.fullName}? Podrá volver a iniciar sesión.`
+      : `¿Desactivar el acceso de ${employee.fullName}? Se conservará su historial y podrá reactivarse después.`)) return;
+    try {
+      const password = activating
+        ? window.prompt('Contraseña nueva opcional. Déjala vacía para conservar la actual (mínimo 6 caracteres si la cambias):')
+        : null;
+      if (password && password.length < 6) throw new Error('La contraseña debe contener al menos 6 caracteres');
+      await apiRequest(`/api/admin/employees/${employee.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ active: activating, ...(password ? { password } : {}) })
+      }, token);
+      await loadAll();
+      setStatus(`Se ${activating ? 'activó' : 'desactivó'} el acceso de ${employee.fullName}; su historial se conservó.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo desactivar el colaborador');
+    }
+  }
   async function removeEmployee(employee: AdminEmployee) {
     if (!window.confirm(`¿Eliminar el acceso de ${employee.fullName}? Se conservará su historial de ventas y entregas.`)) return;
     try {
@@ -379,7 +447,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
       await loadAll();
       setStatus(`Se eliminó el acceso de ${employee.fullName}; su historial se conservó.`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'No se pudo desactivar el colaborador');
+      setStatus(error instanceof Error ? error.message : 'No se pudo eliminar el colaborador');
     }
   }
   async function removeCustomer(customer: AdminCustomer) {
@@ -433,6 +501,17 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
   const SkeletonCard = () => <div className="skeleton-card"><div className="skeleton-line" style={{ width: '60%' }} /><div className="skeleton-line" style={{ width: '40%', marginTop: '0.5rem' }} /><div className="skeleton-line" style={{ width: '30%', marginTop: '0.5rem' }} /></div>;
   const SkeletonChart = () => <div className="skeleton-chart"><div className="skeleton-line" style={{ width: '100%', height: '200px' }} /></div>;
   const PerformanceTab = () => {
+    if (dashboard && reports && dashboardView !== 'executive') {
+      const sourceLabel = dashboard.dataSource === 'postgres' ? 'PostgreSQL' : dashboard.dataSource === 'server-store' ? 'Almacén local del servidor' : 'Conectando';
+      return <>
+        <section className="admin-dashboard-hero">
+          <div><span className="admin-dashboard-eyebrow">Panel ejecutivo</span><h1>{dashboardView === 'financial' ? 'Control financiero' : 'Control operativo'}</h1><p>{dashboardView === 'financial' ? 'Ingresos, utilidad y valor económico de la farmacia.' : 'Inventario, pedidos y alertas que requieren seguimiento.'}</p></div>
+          <div className="admin-dashboard-tools"><div className="admin-data-source"><span className={`admin-source-dot ${dashboard.dataSource === 'postgres' ? 'connected' : ''}`} /><span><strong>{sourceLabel}</strong><small>{lastUpdated ? `Actualizado ${new Intl.DateTimeFormat('es-GT', { hour: '2-digit', minute: '2-digit' }).format(lastUpdated)}` : 'Origen de datos'}</small></span></div><button type="button" className="admin-refresh-button" onClick={() => { void loadAll().catch(() => undefined); }} disabled={isLoading}>↻ Actualizar</button></div>
+        </section>
+        <DashboardViewNav value={dashboardView} onChange={setDashboardView} />
+        {dashboardView === 'financial' ? <FinancialView dashboard={dashboard} reports={reports} /> : <OperationsView dashboard={dashboard} reports={reports} />}
+      </>;
+    }
     const metrics = [
       { label: 'Ventas de hoy', value: dashboard?.salesToday, hint: 'Facturación confirmada', icon: '↗', tone: 'green', isMoney: true },
       { label: 'Ventas de ayer', value: dashboard?.salesYesterday, hint: 'Base de comparación diaria', icon: '↑', tone: 'teal', isMoney: true },
@@ -464,6 +543,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
           </button>
         </div>
       </section>
+      <DashboardViewNav value={dashboardView} onChange={setDashboardView} />
       {status && <div className="admin-dashboard-message" role="alert">{status}</div>}
       <div className="stats-grid-4 admin-metrics-grid">
         {metrics.map((metric) => <article className="stat-metric-card admin-metric-card" key={metric.label}>
@@ -550,7 +630,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
         {(draft.role === 'Cajero' || draft.role === 'Repartidor') && <div className="form-field"><label htmlFor={`employee-station-${employee.id}`}>Puesto asignado</label><select id={`employee-station-${employee.id}`} value={draft.stationNumber ?? ''} disabled={!canEdit} onChange={(event) => setEmployeeDrafts({ ...employeeDrafts, [employee.id]: { ...draft, stationNumber: event.target.value ? Number(event.target.value) : null } })}><option value="">Selecciona un puesto</option>{availableStations.map((stationNumber) => <option key={stationNumber} value={stationNumber}>{draft.role === 'Cajero' ? `Caja ${stationNumber}` : `Puesto ${stationNumber}`}</option>)}</select></div>}
         <div className="admin-person-password"><span>Contraseña</span><strong>Protegida; no se puede consultar</strong></div>
       </div>
-      <div className="admin-person-actions"><button type="button" className="btn-primary" disabled={!canEdit || (draft.role !== 'Administrador' && draft.branchId == null) || ((draft.role === 'Cajero' || draft.role === 'Repartidor') && draft.stationNumber == null)} onClick={() => saveEmployee(employee)}>Guardar cambios</button><button type="button" className="btn-secondary" disabled={!canEdit} onClick={() => removeEmployee(employee)}>{employee.active ? 'Eliminar empleado' : 'Empleado eliminado'}</button></div>
+      <div className="admin-person-actions"><button type="button" className="btn-primary" disabled={!canEdit || (draft.role !== 'Administrador' && draft.branchId == null) || ((draft.role === 'Cajero' || draft.role === 'Repartidor') && draft.stationNumber == null)} onClick={() => saveEmployee(employee)}>Guardar cambios</button><button type="button" className={employee.active ? 'btn-secondary employee-status-action deactivate' : 'btn-primary employee-status-action activate'} onClick={() => toggleEmployee(employee)}>{employee.active ? 'Desactivar acceso' : 'Activar acceso'}</button><button type="button" className="btn-secondary employee-delete-action" onClick={() => removeEmployee(employee)}>Eliminar empleado</button></div>
     </article>;
   })}</div> : <p>No hay colaboradores registrados.</p>}</section>;
   const CustomersTab = () => <section className="panel-card admin-people-panel"><div className="panel-head"><div><h2>Clientes</h2><span className="panel-subtitle">Cuentas registradas en el portal de clientes.</span></div><span className="pill-tag">{customers.length} clientes</span></div>{status && <div className="checkout-status-msg" role="status">{status}</div>}<div className="admin-dashboard-message" role="note">Las contraseñas se almacenan cifradas y no se pueden consultar. Al eliminar una cuenta se conserva el historial de pedidos.</div>{customers.length ? <div className="admin-people-list">{customers.map((customer) => <article className="admin-person-card" key={customer.customerId}><div className="admin-person-summary"><div><h3>{customer.fullName}</h3><span>{customer.email}</span></div></div><div className="admin-person-fields"><div className="admin-person-password"><span>Teléfono</span><strong>{customer.phone || 'Sin teléfono'}</strong></div><div className="admin-person-password"><span>Contraseña</span><strong>Protegida; no se puede consultar</strong></div></div>{isAdministrator && <div className="admin-person-actions"><button type="button" className="btn-secondary" onClick={() => removeCustomer(customer)}>Eliminar cuenta</button></div>}</article>)}</div> : <p>No hay cuentas de clientes registradas.</p>}</section>;

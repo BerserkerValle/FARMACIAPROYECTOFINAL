@@ -1681,10 +1681,10 @@ export class PharmacyStore {
         severity: stock <= 0 ? 'critical' as const : stock <= 5 ? 'urgent' as const : 'low' as const
       }];
     })).sort((left, right) => left.stock - right.stock || left.name.localeCompare(right.name));
-    const lowStockCount = new Set(lowStockProducts.map((item) => item.productId)).size;
+    const lowStockCount = lowStockProducts.length;
     const expiringLotsCount = this.snapshot.lots.filter((lot) => (!filters?.branchId || lot.branchId === filters.branchId) && lot.quantityAvailable > 0).filter((lot) => {
       const diffDays = Math.ceil((new Date(lot.expirationDate).getTime() - Date.now()) / 86_400_000);
-      return diffDays < 90;
+      return diffDays >= 0 && diffDays < 90;
     }).length;
     const pendingOrders = this.snapshot.orders.filter((order) => (!filters?.branchId || order.branchId === filters.branchId) && ['AWAITING_PAYMENT', 'PAID', 'PACKING', 'READY_FOR_PICKUP', 'IN_ROUTE'].includes(order.status)).length;
     const inventoryLots = this.snapshot.lots.filter((lot) => lot.quantityAvailable > 0 && (!filters?.branchId || lot.branchId === filters.branchId));
@@ -1726,14 +1726,18 @@ export class PharmacyStore {
     const salesByProduct = new Map<number, { name: string; quantity: number; total: number }>();
     const purchasesBySupplier = new Map<number, number>();
     const dailySalesByBranch = new Map<string, { date: string; branch: string; total: number; orders: number }>();
-    let grossProfit = 0;
+    const profitByMonth = new Map<string, number>();
 
     for (const order of this.snapshot.orders.filter((candidate) => {
       if (candidate.paymentStatus !== 'PAID') return false;
       if (filters?.branchId && candidate.branchId !== filters.branchId) return false;
       const paidAt = new Date(candidate.paidAt ?? candidate.createdAt);
       if (filters?.from && paidAt < new Date(`${filters.from}T00:00:00`)) return false;
-      if (filters?.to && paidAt >= new Date(`${filters.to}T23:59:59.999`)) return false;
+      if (filters?.to) {
+        const endExclusive = new Date(`${filters.to}T00:00:00`);
+        endExclusive.setDate(endExclusive.getDate() + 1);
+        if (paidAt >= endExclusive) return false;
+      }
       return true;
     })) {
       const key = monthKey(new Date(order.paidAt ?? order.createdAt));
@@ -1765,10 +1769,12 @@ export class PharmacyStore {
         const product = this.snapshot.products.find((candidate) => candidate.id === item.productId);
         if (product) {
           const current = salesByProduct.get(product.id) ?? { name: product.name, quantity: 0, total: 0 };
+          const netFactor = order.subtotal && order.subtotal > 0 ? order.total / order.subtotal : 1;
+          const netItemSubtotal = item.subtotal * netFactor;
           current.quantity += item.quantity;
-          current.total += item.subtotal;
+          current.total += netItemSubtotal;
           salesByProduct.set(product.id, current);
-          grossProfit += item.subtotal - item.quantity * product.cost;
+          profitByMonth.set(key, (profitByMonth.get(key) ?? 0) + netItemSubtotal - item.quantity * product.cost);
         }
       }
     }
@@ -1802,7 +1808,7 @@ export class PharmacyStore {
       topProducts,
       salesByBranch: branchRows,
       salesByEmployee: employeeRows,
-      profitMonthly: monthlyRows.map((row) => ({ month: row.month, total: grossProfit })),
+      profitMonthly: monthlyRows.map((row) => ({ month: row.month, total: profitByMonth.get(row.month) ?? 0 })),
       purchasesBySupplier: purchaseRows
       ,dailySalesByBranch: [...dailySalesByBranch.values()].sort((left, right) => left.date.localeCompare(right.date) || left.branch.localeCompare(right.branch))
     };

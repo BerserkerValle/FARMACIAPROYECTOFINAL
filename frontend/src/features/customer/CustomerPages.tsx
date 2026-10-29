@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { apiRequest } from "../../api";
+import { API_URL, apiRequest } from "../../api";
 import { PasswordInputComponent } from "../../components/PasswordInput";
 import { useToast } from "../../components/ToastProvider";
 import { isValidGuatemalaPhone, sanitizePhoneInput, validateEmail, validatePassword } from "../../lib/validation";
@@ -106,7 +106,7 @@ export function CustomerOrdersPage({ customer, customerToken, onUpdate, onLogout
   async function downloadInvoice(orderId: number) {
     setDownloadingInvoice(orderId);
     try {
-      const response = await fetch((import.meta.env.VITE_API_URL || "http://localhost:4000") + "/api/public/orders/" + orderId + "/invoice", {
+      const response = await fetch(API_URL + "/api/public/orders/" + orderId + "/invoice", {
         headers: { Authorization: "Bearer " + customerToken }
       });
       if (!response.ok) {
