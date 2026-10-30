@@ -323,6 +323,27 @@ export interface Order {
   releasedAt: string | null;
 }
 
+export interface AdminOrderHistoryEntry {
+  id: number;
+  code: string;
+  source: OrderSource;
+  branchId: number;
+  branchName: string;
+  employeeId: number | null;
+  employeeName: string | null;
+  stationNumber: number | null;
+  assignedEmployeeId: number | null;
+  assignedEmployeeName: string | null;
+  customerName: string;
+  address: string | null;
+  deliveryMode: 'DELIVERY' | 'PICKUP';
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  total: number;
+  createdAt: string;
+  items: Array<{ productName: string; quantity: number; unitPrice: number; subtotal: number }>;
+}
+
 /**
  * Registro de transacción de pago.
  * Soporta Stripe (tarjeta de crédito/débito), efectivo, PayPal o demo.

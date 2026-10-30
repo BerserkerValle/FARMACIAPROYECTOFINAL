@@ -83,6 +83,32 @@ export function setGlobalErrorHandler(handler: GlobalErrorHandler | null): void 
   globalErrorHandler = handler;
 }
 
+export interface GlobalRequestHandlers {
+  start: () => void;
+  finish: () => void;
+  success: (message: string) => void;
+}
+
+let globalRequestHandlers: GlobalRequestHandlers | null = null;
+
+export function setGlobalRequestHandlers(handlers: GlobalRequestHandlers | null): void {
+  globalRequestHandlers = handlers;
+}
+
+export async function runWithRequestStatus<T>(
+  request: () => Promise<T>,
+  successMessage?: string
+): Promise<T> {
+  globalRequestHandlers?.start();
+  try {
+    const result = await request();
+    if (successMessage) globalRequestHandlers?.success(successMessage);
+    return result;
+  } finally {
+    globalRequestHandlers?.finish();
+  }
+}
+
 function triggerGlobalError(message: string): void {
   if (globalErrorHandler) {
     globalErrorHandler(message);
@@ -95,6 +121,8 @@ function triggerGlobalError(message: string): void {
 export interface ApiRequestOptions extends RequestInit {
   /** Si true, no muestra toast de error global (para manejo local personalizado) */
   silent?: boolean;
+  /** Si true, no muestra el toast genérico de éxito para una operación de escritura */
+  silentSuccess?: boolean;
 }
 
 // ============================================================================
@@ -119,8 +147,19 @@ export interface ApiRequestOptions extends RequestInit {
  * @param {string | null} [token] Token JWT de sesión (empleado o cliente).
  * @returns {Promise<T>} Promesa con los datos devueltos por el backend.
  */
-export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}, token?: string | null): Promise<T> {
-  const { silent, ...fetchOptions } = options;
+export function apiRequest<T>(path: string, options: ApiRequestOptions = {}, token?: string | null): Promise<T> {
+  const method = (options.method ?? 'GET').toUpperCase();
+  const successMessage = method !== 'GET' && !options.silentSuccess
+    ? 'Operación completada con éxito.'
+    : undefined;
+  return runWithRequestStatus(
+    () => performApiRequest<T>(path, options, token),
+    successMessage
+  );
+}
+
+async function performApiRequest<T>(path: string, options: ApiRequestOptions, token?: string | null): Promise<T> {
+  const { silent, silentSuccess: _silentSuccess, ...fetchOptions } = options;
   const headers = new Headers(fetchOptions.headers ?? {});
 
   if (token) {
@@ -190,6 +229,7 @@ export async function uploadPrescription(file: File, orderId: number, kind: 'web
   formData.append('orderId', String(orderId));
   formData.append('kind', kind);
 
+  return runWithRequestStatus(async () => {
   const response = await fetch(`${API_URL}/api/public/orders/prescription`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -203,6 +243,7 @@ export async function uploadPrescription(file: File, orderId: number, kind: 'web
     throw apiError;
   }
   return payload.data as { url: string; order: { id: number; code: string } };
+  }, 'Operación completada con éxito.');
 }
 
 /**
@@ -216,6 +257,7 @@ export async function uploadTemporaryPrescription(file: File, token?: string | n
   const formData = new FormData();
   formData.append('recipe', file);
 
+  return runWithRequestStatus(async () => {
   const response = await fetch(`${API_URL}/api/public/prescriptions/temp`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -229,6 +271,7 @@ export async function uploadTemporaryPrescription(file: File, token?: string | n
     throw apiError;
   }
   return payload.data as { url: string };
+  }, 'Operación completada con éxito.');
 }
 
 /**
@@ -242,6 +285,7 @@ export async function uploadProductImage(file: File, token?: string | null) {
   const formData = new FormData();
   formData.append('image', file);
 
+  return runWithRequestStatus(async () => {
   const response = await fetch(`${API_URL}/api/warehouse/products/upload-image`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -255,4 +299,5 @@ export async function uploadProductImage(file: File, token?: string | null) {
     throw apiError;
   }
   return payload.data as { url: string; filename: string };
+  }, 'Operación completada con éxito.');
 }

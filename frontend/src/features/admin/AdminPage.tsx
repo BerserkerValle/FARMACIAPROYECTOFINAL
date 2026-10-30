@@ -38,6 +38,27 @@ type AdminEmployee = {
   active: boolean;
 };
 
+type AdminOrderHistoryEntry = {
+  id: number;
+  code: string;
+  source: 'WEB' | 'POS' | 'PICKUP';
+  branchId: number;
+  branchName: string;
+  employeeId: number | null;
+  employeeName: string | null;
+  stationNumber: number | null;
+  assignedEmployeeId: number | null;
+  assignedEmployeeName: string | null;
+  customerName: string;
+  address: string | null;
+  deliveryMode: 'DELIVERY' | 'PICKUP';
+  status: string;
+  paymentStatus: string;
+  total: number;
+  createdAt: string;
+  items: Array<{ productName: string; quantity: number; unitPrice: number; subtotal: number }>;
+};
+
 type AdminCustomer = {
   customerId: number;
   fullName: string;
@@ -260,12 +281,14 @@ function OperationsView({ dashboard, reports }: { dashboard: DashboardMetrics; r
   </section>;
 }
 
-type AdminTab = 'performance' | 'lowStock' | 'newEmployee' | 'employees' | 'customers' | 'crosscheck' | 'suppliers' | 'discounts';
+type AdminTab = 'performance' | 'lowStock' | 'newEmployee' | 'employees' | 'cashierSales' | 'orderHistory' | 'customers' | 'crosscheck' | 'suppliers' | 'discounts';
 const ADMIN_TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
   { id: 'performance', label: 'Rendimiento de la farmacia', icon: <span>⌁</span> },
   { id: 'lowStock', label: 'Inventario bajo', icon: <span>▥</span> },
   { id: 'newEmployee', label: 'Alta de Colaborador', icon: <span>+</span> },
   { id: 'employees', label: 'Empleados', icon: <span>♙</span> },
+  { id: 'cashierSales', label: 'Ventas por caja', icon: <span>▤</span> },
+  { id: 'orderHistory', label: 'Historial de pedidos', icon: <span>◷</span> },
   { id: 'customers', label: 'Clientes', icon: <span>◉</span> },
   { id: 'crosscheck', label: 'Auditoría MSPAS', icon: <span>✓</span> },
   { id: 'suppliers', label: 'Gestión de proveedores', icon: <span>▥</span> },
@@ -287,6 +310,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
   const [discountCodes, setDiscountCodes] = useState<AdminDiscountCode[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [employees, setEmployees] = useState<AdminEmployee[]>([]);
+  const [orderHistory, setOrderHistory] = useState<AdminOrderHistoryEntry[]>([]);
   const [employeeDrafts, setEmployeeDrafts] = useState<Record<number, EmployeeDraft>>({});
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
@@ -338,16 +362,18 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
     setStatus('');
     try {
       const branchQuery = effectiveBranchId ? `?branchId=${effectiveBranchId}` : '';
-      const [dash, rep, branchData, supplierData, discountData, employeeData, customerData] = await Promise.all([
+      const [dash, rep, branchData, supplierData, discountData, employeeData, customerData, historyData] = await Promise.all([
         apiRequest<DashboardMetrics>(`/api/admin/dashboard${branchQuery}`, {}, token), apiRequest<AdminReports>(`/api/admin/reports${branchQuery}`, {}, token),
         apiRequest<Branch[]>('/api/admin/branches', {}, token),
         isAdministrator ? apiRequest<Supplier[]>('/api/admin/suppliers', {}, token) : Promise.resolve([] as Supplier[]),
         canManageDiscountCodes ? apiRequest<AdminDiscountCode[]>('/api/admin/discount-codes', {}, token) : Promise.resolve([] as AdminDiscountCode[]),
         apiRequest<AdminEmployee[]>('/api/admin/employees', {}, token),
-        isAdministrator ? apiRequest<AdminCustomer[]>('/api/admin/customers', {}, token) : Promise.resolve([] as AdminCustomer[])
+        isAdministrator ? apiRequest<AdminCustomer[]>('/api/admin/customers', {}, token) : Promise.resolve([] as AdminCustomer[]),
+        apiRequest<AdminOrderHistoryEntry[]>('/api/admin/order-history', {}, token)
       ]);
       setDashboard(dash); setReports(rep); setBranches(branchData); setSuppliers(supplierData); setDiscountCodes(discountData);
       setEmployees(employeeData);
+      setOrderHistory(historyData);
       setEmployeeDrafts(Object.fromEntries(employeeData.map((employee) => [employee.id, {
         role: employee.role,
         branchId: employee.branchId,
@@ -588,7 +614,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
           {empRole === 'Administrador' && <small>El administrador no necesita sucursal asignada.</small>}
           {isManager && <small>Este colaborador quedará asignado a tu sucursal.</small>}
         </div>
-        <PasswordInputComponent label="Contraseña" value={empPassword} onChange={setEmpPassword} required />
+        <PasswordInputComponent label="Contraseña" value={empPassword} onChange={(event) => setEmpPassword(event.target.value)} required />
         {(empRole === 'Cajero' || empRole === 'Repartidor') && <div className="form-field">
           <label>Puesto asignado</label>
           <select value={empStationNumber !== '' && availableCreateStations.includes(empStationNumber) ? empStationNumber : availableCreateStations[0] ?? ''} onChange={(event) => setEmpStationNumber(event.target.value ? Number(event.target.value) : '')} required>
@@ -634,6 +660,31 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
     </article>;
   })}</div> : <p>No hay colaboradores registrados.</p>}</section>;
   const CustomersTab = () => <section className="panel-card admin-people-panel"><div className="panel-head"><div><h2>Clientes</h2><span className="panel-subtitle">Cuentas registradas en el portal de clientes.</span></div><span className="pill-tag">{customers.length} clientes</span></div>{status && <div className="checkout-status-msg" role="status">{status}</div>}<div className="admin-dashboard-message" role="note">Las contraseñas se almacenan cifradas y no se pueden consultar. Al eliminar una cuenta se conserva el historial de pedidos.</div>{customers.length ? <div className="admin-people-list">{customers.map((customer) => <article className="admin-person-card" key={customer.customerId}><div className="admin-person-summary"><div><h3>{customer.fullName}</h3><span>{customer.email}</span></div></div><div className="admin-person-fields"><div className="admin-person-password"><span>Teléfono</span><strong>{customer.phone || 'Sin teléfono'}</strong></div><div className="admin-person-password"><span>Contraseña</span><strong>Protegida; no se puede consultar</strong></div></div>{isAdministrator && <div className="admin-person-actions"><button type="button" className="btn-secondary" onClick={() => removeCustomer(customer)}>Eliminar cuenta</button></div>}</article>)}</div> : <p>No hay cuentas de clientes registradas.</p>}</section>;
+  const CashierSalesTab = () => {
+    const sales = orderHistory.filter((order) => order.source === 'POS' && order.employeeId != null);
+    return <section className="panel-card admin-people-panel">
+      <div className="panel-head"><div><h2>Ventas por caja</h2><span className="panel-subtitle">Ventas POS, productos vendidos y cajero asignado a cada caja al momento de cobrar.</span></div><span className="pill-tag">{sales.length} ventas</span></div>
+      {status && <div className="checkout-status-msg" role="status">{status}</div>}
+      <div className="lots-table-wrap"><table className="lots-table suppliers-table"><thead><tr><th>Fecha / venta</th><th>Sucursal / caja</th><th>Vendedor registrado</th><th>Responsable actual de caja</th><th>Productos vendidos</th><th>Estado</th><th>Total</th></tr></thead><tbody>
+        {sales.map((sale) => {
+          const currentAssignee = employees.find((employee) => employee.active
+            && employee.role === 'Cajero'
+            && employee.branchId === sale.branchId
+            && employee.stationNumber === sale.stationNumber);
+          return <tr key={sale.id}><td><strong>{sale.code}</strong><small>{new Date(sale.createdAt).toLocaleString('es-GT')}</small></td><td>{sale.branchName}<small>{sale.stationNumber ? `Caja ${sale.stationNumber}` : 'Caja sin puesto'}</small></td><td>{sale.employeeName ?? 'Empleado eliminado'}</td><td>{currentAssignee?.fullName ?? 'Sin responsable activo'}</td><td>{sale.items.length ? sale.items.map((item, index) => <small key={`${sale.id}-${index}`}>{item.productName} × {item.quantity}</small>) : 'Sin detalle de productos'}</td><td>{sale.paymentStatus === 'PAID' ? 'Pagada' : 'Pendiente'}</td><td>{money(sale.total)}</td></tr>;
+        })}
+        {sales.length === 0 && <tr><td colSpan={7} className="no-lots-msg">Todavía no hay ventas POS registradas.</td></tr>}
+      </tbody></table></div>
+    </section>;
+  };
+  const OrderHistoryTab = () => <section className="panel-card admin-people-panel">
+    <div className="panel-head"><div><h2>Historial de pedidos</h2><span className="panel-subtitle">Pedidos de {isAdministrator ? 'todas las sucursales' : 'tu sucursal'}, sus artículos, estado y repartidor asignado.</span></div><span className="pill-tag">{orderHistory.length} pedidos</span></div>
+    {status && <div className="checkout-status-msg" role="status">{status}</div>}
+    <div className="lots-table-wrap"><table className="lots-table suppliers-table"><thead><tr><th>Fecha / pedido</th><th>Sucursal</th><th>Cliente / entrega</th><th>Productos</th><th>Repartidor asignado</th><th>Estado</th><th>Total</th></tr></thead><tbody>
+      {orderHistory.map((order) => <tr key={order.id}><td><strong>{order.code}</strong><small>{new Date(order.createdAt).toLocaleString('es-GT')}</small></td><td>{order.branchName}</td><td>{order.customerName || 'Cliente'}<small>{order.deliveryMode === 'DELIVERY' ? order.address || 'Entrega a domicilio' : 'Retiro en sucursal'}</small></td><td>{order.items.length ? order.items.map((item, index) => <small key={`${order.id}-${index}`}>{item.productName} × {item.quantity}</small>) : 'Sin detalle de productos'}</td><td>{order.deliveryMode === 'DELIVERY' ? order.assignedEmployeeName ?? 'Pendiente de asignación' : 'No aplica'}</td><td>{order.status} · {order.paymentStatus === 'PAID' ? 'Pagado' : 'Pendiente de pago'}</td><td>{money(order.total)}</td></tr>)}
+      {orderHistory.length === 0 && <tr><td colSpan={7} className="no-lots-msg">Todavía no hay pedidos registrados.</td></tr>}
+    </tbody></table></div>
+  </section>;
   const CrosscheckPanel = () => <div className="panel-card"><div className="panel-head"><h2>Auditoría MSPAS</h2><span className="pill-tag">Validación Sanitaria</span></div><div className="form-field"><label>ID de Orden a Validar</label><input value={crosscheckOrderId} onChange={(e) => setCrosscheckOrderId(e.target.value)} /></div><button type="button" className="btn-primary" onClick={doCrosscheck}>Registrar Validación de Receta</button><div className="reports-summary-grid"><div className="report-summary-box"><strong>{reports?.monthlySales?.length ?? 0}</strong><span>Períodos analizados</span></div><div className="report-summary-box"><strong>{reports?.topProducts?.length ?? 0}</strong><span>Productos con ventas</span></div></div>{status && <div className="checkout-status-msg">{status}</div>}</div>;
   const SuppliersTab = () => <div className="panel-card admin-suppliers-panel" style={{ marginTop: '1rem' }}><div className="panel-head"><div><h2>Gestión de proveedores</h2><span className="panel-subtitle">Contactos, compras y estado operativo</span></div><span className="pill-tag">Administrador / Gerente</span></div><div className="supplier-toolbar"><div className="form-field supplier-search-field"><label>Buscar proveedor</label><input value={supplierSearch} onChange={(e) => setSupplierSearch(e.target.value)} placeholder="Nombre, NIT, correo o teléfono" /></div>{editingSupplierId && <button type="button" className="btn-secondary" onClick={resetSupplierForm}>Cancelar edición</button>}</div><div className="form-grid-2 supplier-form-grid">
   <div className="form-field"><label>Empresa o proveedor</label><input type="text" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} /></div>
@@ -644,7 +695,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
   <div className="form-field"><label>Dirección</label><input type="text" value={supplierAddress} onChange={(e) => setSupplierAddress(e.target.value)} /></div>
 </div><div className="supplier-form-actions"><label className="checkbox-field"><input type="checkbox" checked={supplierActive} onChange={(e) => setSupplierActive(e.target.checked)} /> Proveedor activo</label><button type="button" className="btn-primary" onClick={saveSupplier}>{editingSupplierId ? 'Guardar cambios' : 'Registrar proveedor'}</button></div><div className="lots-table-wrap"><table className="lots-table suppliers-table"><thead><tr><th>Proveedor</th><th>Contacto</th><th>NIT</th><th>Comunicación</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{filteredSuppliers.map((supplier) => <tr key={supplier.id}><td><strong>{supplier.name}</strong><small>{supplier.address}</small></td><td>{supplier.contactName || 'Sin contacto'}</td><td>{supplier.nit}</td><td><span>{supplier.email}</span><small>{supplier.phone}</small></td><td><span className={`supplier-status ${supplier.active ? 'active' : 'inactive'}`}>{supplier.active ? 'Activo' : 'Inactivo'}</span></td><td><div className="supplier-actions"><button type="button" className="btn-secondary" onClick={() => editSupplier(supplier)}>Editar</button><button type="button" className="btn-secondary" onClick={() => toggleSupplier(supplier)}>{supplier.active ? 'Desactivar' : 'Activar'}</button></div></td></tr>)}{filteredSuppliers.length === 0 && <tr><td colSpan={6} className="no-lots-msg">No hay proveedores que coincidan con la búsqueda.</td></tr>}</tbody></table></div></div>;
   const DiscountCodesTab = () => <div className="panel-card" style={{ marginTop: '1rem' }}><div className="panel-head"><div><h2>Códigos de descuento</h2><span className="panel-subtitle">Aplican a toda la compra; un código por pedido y un uso por correo.</span></div><span className="pill-tag">Máximo 50% · 100 usos por defecto</span></div><div className="form-grid-2"><div className="form-field"><label>Código</label><input value={discountForm.code} maxLength={32} onChange={(event) => setDiscountForm({ ...discountForm, code: event.target.value.toUpperCase() })} placeholder="EJ. BIENVENIDA10" /></div><div className="form-field"><label>Tipo</label><select value={discountForm.type} onChange={(event) => setDiscountForm({ ...discountForm, type: event.target.value as AdminDiscountCode['type'] })}><option value="PERCENTAGE">Porcentaje</option><option value="FIXED">Monto fijo (Q)</option></select></div><div className="form-field"><label>{discountForm.type === 'PERCENTAGE' ? 'Porcentaje (máximo 50)' : 'Monto en quetzales'}</label><input type="number" min="0.01" max={discountForm.type === 'PERCENTAGE' ? 50 : undefined} step="0.01" value={discountForm.value} onChange={(event) => setDiscountForm({ ...discountForm, value: event.target.value })} /></div><div className="form-field"><label>Usos máximos (por defecto 100)</label><input type="number" min="1" max="10000" step="1" value={discountForm.maxUses} onChange={(event) => setDiscountForm({ ...discountForm, maxUses: event.target.value })} /></div><div className="form-field"><label>Válido desde (opcional)</label><input type="datetime-local" value={discountForm.startsAt} onChange={(event) => setDiscountForm({ ...discountForm, startsAt: event.target.value })} /></div><div className="form-field"><label>Vence (opcional)</label><input type="datetime-local" value={discountForm.expiresAt} onChange={(event) => setDiscountForm({ ...discountForm, expiresAt: event.target.value })} /></div></div><button type="button" className="btn-primary" onClick={saveDiscountCode}>Crear código</button><div className="lots-table-wrap" style={{ marginTop: '1rem' }}><table className="lots-table suppliers-table"><thead><tr><th>Código</th><th>Descuento</th><th>Vigencia</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{discountCodes.map((discount) => <tr key={discount.id}><td><strong>{discount.code}</strong><small>Máximo {discount.maxUses} usos</small></td><td>{discount.type === 'PERCENTAGE' ? `${discount.value}%` : money(discount.value)}</td><td><small>{discount.startsAt ? new Date(discount.startsAt).toLocaleString() : 'Desde ahora'}</small><small>{discount.expiresAt ? `Hasta ${new Date(discount.expiresAt).toLocaleString()}` : 'Sin vencimiento'}</small></td><td><span className={`supplier-status ${discount.active ? 'active' : 'inactive'}`}>{discount.active ? 'Activo' : 'Inactivo'}</span></td><td><button type="button" className="btn-secondary" onClick={() => toggleDiscountCode(discount)}>{discount.active ? 'Desactivar' : 'Activar'}</button></td></tr>)}{discountCodes.length === 0 && <tr><td colSpan={5} className="no-lots-msg">Todavía no hay códigos de descuento.</td></tr>}</tbody></table></div>{status && <div className="checkout-status-msg">{status}</div>}</div>;
-  function renderPanel(tab: AdminTab): React.ReactNode { switch (tab) { case "performance": return PerformanceTab(); case "lowStock": return LowStockTab(); case "newEmployee": return NewEmployeeTab(); case "employees": return EmployeesTab(); case "customers": return CustomersTab(); case "crosscheck": return CrosscheckPanel(); case "suppliers": return SuppliersTab(); case "discounts": return DiscountCodesTab(); default: return null; } }
+  function renderPanel(tab: AdminTab): React.ReactNode { switch (tab) { case "performance": return PerformanceTab(); case "lowStock": return LowStockTab(); case "newEmployee": return NewEmployeeTab(); case "employees": return EmployeesTab(); case "cashierSales": return CashierSalesTab(); case "orderHistory": return OrderHistoryTab(); case "customers": return CustomersTab(); case "crosscheck": return CrosscheckPanel(); case "suppliers": return SuppliersTab(); case "discounts": return DiscountCodesTab(); default: return null; } }
   const visibleTabs = ADMIN_TABS.filter((tab) =>
     (isAdministrator || !['customers', 'suppliers', 'discounts'].includes(tab.id))
     && (tab.id !== 'discounts' || canManageDiscountCodes)

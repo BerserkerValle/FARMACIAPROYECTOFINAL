@@ -16,6 +16,7 @@ import {
   listDatabaseCustomerAccounts,
   getDatabaseCategories,
   getDatabaseDashboard,
+  getDatabaseAdminOrderHistory,
   getDatabaseReports,
   getDatabaseOrderById,
   getDatabaseSuppliers,
@@ -138,6 +139,28 @@ export async function reports(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'No se pudieron cargar los reportes' });
   }
 }
+
+export async function orderHistory(req: Request, res: Response) {
+  try {
+    const requestedBranchId = req.query.branchId ? Number(req.query.branchId) : null;
+    if (requestedBranchId !== null && (!Number.isInteger(requestedBranchId) || requestedBranchId <= 0)) {
+      return res.status(400).json({ success: false, message: 'Sucursal no válida' });
+    }
+    const branchId = req.user?.role === 'Administrador'
+      ? requestedBranchId ?? undefined
+      : req.user?.branchId ?? undefined;
+    if (req.user?.role === 'Gerente' && branchId === undefined) {
+      return res.status(403).json({ success: false, message: 'El gerente debe tener una sucursal asignada' });
+    }
+    const data = databaseEnabled
+      ? await getDatabaseAdminOrderHistory(branchId)
+      : store.getAdminOrderHistory(branchId);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo cargar el historial de pedidos' });
+  }
+}
+
 export async function branches(req: Request, res: Response) {
   const data = databaseEnabled ? await getDatabaseBranches() : store.getBranches();
   const visibleBranches = req.user?.role === 'Gerente'

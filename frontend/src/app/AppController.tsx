@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { TopHeader, HeroCarousel } from '../components/PublicHeader';
 import { ImageHeroCarousel } from '../components/ImageHeroCarousel';
 import LoginPage from '../features/auth/LoginPage';
-import { API_URL, apiRequest, setUnauthorizedHandler, uploadTemporaryPrescription } from '../api';
+import { API_URL, apiRequest, runWithRequestStatus, setUnauthorizedHandler, uploadTemporaryPrescription } from '../api';
 import { ProductDetailModal } from '../components/ProductDetailModal';
 
 import type { Portal, Branch, Category, ProductCard, EmployeeProfile, CustomerAccount } from '../types';
@@ -136,7 +136,7 @@ export default function AppController() {
       let response: Response | null = null;
       let message = 'La factura todavía está siendo preparada.';
       for (let attempt = 0; attempt < 6; attempt += 1) {
-        response = await fetch(`${API_URL}/api/public/orders/${encodeURIComponent(orderCode)}/invoice?token=${encodeURIComponent(invoiceDownloadToken)}`);
+        response = await runWithRequestStatus(() => fetch(`${API_URL}/api/public/orders/${encodeURIComponent(orderCode)}/invoice?token=${encodeURIComponent(invoiceDownloadToken)}`));
         if (response.ok) break;
         const payload = await response.clone().json().catch(() => null) as { message?: string } | null;
         message = payload?.message || message;

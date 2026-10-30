@@ -129,6 +129,7 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
       try {
         await apiRequest(`/api/pos/deliveries/${id}`, {
           method: 'PATCH',
+          silentSuccess: true,
           body: JSON.stringify({
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
@@ -173,6 +174,7 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
                   <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
                     {order.customer?.name ?? order.customerName ?? 'Cliente'} · {order.branch?.name ?? order.branchName ?? `Sucursal ${order.branchId}`}
                   </p>
+                  <small>Teléfono: {order.customer?.phone ?? order.customerPhone ?? 'No registrado'}</small>
                   <small>{order.address?.trim() || (getDeliveryCoordinates(order) ? 'Ubicación GPS compartida por el cliente' : 'Sin dirección registrada')}</small>
                   <small>{money(Number(order.total) || 0)} · {order.status}</small>
                   {role === 'Administrador' || role === 'Gerente'
@@ -214,6 +216,15 @@ export function DeliveryPage({ token, role, branchId }: { token: string | null; 
             </p>
             <p>
               <strong>Dirección:</strong> {selectedOrder.address?.trim() || (selectedCoordinates ? `Ubicación GPS del cliente (${selectedCoordinates})` : 'No registrada')}
+            </p>
+            <p>
+              <strong>Cliente:</strong> {selectedOrder.customer?.name ?? selectedOrder.customerName ?? 'No registrado'}
+            </p>
+            <p>
+              <strong>Teléfono:</strong>{' '}
+              {(selectedOrder.customer?.phone ?? selectedOrder.customerPhone)
+                ? <a href={`tel:${selectedOrder.customer?.phone ?? selectedOrder.customerPhone}`}>{selectedOrder.customer?.phone ?? selectedOrder.customerPhone}</a>
+                : 'No registrado'}
             </p>
             {selectedOrigin && selectedDestination ? (
               <GoogleMapLink origin={selectedOrigin} destination={selectedDestination} />

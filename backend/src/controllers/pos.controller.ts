@@ -403,7 +403,7 @@ export async function deliveries(req: Request, res: Response) {
     const rows = await listDatabaseDeliveries(branchId, {
       employeeId: actor.employeeId,
       restrictToAssignee: !isSupervisorRole(actor.role),
-      includeDelivered: isSupervisorRole(actor.role)
+      includeDelivered: false
     });
     const data = rows.filter((row) => canReadDelivery(actor, {
       branchId: Number(row.branchId),
@@ -413,7 +413,7 @@ export async function deliveries(req: Request, res: Response) {
   }
 
   const data = store
-    .listDeliveries(branchId, actor, isSupervisorRole(actor.role))
+    .listDeliveries(branchId, actor, false)
     .filter((order) => canReadDelivery(actor, { branchId: order.branchId, assignedEmployeeId: order.assignedEmployeeId ?? null }));
   return res.json({ success: true, data });
 }

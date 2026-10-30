@@ -31,7 +31,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
-import type { Branch, CreateProductInput, Customer, DashboardMetrics, DataSnapshot, DiscountCode, DiscountRedemption, Invoice, Order, OrderItem, Payment, Product, PublicCheckoutInput, Supplier } from './domain.js';
+import type { AdminOrderHistoryEntry,
+Branch, CreateProductInput, Customer, DashboardMetrics, DataSnapshot, DiscountCode, DiscountRedemption, Invoice, Order, OrderItem, Payment, Product, PublicCheckoutInput, Supplier } from './domain.js';
 import { assertDiscountCodeUsable, calculateDiscountAmount } from './discounts.js';
 import { hasSanitaryRegistryChanged } from './utils.js';
 
@@ -257,13 +258,19 @@ export async function listDatabaseDeliveries(branchId: number, scope?: { employe
     `SELECT tracking.id, tracking.order_code AS code, tracking.branch_id AS "branchId",
             branch.nombre_sucursal AS "branchName",
             tracking.address, tracking.status, tracking.latitude, tracking.longitude,
-            tracking.total, customer.id AS "customerId", customer.full_name AS "customerName",
+            tracking.total, customer.id AS "customerId",
+            COALESCE(customer.full_name, invoice_customer.nombre, '') AS "customerName",
+            COALESCE(customer.phone, invoice_customer.telefono, '') AS "customerPhone",
             tracking.rider_latitude AS "riderLatitude", tracking.rider_longitude AS "riderLongitude",
             tracking.assigned_employee_id AS "assignedEmployeeId",
             tracking.updated_at AS "updatedAt"
        FROM pharmacy_delivery_tracking tracking
        LEFT JOIN Sucursales branch ON branch.id_sucursal = tracking.branch_id
        LEFT JOIN pharmacy_customer_accounts customer ON customer.id = tracking.customer_account_id
+       LEFT JOIN Facturas invoice
+         ON tracking.order_code ~ '^(WEB|POS)-[0-9]+$'
+        AND substring(tracking.order_code from 5)::BIGINT = invoice.id_factura
+       LEFT JOIN Clientes invoice_customer ON invoice_customer.id_cliente = invoice.id_cliente
       WHERE tracking.branch_id = $1
         AND tracking.status <> 'CANCELLED'
         AND ($2::boolean = true OR tracking.status <> 'DELIVERED')
@@ -967,6 +974,90 @@ export async function getDatabaseReports(filters?: { branchId?: number; from?: s
     purchasesBySupplier: purchasesResult.rows.map((row) => ({ supplier: String(row.supplier), total: Number(row.total) })),
     dailySalesByBranch: dailyBranchResult.rows.map((row) => ({ date: String(row.date), branch: String(row.branch), branchId: Number(row.branchId), total: Number(row.total), orders: Number(row.orders) }))
   };
+}
+
+export async function getDatabaseAdminOrderHistory(branchId?: number): Promise<AdminOrderHistoryEntry[]> {
+  const database = requirePool();
+  const result = await database.query(
+    `SELECT f.id_factura AS id,
+            CASE WHEN f.correlativo_sat LIKE 'POS-%' THEN 'POS' ELSE 'WEB' END AS source,
+            f.id_sucursal AS "branchId",
+            COALESCE(s.nombre_sucursal, CONCAT('Sucursal #', f.id_sucursal)) AS "branchName",
+            f.id_empleado AS "employeeId",
+            cashier.nombre_completo AS "employeeName",
+            f.puesto_cajero AS "stationNumber",
+            tracking.assigned_employee_id AS "assignedEmployeeId",
+            rider.nombre_completo AS "assignedEmployeeName",
+            COALESCE(c.nombre, tracking_customer.full_name, '') AS "customerName",
+            tracking.address,
+            CASE WHEN tracking.id IS NULL THEN 'PICKUP' ELSE 'DELIVERY' END AS "deliveryMode",
+            COALESCE(tracking.status,
+              CASE WHEN EXISTS (SELECT 1 FROM Pagos payment WHERE payment.id_factura = f.id_factura)
+                THEN 'PAID' ELSE 'AWAITING_PAYMENT' END) AS status,
+            CASE WHEN EXISTS (SELECT 1 FROM Pagos payment WHERE payment.id_factura = f.id_factura)
+              THEN 'PAID' ELSE 'PENDING' END AS "paymentStatus",
+            f.total_neto AS total,
+            f.fecha_emision AS "createdAt",
+            COALESCE((
+              SELECT json_agg(json_build_object(
+                'productName', items.product_name,
+                'quantity', items.quantity,
+                'unitPrice', items.unit_price,
+                'subtotal', items.subtotal
+              ) ORDER BY items.product_name)
+              FROM (
+                SELECT p.nombre_producto AS product_name,
+                       SUM(df.cantidad_vendida)::integer AS quantity,
+                       CASE WHEN SUM(df.cantidad_vendida) = 0 THEN 0
+                         ELSE SUM(df.subtotal) / SUM(df.cantidad_vendida) END AS unit_price,
+                       SUM(df.subtotal) AS subtotal
+                  FROM Detalle_Facturas df
+                  JOIN Lotes l ON l.id_lote = df.id_lote
+                  JOIN Productos p ON p.id_producto = l.id_producto
+                 WHERE df.id_factura = f.id_factura
+                 GROUP BY p.nombre_producto
+              ) items
+            ), '[]'::json) AS items
+       FROM Facturas f
+       LEFT JOIN Sucursales s ON s.id_sucursal = f.id_sucursal
+       LEFT JOIN Empleados cashier ON cashier.id_empleado = f.id_empleado
+       LEFT JOIN pharmacy_delivery_tracking tracking
+         ON tracking.order_code = CONCAT(
+           CASE WHEN f.correlativo_sat LIKE 'POS-%' THEN 'POS' ELSE 'WEB' END,
+           '-', LPAD(f.id_factura::text, 6, '0')
+         )
+       LEFT JOIN Empleados rider ON rider.id_empleado = tracking.assigned_employee_id
+       LEFT JOIN Clientes c ON c.id_cliente = f.id_cliente
+       LEFT JOIN pharmacy_customer_accounts tracking_customer ON tracking_customer.id = tracking.customer_account_id
+      WHERE $1::integer IS NULL OR f.id_sucursal = $1
+      ORDER BY f.fecha_emision DESC, f.id_factura DESC`,
+    [branchId ?? null]
+  );
+  return result.rows.map((row): AdminOrderHistoryEntry => ({
+    id: Number(row.id),
+    code: `${row.source}-${String(row.id).padStart(6, '0')}`,
+    source: row.source,
+    branchId: Number(row.branchId),
+    branchName: String(row.branchName),
+    employeeId: row.employeeId == null ? null : Number(row.employeeId),
+    employeeName: row.employeeName == null ? null : String(row.employeeName),
+    stationNumber: row.stationNumber == null ? null : Number(row.stationNumber),
+    assignedEmployeeId: row.assignedEmployeeId == null ? null : Number(row.assignedEmployeeId),
+    assignedEmployeeName: row.assignedEmployeeName == null ? null : String(row.assignedEmployeeName),
+    customerName: String(row.customerName),
+    address: row.address == null ? null : String(row.address),
+    deliveryMode: row.deliveryMode,
+    status: row.status,
+    paymentStatus: row.paymentStatus,
+    total: Number(row.total),
+    createdAt: new Date(row.createdAt).toISOString(),
+    items: Array.isArray(row.items) ? row.items.map((item: Record<string, unknown>) => ({
+      productName: String(item.productName),
+      quantity: Number(item.quantity),
+      unitPrice: Number(item.unitPrice),
+      subtotal: Number(item.subtotal)
+    })) : []
+  }));
 }
 
 // ============================================================================

@@ -40,6 +40,7 @@ import type {
   Invoice,
   Lot,
   Order,
+  AdminOrderHistoryEntry,
   OrderItem,
   Payment,
   PaymentStatus,
@@ -1622,6 +1623,44 @@ export class PharmacyStore {
         return true;
       })
       .map((order) => this.enrichOrder(order));
+  }
+
+  getAdminOrderHistory(branchId?: number): AdminOrderHistoryEntry[] {
+    this.assertReady();
+    return this.snapshot.orders
+      .filter((order) => branchId == null || order.branchId === branchId)
+      .map((order): AdminOrderHistoryEntry => {
+        const enriched = this.enrichOrder(order);
+        const customer = this.snapshot.customers.find((candidate) => candidate.id === order.customerId);
+        const employee = this.snapshot.employees.find((candidate) => candidate.id === order.employeeId);
+        const assignedEmployee = this.snapshot.employees.find((candidate) => candidate.id === order.assignedEmployeeId);
+        return {
+          id: order.id,
+          code: order.code,
+          source: order.source,
+          branchId: order.branchId,
+          branchName: enriched.branch?.name ?? `Sucursal #${order.branchId}`,
+          employeeId: order.employeeId,
+          employeeName: employee?.fullName ?? null,
+          stationNumber: order.stationNumber ?? null,
+          assignedEmployeeId: order.assignedEmployeeId ?? null,
+          assignedEmployeeName: assignedEmployee?.fullName ?? null,
+          customerName: customer?.name ?? '',
+          address: order.address,
+          deliveryMode: order.deliveryMode,
+          status: order.status,
+          paymentStatus: order.paymentStatus,
+          total: order.total,
+          createdAt: order.createdAt,
+          items: enriched.items.map((item) => ({
+            productName: item.product?.name ?? 'Producto eliminado',
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            subtotal: item.subtotal
+          }))
+        };
+      })
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
   getDeliveryOwnership(orderId: number) {
