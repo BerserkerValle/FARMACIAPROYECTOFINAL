@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { apiRequest } from '../../api';
+import { API_URL, apiRequest, runWithRequestStatus } from '../../api';
 import type { Branch, DashboardMetrics, LowStockProduct, Supplier } from '../../types';
 import { money } from '../../lib/catalog';
 import { PasswordInputComponent } from '../../components/PasswordInput';
@@ -302,7 +302,7 @@ function isAdminTab(hash: string, role: string, canManageDiscountCodes: boolean)
     && (hash !== 'discounts' || canManageDiscountCodes);
 }
 
-export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { token: string | null; canManageDiscountCodes: boolean; role: string; branchId: number | null }) {
+export function AdminPage({ token, canManageDiscountCodes, role, branchId, employeeId }: { token: string | null; canManageDiscountCodes: boolean; role: string; branchId: number | null; employeeId: number }) {
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [reports, setReports] = useState<AdminReports | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -311,6 +311,14 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
   const [branches, setBranches] = useState<Branch[]>([]);
   const [employees, setEmployees] = useState<AdminEmployee[]>([]);
   const [orderHistory, setOrderHistory] = useState<AdminOrderHistoryEntry[]>([]);
+  const [employeesBranchFilter, setEmployeesBranchFilter] = useState('');
+  const [cashierBranchFilter, setCashierBranchFilter] = useState('');
+  const [historyBranchFilter, setHistoryBranchFilter] = useState('');
+  const [cashierDateFrom, setCashierDateFrom] = useState('');
+  const [cashierDateTo, setCashierDateTo] = useState('');
+  const [historyDateFrom, setHistoryDateFrom] = useState('');
+  const [historyDateTo, setHistoryDateTo] = useState('');
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<number | null>(null);
   const [employeeDrafts, setEmployeeDrafts] = useState<Record<number, EmployeeDraft>>({});
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
@@ -341,9 +349,11 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
   });
   const isAdministrator = role === 'Administrador';
   const isManager = role === 'Gerente';
-  const effectiveBranchId = isManager ? branchId : selectedBranchId;
-  const availableCreateStations = (empRole === 'Cajero' || empRole === 'Repartidor') && empBranchId !== ''
-    ? availableEmployeeStations(employees, empRole, empBranchId)
+  const managerBranchId = isManager ? branchId ?? branches[0]?.id ?? null : null;
+  const effectiveBranchId = isManager ? managerBranchId : selectedBranchId;
+  const assignedEmployeeBranchId = isManager ? managerBranchId ?? '' : empBranchId;
+  const availableCreateStations = (empRole === 'Cajero' || empRole === 'Repartidor') && assignedEmployeeBranchId !== ''
+    ? availableEmployeeStations(employees, empRole, assignedEmployeeBranchId)
     : [];
 
   useEffect(() => { window.location.hash = activeTab; }, [activeTab]);
@@ -361,13 +371,21 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
     setIsLoading(true);
     setStatus('');
     try {
-      const branchQuery = effectiveBranchId ? `?branchId=${effectiveBranchId}` : '';
-      const [dash, rep, branchData, supplierData, discountData, employeeData, customerData, historyData] = await Promise.all([
-        apiRequest<DashboardMetrics>(`/api/admin/dashboard${branchQuery}`, {}, token), apiRequest<AdminReports>(`/api/admin/reports${branchQuery}`, {}, token),
+      const [branchData, employeeData] = await Promise.all([
         apiRequest<Branch[]>('/api/admin/branches', {}, token),
+        apiRequest<AdminEmployee[]>('/api/admin/employees', {}, token)
+      ]);
+      const resolvedBranchId = isManager
+        ? branchId ?? branchData[0]?.id ?? employeeData.find((employee) => employee.role === 'Gerente')?.branchId ?? null
+        : selectedBranchId;
+      if (isManager && resolvedBranchId == null) {
+        throw new Error('Tu cuenta de gerente no tiene una sucursal asignada. Pide al administrador que la asigne y vuelve a iniciar sesión.');
+      }
+      const branchQuery = resolvedBranchId ? `?branchId=${resolvedBranchId}` : '';
+      const [dash, rep, supplierData, discountData, customerData, historyData] = await Promise.all([
+        apiRequest<DashboardMetrics>(`/api/admin/dashboard${branchQuery}`, {}, token), apiRequest<AdminReports>(`/api/admin/reports${branchQuery}`, {}, token),
         isAdministrator ? apiRequest<Supplier[]>('/api/admin/suppliers', {}, token) : Promise.resolve([] as Supplier[]),
         canManageDiscountCodes ? apiRequest<AdminDiscountCode[]>('/api/admin/discount-codes', {}, token) : Promise.resolve([] as AdminDiscountCode[]),
-        apiRequest<AdminEmployee[]>('/api/admin/employees', {}, token),
         isAdministrator ? apiRequest<AdminCustomer[]>('/api/admin/customers', {}, token) : Promise.resolve([] as AdminCustomer[]),
         apiRequest<AdminOrderHistoryEntry[]>('/api/admin/order-history', {}, token)
       ]);
@@ -381,7 +399,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
       }])));
       setCustomers(customerData);
       if (empRole !== 'Administrador' && (empBranchId === '' || isManager)) {
-        setEmpBranchId(isManager ? branchId ?? '' : branchData[0]?.id ?? '');
+        setEmpBranchId(isManager ? resolvedBranchId ?? '' : empBranchId || (branchData[0]?.id ?? ''));
       }
       setLastUpdated(new Date());
     } catch (error) {
@@ -405,7 +423,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
         email: empEmail,
         password: empPassword,
         role: empRole,
-        branchId: empRole === 'Administrador' ? null : isManager ? branchId : empBranchId === '' ? null : empBranchId,
+        branchId: empRole === 'Administrador' ? null : isManager ? managerBranchId ?? (branches[0]?.id ?? null) : empBranchId === '' ? null : empBranchId,
         stationNumber: stationNumber ?? null,
         supervisorId: empSupervisorId
       };
@@ -416,7 +434,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
       setEmpEmail('');
       setEmpPassword('');
       setEmpRole('Cajero');
-      setEmpBranchId(isManager ? branchId ?? '' : branches[0]?.id ?? '');
+      setEmpBranchId(isManager ? managerBranchId ?? '' : branches[0]?.id ?? '');
       setEmpStationNumber('');
       setEmpSupervisorId(null);
       await loadAll();
@@ -438,7 +456,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
     try {
       await apiRequest(`/api/admin/employees/${employee.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ ...draft, branchId: draft.role === 'Administrador' ? null : isManager ? branchId : draft.branchId })
+        body: JSON.stringify({ ...draft, branchId: draft.role === 'Administrador' ? null : isManager ? managerBranchId : draft.branchId })
       }, token);
       await loadAll();
       setStatus(`Se actualizaron el rol y la sucursal de ${employee.fullName}.`);
@@ -523,6 +541,53 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
       setStatus(error instanceof Error ? error.message : 'No se pudo actualizar el código');
     }
   }
+  async function downloadOrderInvoice(order: AdminOrderHistoryEntry) {
+    if (!token) return;
+    setDownloadingInvoiceId(order.id);
+    try {
+      await runWithRequestStatus(async () => {
+        const response = await fetch(`${API_URL}/api/admin/orders/${order.id}/invoice`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => null) as { message?: string } | null;
+          throw new Error(error?.message ?? 'No se pudo descargar la factura');
+        }
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `factura-${order.code}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+      }, `Factura de ${order.code} descargada correctamente.`);
+      setStatus(`Factura de ${order.code} descargada correctamente.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'No se pudo descargar la factura');
+    } finally {
+      setDownloadingInvoiceId(null);
+    }
+  }
+  const filteredEmployees = employees.filter((employee) =>
+    !employeesBranchFilter || employee.branchId === Number(employeesBranchFilter)
+  );
+  const filteredCashierSales = orderHistory.filter((order) => {
+    if (order.source !== 'POS' || order.employeeId == null) return false;
+    if (cashierBranchFilter && order.branchId !== Number(cashierBranchFilter)) return false;
+    const date = order.createdAt.slice(0, 10);
+    if (cashierDateFrom && date < cashierDateFrom) return false;
+    if (cashierDateTo && date > cashierDateTo) return false;
+    return true;
+  });
+  const filteredOrderHistory = orderHistory.filter((order) => {
+    if (historyBranchFilter && order.branchId !== Number(historyBranchFilter)) return false;
+    const date = order.createdAt.slice(0, 10);
+    if (historyDateFrom && date < historyDateFrom) return false;
+    if (historyDateTo && date > historyDateTo) return false;
+    return true;
+  });
   const filteredSuppliers = suppliers.filter((supplier) => { const query = supplierSearch.trim().toLowerCase(); return !query || [supplier.name, supplier.contactName, supplier.nit, supplier.email, supplier.phone].some((value) => String(value ?? '').toLowerCase().includes(query)); });
   const SkeletonCard = () => <div className="skeleton-card"><div className="skeleton-line" style={{ width: '60%' }} /><div className="skeleton-line" style={{ width: '40%', marginTop: '0.5rem' }} /><div className="skeleton-line" style={{ width: '30%', marginTop: '0.5rem' }} /></div>;
   const SkeletonChart = () => <div className="skeleton-chart"><div className="skeleton-line" style={{ width: '100%', height: '200px' }} /></div>;
@@ -596,7 +661,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
           <select value={empRole} onChange={(event) => {
             const nextRole = event.target.value as typeof empRole;
             setEmpRole(nextRole);
-            setEmpBranchId(nextRole === 'Administrador' ? '' : isManager ? branchId ?? '' : empBranchId || branches[0]?.id || '');
+            setEmpBranchId(nextRole === 'Administrador' ? '' : isManager ? managerBranchId ?? '' : empBranchId || branches[0]?.id || '');
             setEmpStationNumber('');
           }}>
             <option disabled={isManager}>Administrador</option><option>Gerente</option><option>Cajero</option><option>Bodeguero</option><option>Repartidor</option>
@@ -604,7 +669,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
         </div>
         <div className="form-field">
           <label>Sucursal asignada</label>
-          <select value={empRole === 'Administrador' ? '' : empBranchId} disabled={empRole === 'Administrador' || isManager} onChange={(event) => {
+          <select value={empRole === 'Administrador' ? '' : assignedEmployeeBranchId} disabled={empRole === 'Administrador' || isManager} onChange={(event) => {
             setEmpBranchId(event.target.value ? Number(event.target.value) : '');
             setEmpStationNumber('');
           }} required={empRole !== 'Administrador'}>
@@ -624,21 +689,22 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
           {availableCreateStations.length === 0 && <small>No quedan puestos disponibles para este rol en la sucursal.</small>}
         </div>}
       </div>
-      <button type="button" className="btn-primary" onClick={createEmployee} disabled={empRole !== 'Administrador' && (!branches.length || (isManager && branchId == null) || ((empRole === 'Cajero' || empRole === 'Repartidor') && availableCreateStations.length === 0))}>Crear Usuario</button>
+      <button type="button" className="btn-primary" onClick={createEmployee} disabled={empRole !== 'Administrador' && (!branches.length || (isManager && managerBranchId == null) || ((empRole === 'Cajero' || empRole === 'Repartidor') && availableCreateStations.length === 0))}>Crear Usuario</button>
       {status && <div className="checkout-status-msg" role="status">{status}</div>}
       {!branches.length && empRole !== 'Administrador' && <p role="status">No hay sucursales disponibles para asignar.</p>}
     </div>
   </div>;
-  const EmployeesTab = () => <section className="panel-card admin-people-panel"><div className="panel-head"><div><h2>Empleados</h2><span className="panel-subtitle">Consulta y actualiza el rol y la sucursal asignada.</span></div><span className="pill-tag">{employees.length} colaboradores</span></div>{status && <div className="checkout-status-msg" role="status">{status}</div>}{employees.length ? <div className="admin-people-list">{employees.map((employee) => {
+  const EmployeesTab = () => <section className="panel-card admin-people-panel"><div className="panel-head"><div><h2>Empleados</h2><span className="panel-subtitle">Consulta y actualiza el rol y la sucursal asignada.</span></div><span className="pill-tag">{filteredEmployees.length} colaboradores</span></div>{status && <div className="checkout-status-msg" role="status">{status}</div>}  <div className="supplier-toolbar"><div className="form-field supplier-search-field"><label htmlFor="employees-branch-filter">Filtrar por sucursal</label><select id="employees-branch-filter" value={isManager ? String(managerBranchId ?? '') : employeesBranchFilter} disabled={isManager} onChange={(event) => setEmployeesBranchFilter(event.target.value)}>{!isManager && <option value="">Todas las sucursales</option>}{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></div></div>{filteredEmployees.length ? <div className="admin-people-list">{filteredEmployees.map((employee) => {
     const draft = employeeDrafts[employee.id] ?? { role: employee.role, branchId: employee.branchId, stationNumber: employee.stationNumber ?? null };
     const availableStations = availableEmployeeStations(employees, draft.role, draft.branchId, employee.id);
-    const canEdit = employee.active;
+    const isCurrentEmployee = employee.id === employeeId;
+    const canEdit = employee.active && !isCurrentEmployee;
     return <article className="admin-person-card" key={employee.id}>
       <div className="admin-person-summary"><div><h3>{employee.fullName}</h3><span>{employee.email}</span></div><span className={`supplier-status ${employee.active ? 'active' : 'inactive'}`}>{employee.active ? 'Activo' : 'Inactivo'}</span></div>
       <div className="admin-person-fields">
         <div className="form-field"><label htmlFor={`employee-role-${employee.id}`}>Rol</label><select id={`employee-role-${employee.id}`} value={draft.role} disabled={!canEdit} onChange={(event) => {
           const nextRole = event.target.value;
-          const nextBranchId = nextRole === 'Administrador' ? null : isManager ? branchId : draft.branchId;
+          const nextBranchId = nextRole === 'Administrador' ? null : isManager ? managerBranchId : draft.branchId;
           const nextAvailable = availableEmployeeStations(employees, nextRole, nextBranchId, employee.id);
           const stationNumber = nextRole === 'Cajero' || nextRole === 'Repartidor'
             ? draft.stationNumber != null && nextAvailable.includes(draft.stationNumber) ? draft.stationNumber : nextAvailable[0] ?? null
@@ -646,7 +712,7 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
           setEmployeeDrafts({ ...employeeDrafts, [employee.id]: { ...draft, role: nextRole, branchId: nextBranchId, stationNumber } });
         }}><option disabled={isManager}>Administrador</option><option>Gerente</option><option>Cajero</option><option>Bodeguero</option><option>Repartidor</option><option>Proveedor</option></select></div>
         <div className="form-field"><label htmlFor={`employee-branch-${employee.id}`}>Sucursal asignada</label><select id={`employee-branch-${employee.id}`} value={draft.role === 'Administrador' ? '' : draft.branchId ?? ''} disabled={!canEdit || draft.role === 'Administrador' || isManager} onChange={(event) => {
-          const nextBranchId = event.target.value ? Number(event.target.value) : null;
+          const nextBranchId = isManager ? managerBranchId : event.target.value ? Number(event.target.value) : null;
           const nextAvailable = availableEmployeeStations(employees, draft.role, nextBranchId, employee.id);
           const stationNumber = draft.role === 'Cajero' || draft.role === 'Repartidor'
             ? draft.stationNumber != null && nextAvailable.includes(draft.stationNumber) ? draft.stationNumber : nextAvailable[0] ?? null
@@ -656,33 +722,43 @@ export function AdminPage({ token, canManageDiscountCodes, role, branchId }: { t
         {(draft.role === 'Cajero' || draft.role === 'Repartidor') && <div className="form-field"><label htmlFor={`employee-station-${employee.id}`}>Puesto asignado</label><select id={`employee-station-${employee.id}`} value={draft.stationNumber ?? ''} disabled={!canEdit} onChange={(event) => setEmployeeDrafts({ ...employeeDrafts, [employee.id]: { ...draft, stationNumber: event.target.value ? Number(event.target.value) : null } })}><option value="">Selecciona un puesto</option>{availableStations.map((stationNumber) => <option key={stationNumber} value={stationNumber}>{draft.role === 'Cajero' ? `Caja ${stationNumber}` : `Puesto ${stationNumber}`}</option>)}</select></div>}
         <div className="admin-person-password"><span>Contraseña</span><strong>Protegida; no se puede consultar</strong></div>
       </div>
-      <div className="admin-person-actions"><button type="button" className="btn-primary" disabled={!canEdit || (draft.role !== 'Administrador' && draft.branchId == null) || ((draft.role === 'Cajero' || draft.role === 'Repartidor') && draft.stationNumber == null)} onClick={() => saveEmployee(employee)}>Guardar cambios</button><button type="button" className={employee.active ? 'btn-secondary employee-status-action deactivate' : 'btn-primary employee-status-action activate'} onClick={() => toggleEmployee(employee)}>{employee.active ? 'Desactivar acceso' : 'Activar acceso'}</button><button type="button" className="btn-secondary employee-delete-action" onClick={() => removeEmployee(employee)}>Eliminar empleado</button></div>
+      <div className="admin-person-actions"><button type="button" className="btn-primary" disabled={!canEdit || (draft.role !== 'Administrador' && draft.branchId == null) || ((draft.role === 'Cajero' || draft.role === 'Repartidor') && draft.stationNumber == null)} onClick={() => saveEmployee(employee)}>Guardar cambios</button><button type="button" className={employee.active ? 'btn-secondary employee-status-action deactivate' : 'btn-primary employee-status-action activate'} disabled={isCurrentEmployee} onClick={() => toggleEmployee(employee)}>{employee.active ? 'Desactivar acceso' : 'Activar acceso'}</button><button type="button" className="btn-secondary employee-delete-action" disabled={isCurrentEmployee} onClick={() => removeEmployee(employee)}>Eliminar empleado</button></div>
+      {isCurrentEmployee && <small>Tu cuenta no se puede modificar ni eliminar desde esta pantalla.</small>}
     </article>;
   })}</div> : <p>No hay colaboradores registrados.</p>}</section>;
   const CustomersTab = () => <section className="panel-card admin-people-panel"><div className="panel-head"><div><h2>Clientes</h2><span className="panel-subtitle">Cuentas registradas en el portal de clientes.</span></div><span className="pill-tag">{customers.length} clientes</span></div>{status && <div className="checkout-status-msg" role="status">{status}</div>}<div className="admin-dashboard-message" role="note">Las contraseñas se almacenan cifradas y no se pueden consultar. Al eliminar una cuenta se conserva el historial de pedidos.</div>{customers.length ? <div className="admin-people-list">{customers.map((customer) => <article className="admin-person-card" key={customer.customerId}><div className="admin-person-summary"><div><h3>{customer.fullName}</h3><span>{customer.email}</span></div></div><div className="admin-person-fields"><div className="admin-person-password"><span>Teléfono</span><strong>{customer.phone || 'Sin teléfono'}</strong></div><div className="admin-person-password"><span>Contraseña</span><strong>Protegida; no se puede consultar</strong></div></div>{isAdministrator && <div className="admin-person-actions"><button type="button" className="btn-secondary" onClick={() => removeCustomer(customer)}>Eliminar cuenta</button></div>}</article>)}</div> : <p>No hay cuentas de clientes registradas.</p>}</section>;
   const CashierSalesTab = () => {
-    const sales = orderHistory.filter((order) => order.source === 'POS' && order.employeeId != null);
     return <section className="panel-card admin-people-panel">
-      <div className="panel-head"><div><h2>Ventas por caja</h2><span className="panel-subtitle">Ventas POS, productos vendidos y cajero asignado a cada caja al momento de cobrar.</span></div><span className="pill-tag">{sales.length} ventas</span></div>
+      <div className="panel-head"><div><h2>Ventas por caja</h2><span className="panel-subtitle">Ventas POS, productos vendidos y cajero asignado a cada caja al momento de cobrar.</span></div><span className="pill-tag">{filteredCashierSales.length} ventas</span></div>
       {status && <div className="checkout-status-msg" role="status">{status}</div>}
-      <div className="lots-table-wrap"><table className="lots-table suppliers-table"><thead><tr><th>Fecha / venta</th><th>Sucursal / caja</th><th>Vendedor registrado</th><th>Responsable actual de caja</th><th>Productos vendidos</th><th>Estado</th><th>Total</th></tr></thead><tbody>
-        {sales.map((sale) => {
+      <div className="supplier-toolbar">
+        <div className="form-field"><label htmlFor="cashier-branch-filter">Sucursal</label><select id="cashier-branch-filter" value={isManager ? String(managerBranchId ?? '') : cashierBranchFilter} disabled={isManager} onChange={(event) => setCashierBranchFilter(event.target.value)}><option value="">Todas las sucursales</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></div>
+        <div className="form-field"><label htmlFor="cashier-date-from">Desde</label><input id="cashier-date-from" type="date" value={cashierDateFrom} onChange={(event) => setCashierDateFrom(event.target.value)} /></div>
+        <div className="form-field"><label htmlFor="cashier-date-to">Hasta</label><input id="cashier-date-to" type="date" value={cashierDateTo} onChange={(event) => setCashierDateTo(event.target.value)} /></div>
+      </div>
+      <div className="lots-table-wrap"><table className="lots-table suppliers-table"><thead><tr><th>Fecha / venta</th><th>Sucursal / caja</th><th>Vendedor registrado</th><th>Responsable actual de caja</th><th>Productos vendidos</th><th>Estado</th><th>Total</th><th>Factura</th></tr></thead><tbody>
+        {filteredCashierSales.map((sale) => {
           const currentAssignee = employees.find((employee) => employee.active
             && employee.role === 'Cajero'
             && employee.branchId === sale.branchId
             && employee.stationNumber === sale.stationNumber);
-          return <tr key={sale.id}><td><strong>{sale.code}</strong><small>{new Date(sale.createdAt).toLocaleString('es-GT')}</small></td><td>{sale.branchName}<small>{sale.stationNumber ? `Caja ${sale.stationNumber}` : 'Caja sin puesto'}</small></td><td>{sale.employeeName ?? 'Empleado eliminado'}</td><td>{currentAssignee?.fullName ?? 'Sin responsable activo'}</td><td>{sale.items.length ? sale.items.map((item, index) => <small key={`${sale.id}-${index}`}>{item.productName} × {item.quantity}</small>) : 'Sin detalle de productos'}</td><td>{sale.paymentStatus === 'PAID' ? 'Pagada' : 'Pendiente'}</td><td>{money(sale.total)}</td></tr>;
+          return <tr key={sale.id}><td><strong>{sale.code}</strong><small>{new Date(sale.createdAt).toLocaleString('es-GT')}</small></td><td>{sale.branchName}<small>{sale.stationNumber ? `Caja ${sale.stationNumber}` : 'Caja sin puesto'}</small></td><td>{sale.employeeName ?? 'Empleado eliminado'}</td><td>{currentAssignee?.fullName ?? 'Sin responsable activo'}</td><td>{sale.items.length ? sale.items.map((item, index) => <small key={`${sale.id}-${index}`}>{item.productName} × {item.quantity}</small>) : 'Sin detalle de productos'}</td><td>{sale.paymentStatus === 'PAID' ? 'Pagada' : 'Pendiente'}</td><td>{money(sale.total)}</td><td><button type="button" className="btn-secondary" disabled={sale.paymentStatus !== 'PAID' || downloadingInvoiceId === sale.id} onClick={() => downloadOrderInvoice(sale)}>{downloadingInvoiceId === sale.id ? 'Descargando...' : 'Descargar'}</button></td></tr>;
         })}
-        {sales.length === 0 && <tr><td colSpan={7} className="no-lots-msg">Todavía no hay ventas POS registradas.</td></tr>}
+        {filteredCashierSales.length === 0 && <tr><td colSpan={8} className="no-lots-msg">No hay ventas POS para los filtros seleccionados.</td></tr>}
       </tbody></table></div>
     </section>;
   };
   const OrderHistoryTab = () => <section className="panel-card admin-people-panel">
-    <div className="panel-head"><div><h2>Historial de pedidos</h2><span className="panel-subtitle">Pedidos de {isAdministrator ? 'todas las sucursales' : 'tu sucursal'}, sus artículos, estado y repartidor asignado.</span></div><span className="pill-tag">{orderHistory.length} pedidos</span></div>
+    <div className="panel-head"><div><h2>Historial de pedidos</h2><span className="panel-subtitle">Pedidos de {isAdministrator ? 'todas las sucursales' : 'tu sucursal'}, sus artículos, estado y repartidor asignado.</span></div><span className="pill-tag">{filteredOrderHistory.length} pedidos</span></div>
     {status && <div className="checkout-status-msg" role="status">{status}</div>}
-    <div className="lots-table-wrap"><table className="lots-table suppliers-table"><thead><tr><th>Fecha / pedido</th><th>Sucursal</th><th>Cliente / entrega</th><th>Productos</th><th>Repartidor asignado</th><th>Estado</th><th>Total</th></tr></thead><tbody>
-      {orderHistory.map((order) => <tr key={order.id}><td><strong>{order.code}</strong><small>{new Date(order.createdAt).toLocaleString('es-GT')}</small></td><td>{order.branchName}</td><td>{order.customerName || 'Cliente'}<small>{order.deliveryMode === 'DELIVERY' ? order.address || 'Entrega a domicilio' : 'Retiro en sucursal'}</small></td><td>{order.items.length ? order.items.map((item, index) => <small key={`${order.id}-${index}`}>{item.productName} × {item.quantity}</small>) : 'Sin detalle de productos'}</td><td>{order.deliveryMode === 'DELIVERY' ? order.assignedEmployeeName ?? 'Pendiente de asignación' : 'No aplica'}</td><td>{order.status} · {order.paymentStatus === 'PAID' ? 'Pagado' : 'Pendiente de pago'}</td><td>{money(order.total)}</td></tr>)}
-      {orderHistory.length === 0 && <tr><td colSpan={7} className="no-lots-msg">Todavía no hay pedidos registrados.</td></tr>}
+    <div className="supplier-toolbar">
+      <div className="form-field"><label htmlFor="history-branch-filter">Sucursal</label><select id="history-branch-filter" value={isManager ? String(managerBranchId ?? '') : historyBranchFilter} disabled={isManager} onChange={(event) => setHistoryBranchFilter(event.target.value)}><option value="">Todas las sucursales</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></div>
+      <div className="form-field"><label htmlFor="history-date-from">Desde</label><input id="history-date-from" type="date" value={historyDateFrom} onChange={(event) => setHistoryDateFrom(event.target.value)} /></div>
+      <div className="form-field"><label htmlFor="history-date-to">Hasta</label><input id="history-date-to" type="date" value={historyDateTo} onChange={(event) => setHistoryDateTo(event.target.value)} /></div>
+    </div>
+    <div className="lots-table-wrap"><table className="lots-table suppliers-table"><thead><tr><th>Fecha / pedido</th><th>Sucursal</th><th>Cliente / entrega</th><th>Productos</th><th>Repartidor asignado</th><th>Estado</th><th>Total</th><th>Factura</th></tr></thead><tbody>
+      {filteredOrderHistory.map((order) => <tr key={order.id}><td><strong>{order.code}</strong><small>{new Date(order.createdAt).toLocaleString('es-GT')}</small></td><td>{order.branchName}</td><td>{order.customerName || 'Cliente'}<small>{order.deliveryMode === 'DELIVERY' ? order.address || 'Entrega a domicilio' : 'Retiro en sucursal'}</small></td><td>{order.items.length ? order.items.map((item, index) => <small key={`${order.id}-${index}`}>{item.productName} × {item.quantity}</small>) : 'Sin detalle de productos'}</td><td>{order.deliveryMode === 'DELIVERY' ? order.assignedEmployeeName ?? 'Pendiente de asignación' : 'No aplica'}</td><td>{order.status} · {order.paymentStatus === 'PAID' ? 'Pagado' : 'Pendiente de pago'}</td><td>{money(order.total)}</td><td><button type="button" className="btn-secondary" disabled={order.paymentStatus !== 'PAID' || downloadingInvoiceId === order.id} onClick={() => downloadOrderInvoice(order)}>{downloadingInvoiceId === order.id ? 'Descargando...' : 'Descargar'}</button></td></tr>)}
+      {filteredOrderHistory.length === 0 && <tr><td colSpan={8} className="no-lots-msg">No hay pedidos para los filtros seleccionados.</td></tr>}
     </tbody></table></div>
   </section>;
   const CrosscheckPanel = () => <div className="panel-card"><div className="panel-head"><h2>Auditoría MSPAS</h2><span className="pill-tag">Validación Sanitaria</span></div><div className="form-field"><label>ID de Orden a Validar</label><input value={crosscheckOrderId} onChange={(e) => setCrosscheckOrderId(e.target.value)} /></div><button type="button" className="btn-primary" onClick={doCrosscheck}>Registrar Validación de Receta</button><div className="reports-summary-grid"><div className="report-summary-box"><strong>{reports?.monthlySales?.length ?? 0}</strong><span>Períodos analizados</span></div><div className="report-summary-box"><strong>{reports?.topProducts?.length ?? 0}</strong><span>Productos con ventas</span></div></div>{status && <div className="checkout-status-msg">{status}</div>}</div>;

@@ -754,7 +754,7 @@ export default function AppController() {
       {activePortal === 'pos' && token && profile && canAccessEmployeePortal(profile.role, 'pos') && <PosPage token={token} profile={profile} categories={categories} />}
       {activePortal === 'warehouse' && token && profile && canAccessEmployeePortal(profile.role, 'warehouse') && <WarehousePage token={token} categories={categories} branchId={profile.branchId} role={profile.role} />}
       {activePortal === 'delivery' && token && profile && canAccessEmployeePortal(profile.role, 'delivery') && <DeliveryPage token={token} role={profile.role} branchId={profile.branchId} />}
-      {activePortal === 'admin' && token && profile && canAccessEmployeePortal(profile.role, 'admin') && <AdminPage token={token} role={profile.role} branchId={profile.branchId} canManageDiscountCodes={profile.role === 'Administrador'} />}
+      {activePortal === 'admin' && token && profile && canAccessEmployeePortal(profile.role, 'admin') && <AdminPage token={token} role={profile.role} branchId={profile.branchId} employeeId={profile.employeeId} canManageDiscountCodes={profile.role === 'Administrador'} />}
     </div>
   );
 }

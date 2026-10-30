@@ -17,6 +17,7 @@ import {
   getDatabaseCategories,
   getDatabaseDashboard,
   getDatabaseAdminOrderHistory,
+  getDatabaseInvoiceDataForEmail,
   getDatabaseReports,
   getDatabaseOrderById,
   getDatabaseSuppliers,
@@ -29,6 +30,7 @@ import {
 import { store } from '../store.js';
 import { guatemalaPhoneSchema } from '../utils.js';
 import { getAvailableEmployeeStations, requiresEmployeeStation } from '../utils/employeeStations.js';
+import { generarFacturaDesdeOrden } from '../services/invoice.service.js';
 
 
 // ESQUEMAS DE VALIDACION
@@ -158,6 +160,40 @@ export async function orderHistory(req: Request, res: Response) {
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'No se pudo cargar el historial de pedidos' });
+  }
+}
+
+export async function downloadAdminOrderInvoice(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'No autenticado' });
+    }
+    const orderId = Number(req.params.id);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({ success: false, message: 'Pedido no válido' });
+    }
+    const invoiceData = databaseEnabled ? await getDatabaseInvoiceDataForEmail(orderId) : null;
+    const order = invoiceData?.order ?? store.getOrderById(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
+    }
+    if (!canAccessBranch(req.user.role, req.user.branchId, order.branchId)) {
+      return res.status(403).json({ success: false, message: FORBIDDEN_MESSAGE });
+    }
+    if (order.paymentStatus !== 'PAID') {
+      return res.status(400).json({ success: false, message: 'El pedido todavía no está pagado; no hay factura disponible.' });
+    }
+    const { pdfBuffer } = await generarFacturaDesdeOrden(orderId, false);
+    const invoiceNumber = invoiceData?.invoice.invoiceNumber
+      ?? store.getInvoiceByOrderId(orderId)?.invoiceNumber
+      ?? order.code;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="factura-${invoiceNumber}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    return res.send(pdfBuffer);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'No se pudo descargar la factura';
+    return res.status(500).json({ success: false, message });
   }
 }
 
