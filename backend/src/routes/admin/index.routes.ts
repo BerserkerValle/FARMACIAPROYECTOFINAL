@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate, authorize } from '../../middleware/auth.js';
+import { authenticate } from '../../middleware/auth.js';
 import { branchesRouter } from './branches.routes.js';
 import { categoriesRouter } from './categories.routes.js';
 import { dashboardRouter } from './dashboard.routes.js';
@@ -11,7 +11,7 @@ import { suppliersRouter } from './suppliers.routes.js';
 
 export const adminRouter = Router();
 
-adminRouter.use(authenticate, authorize('Administrador', 'Gerente'));
+adminRouter.use(authenticate);
 
 adminRouter.use(dashboardRouter);
 adminRouter.use(employeesRouter);

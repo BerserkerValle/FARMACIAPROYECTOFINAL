@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canAccessBranch, canGrantRole, canReadDelivery, canClaimDelivery, resolveBranchScope, resolveWarehouseBranchScope } from '../utils/permissions.js';
+import { ADMIN_ROLES, canAccessBranch, canGrantRole, canManageEmployee, canReadDelivery, canClaimDelivery, resolveBranchScope, resolveWarehouseBranchScope } from '../utils/permissions.js';
 import { getNextEmployeeId, getUniqueActiveEmployeeById } from '../store.js';
 import { createEmployeeToken, getEmployeeIdentityFromToken } from '../utils/jwt.js';
 import { guatemalaPhoneSchema, hasSanitaryRegistryChanged } from '../utils.js';
@@ -51,6 +51,12 @@ describe('warehouse branch scope', () => {
 });
 
 describe('employee role assignment', () => {
+  it('allows managers to enter the administrative panel without granting administrator access', () => {
+    expect(ADMIN_ROLES).toContain('Gerente');
+    expect(ADMIN_ROLES).not.toContain('Cajero');
+    expect(ADMIN_ROLES).not.toContain('Bodeguero');
+  });
+
   it('lets an administrator grant every role, including administrator and manager', () => {
     expect(canGrantRole('Administrador', 'Administrador')).toBe(true);
     expect(canGrantRole('Administrador', 'Gerente')).toBe(true);
@@ -59,6 +65,13 @@ describe('employee role assignment', () => {
   it('does not let a manager grant the administrator role', () => {
     expect(canGrantRole('Gerente', 'Administrador')).toBe(false);
     expect(canGrantRole('Gerente', 'Gerente')).toBe(true);
+  });
+
+  it('lets managers manage employees only within their branch', () => {
+    expect(canManageEmployee('Gerente', 'Cajero')).toBe(true);
+    expect(canManageEmployee('Gerente', 'Administrador')).toBe(false);
+    expect(canAccessBranch('Gerente', 2, 2)).toBe(true);
+    expect(canAccessBranch('Gerente', 2, 3)).toBe(false);
   });
 });
 
